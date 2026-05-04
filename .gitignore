@@ -1,0 +1,81 @@
+# === Environment / Secrets ===
+.env
+.env.local
+.env.*.local
+# Keep .env.example and .env.template as templates
+!.env.example
+!.env.template
+
+# === Java (project/) ===
+project/target/
+project/.idea/
+project/*.iml
+project/*.iws
+project/*.ipr
+project/.classpath
+project/.factorypath
+project/.project
+project/.settings/
+project/.apt_generated
+project/.springBeans
+project/.sts4-cache
+project/.vscode/
+project/nbproject/
+project/nbbuild/
+project/nbdist/
+project/.nb-gradle/
+project/build/
+!project/src/**/build/
+
+# === Python (python-agent/) ===
+python-agent/.venv/
+python-agent/__pycache__/
+python-agent/**/__pycache__/
+python-agent/.pytest_cache/
+python-agent/**/.pytest_cache/
+python-agent/*.pyc
+python-agent/**/*.pyc
+python-agent/*.egg-info/
+python-agent/sandbox-temp/
+python-agent/.env
+
+# === Frontend (frontend/) ===
+frontend/node_modules/
+frontend/dist/
+frontend/dist-ssr/
+frontend/.env
+frontend/.env.local
+frontend/.vscode/*
+frontend/!.vscode/extensions.json
+frontend/npm-debug.log*
+frontend/yarn-debug.log*
+frontend/yarn-error.log*
+frontend/pnpm-debug.log*
+
+# === IDE ===
+.idea/
+.vscode/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+*.swo
+*~
+
+# === OS ===
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# === Claude Code ===
+.claude/
+
+# === Logs ===
+*.log
+logs/
+
+# === Test caches ===
+.pytest_cache/
+.coverage
+htmlcov/

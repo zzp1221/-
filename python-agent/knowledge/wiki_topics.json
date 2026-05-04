@@ -1,0 +1,6582 @@
+[
+  {
+    "dir_name": "操作系统",
+    "file_stem": "银行家算法",
+    "title": "银行家算法（Banker's Algorithm）",
+    "course": "操作系统",
+    "chapter": "死锁",
+    "difficulty": "ADVANCED",
+    "tags": [
+      "操作系统",
+      "死锁",
+      "银行家算法",
+      "安全状态"
+    ],
+    "aliases": [
+      "Banker's Algorithm"
+    ],
+    "source": "Operating System Concepts (Silberschatz) 第8章; Dijkstra 1965",
+    "sections": [
+      {
+        "heading": "核心定义",
+        "content": "银行家算法是Dijkstra提出的死锁避免算法。系统在分配资源前先模拟分配后的状态，判断是否仍处于安全状态（存在安全序列使所有进程都能完成），只有安全才分配。数据结构：Available[m]可用资源、Max[n][m]最大需求、Allocation[n][m]已分配、Need[n][m]还需（Need=Max-Allocation）。"
+      },
+      {
+        "heading": "关键结论",
+        "content": "1. 安全状态≠无死锁，不安全状态≠一定死锁（只是可能死锁）2. 安全检查O(m·n²) 3. 需要预知最大需求、进程数固定——实际OS很少用 4. 实际系统多用死锁检测+恢复"
+      },
+      {
+        "heading": "易错点",
+        "content": "安全序列不唯一；Need[i]=Max[i]-Allocation[i]，不是Available-Allocation；安全检查中Work初始化为Available"
+      },
+      {
+        "heading": "例题",
+        "content": "系统3类资源A=10,B=5,C=7。已分配P0(0,1,0),P1(2,0,0),P2(3,0,2),P3(2,1,1),P4(0,0,2)。最大需求P0(7,5,3),P1(3,2,2),P2(9,0,2),P3(2,2,2),P4(4,3,3)。判断是否安全。解答：Available=(3,3,2)，安全序列P1→P3→P4→P0→P2，安全。"
+      },
+      {
+        "heading": "关联页面",
+        "content": "[[死锁的四个必要条件]] [[死锁预防]] [[死锁检测与恢复]]"
+      }
+    ]
+  },
+  {
+    "dir_name": "操作系统",
+    "file_stem": "多级反馈队列调度MLFQ",
+    "title": "多级反馈队列调度（MLFQ）",
+    "course": "操作系统",
+    "chapter": "进程调度",
+    "difficulty": "INTERMEDIATE",
+    "tags": [
+      "操作系统",
+      "MLFQ",
+      "进程调度",
+      "优先级",
+      "时间片"
+    ],
+    "aliases": [
+      "Multilevel Feedback Queue"
+    ],
+    "source": "Operating Systems: Three Easy Pieces (Arpaci-Dusseau) 第8章",
+    "sections": [
+      {
+        "heading": "核心定义",
+        "content": "MLFQ是最实用的通用调度算法，同时优化周转时间和响应时间。规则：1.优先级高的队列先调度 2.同优先级队列内时间片轮转 3.新进程进入最高优先级 4.用完时间片降优先级，主动让出CPU保持优先级 5.定期将所有进程提升到最高优先级（防止饥饿）。"
+      },
+      {
+        "heading": "关键结论",
+        "content": "1. 无需预知进程行为，自适应CPU密集vs IO密集 2. 饥饿问题通过priority boost解决 3. Windows NT、macOS、Linux(CFS前)都使用MLFQ变体 4. 博弈问题：进程可能在时间片结束前主动IO来保持高优先级"
+      },
+      {
+        "heading": "关联页面",
+        "content": "[[先来先服务FCFS]] [[短作业优先SJF]] [[时间片轮转调度]] [[优先级调度]]"
+      }
+    ]
+  },
+  {
+    "dir_name": "操作系统",
+    "file_stem": "实时调度算法RMS与EDF",
+    "title": "实时调度算法（RMS与EDF）",
+    "course": "操作系统",
+    "chapter": "进程调度",
+    "difficulty": "ADVANCED",
+    "tags": [
+      "操作系统",
+      "实时调度",
+      "RMS",
+      "EDF",
+      "单调速率"
+    ],
+    "aliases": [
+      "Rate Monotonic Scheduling",
+      "Earliest Deadline First"
+    ],
+    "source": "Real-Time Systems (Liu & Layland 1973); Hard Real-Time Computing Systems (Buttazzo)",
+    "sections": [
+      {
+        "heading": "核心定义",
+        "content": "实时系统调度要求任务在截止时间前完成。RMS（单调速率调度）：周期越短优先级越高，静态优先级可抢占，CPU利用率上界U≤n(2^(1/n)-1)，n→∞时U≤ln2≈69.3%。EDF（最早截止时间优先）：截止时间越近优先级越高，动态优先级可抢占，CPU利用率可达100%。"
+      },
+      {
+        "heading": "关键结论",
+        "content": "1. RMS是最优的静态优先级调度算法 2. EDF是最优的动态优先级调度算法 3. 实际RTOS多使用混合方案 4. 优先级反转问题需要优先级继承协议(PIP)解决"
+      },
+      {
+        "heading": "关联页面",
+        "content": "[[优先级调度]] [[优先级反转]] [[进程调度]]"
+      }
+    ]
+  },
+  {
+    "dir_name": "操作系统",
+    "file_stem": "RCU读拷贝更新",
+    "title": "RCU（读拷贝更新）",
+    "course": "操作系统",
+    "chapter": "并发控制",
+    "difficulty": "ADVANCED",
+    "tags": [
+      "操作系统",
+      "RCU",
+      "并发控制",
+      "锁自由",
+      "Linux内核"
+    ],
+    "aliases": [
+      "Read-Copy-Update"
+    ],
+    "source": "Linux Kernel Documentation (RCU); McKenney RCU论文",
+    "sections": [
+      {
+        "heading": "核心定义",
+        "content": "RCU是Linux内核中使用的无锁并发机制，专为读多写少场景优化。写操作不直接修改原数据，而是先复制→修改→在适当时机替换指针→等待所有老读者完成后释放旧数据。读者完全不阻塞无需获取锁。关键API：rcu_read_lock/unlock标记读临界区、synchronize_rcu等待所有老读完成、call_rcu异步回调释放。"
+      },
+      {
+        "heading": "关键结论",
+        "content": "1. 读者开销几乎为零（只是禁抢占）2. 写者需要等待宽限期(Grace Period) 3. Linux内核中广泛使用（网络栈、文件系统、VFS）4. 不适合写多场景"
+      },
+      {
+        "heading": "关联页面",
+        "content": "[[临界区]] [[互斥与同步机制]] [[锁自由数据结构]]"
+      }
+    ]
+  },
+  {
+    "dir_name": "操作系统",
+    "file_stem": "大页内存与透明大页",
+    "title": "大页内存与透明大页（THP）",
+    "course": "操作系统",
+    "chapter": "内存管理",
+    "difficulty": "INTERMEDIATE",
+    "tags": [
+      "操作系统",
+      "大页",
+      "HugePages",
+      "THP",
+      "TLB"
+    ],
+    "aliases": [
+      "Huge Pages",
+      "Transparent Huge Pages"
+    ],
+    "source": "Linux Kernel Documentation (hugetlb, THP); Intel x86架构手册",
+    "sections": [
+      {
+        "heading": "核心定义",
+        "content": "x86默认页大小4KB，大页使用2MB或1GB页。好处：减少TLB缺失（一个2MB大页的TLB条目覆盖512个4KB页）、减少页表遍历层级。THP（透明大页）：内核自动将连续的4KB页合并为2MB大页，对应用透明。静态大页（hugetlbfs）：需要显式预留和挂载。"
+      },
+      {
+        "heading": "关键结论",
+        "content": "1. 大页降低TLB miss率，内存密集型应用提升5-15%性能 2. THP的碎片整理可能带来延迟尖峰（khugepaged线程）3. 数据库(PostgreSQL/MySQL)常禁用THP用静态大页 4. 1GB大页适合虚拟化场景"
+      },
+      {
+        "heading": "关联页面",
+        "content": "[[分页存储管理]] [[TLB快表]] [[虚拟内存]]"
+      }
+    ]
+  },
+  {
+    "dir_name": "操作系统",
+    "file_stem": "IO多路复用select-poll-epoll",
+    "title": "IO多路复用（select/poll/epoll）",
+    "course": "操作系统",
+    "chapter": "IO系统",
+    "difficulty": "ADVANCED",
+    "tags": [
+      "操作系统",
+      "IO",
+      "select",
+      "poll",
+      "epoll",
+      "事件驱动"
+    ],
+    "aliases": [
+      "IO Multiplexing"
+    ],
+    "source": "UNIX Network Programming (Stevens) 第6章; Linux man pages epoll(7)",
+    "sections": [
+      {
+        "heading": "核心定义",
+        "content": "IO多路复用允许单个线程同时监听多个文件描述符的IO事件。select：使用fd_set位图，FD_SETSIZE=1024限制，每次调用复制整个fd_set，O(n)扫描。poll：使用pollfd数组，无fd数量限制，但仍需O(n)扫描和复制。epoll(Linux)：epoll_create创建实例，epoll_ctl注册fd（红黑树存储），epoll_wait仅返回就绪fd（就绪链表），O(1)获取就绪事件。"
+      },
+      {
+        "heading": "关键结论",
+        "content": "1. 大量连接中少数活跃用epoll，边缘触发ET更高效 2. select/poll对小规模连接(<100)性能尚可 3. epoll是Nginx/Redis高性能的关键 4. Windows上的IOCP是完成端口模型，不同于epoll"
+      },
+      {
+        "heading": "关联页面",
+        "content": "[[IO控制方式]] [[文件描述符]] [[异步IO]] [[网络编程模型]]"
+      }
+    ]
+  },
+  {
+    "dir_name": "操作系统",
+    "file_stem": "写时复制COW",
+    "title": "写时复制（Copy-on-Write）",
+    "course": "操作系统",
+    "chapter": "内存管理",
+    "difficulty": "INTERMEDIATE",
+    "tags": [
+      "操作系统",
+      "COW",
+      "写时复制",
+      "fork",
+      "内存管理"
+    ],
+    "aliases": [
+      "Copy-on-Write"
+    ],
+    "source": "Operating System Concepts (Silberschatz) 第9章; Linux内核源码分析",
+    "sections": [
+      {
+        "heading": "核心定义",
+        "content": "写时复制是一种延迟复制优化技术。父进程fork子进程时，不立即复制全部页表，而是将父子进程的页表项都设为只读并标记为COW。当任一方尝试写时，触发缺页中断，内核才真正复制该页。这样fork后立即exec的进程（绝大多数情况）避免了大量无意义的复制。"
+      },
+      {
+        "heading": "关键结论",
+        "content": "1. fork()+exec()的开销从O(进程内存)降到O(页表) 2. COW页在缺页处理中分配新物理页 3. /proc/PID/smaps的Shared_Clean/Shared_Dirty反映COW状态 4. 也用于KVM虚拟机的内存超分"
+      },
+      {
+        "heading": "关联页面",
+        "content": "[[进程的创建与终止]] [[虚拟内存]] [[缺页中断]]"
+      }
+    ]
+  },
+  {
+    "dir_name": "操作系统",
+    "file_stem": "内存映射mmap",
+    "title": "内存映射（mmap）",
+    "course": "操作系统",
+    "chapter": "内存管理",
+    "difficulty": "INTERMEDIATE",
+    "tags": [
+      "操作系统",
+      "mmap",
+      "内存映射",
+      "文件IO",
+      "零拷贝"
+    ],
+    "aliases": [
+      "Memory-Mapped File"
+    ],
+    "source": "Advanced Programming in the UNIX Environment (Stevens) 第14章; Linux man mmap(2)",
+    "sections": [
+      {
+        "heading": "核心定义",
+        "content": "mmap将文件或设备映射到进程的虚拟地址空间，使文件访问像访问内存一样简单。类型：文件映射（映射普通文件，修改可选回写磁盘）、匿名映射（不关联文件，用于malloc大块内存）。标志：MAP_SHARED（修改对其他进程可见并写回文件）、MAP_PRIVATE（COW私有映射）。"
+      },
+      {
+        "heading": "关键结论",
+        "content": "1. 相比read/write减少一次内核到用户空间的拷贝 2. 适合随机访问大文件 3. mmap+write实现零拷贝文件传输 4. 缺点是缺页中断开销大且难以处理文件截断(SIGBUS)"
+      },
+      {
+        "heading": "关联页面",
+        "content": "[[文件系统]] [[虚拟内存]] [[零拷贝技术]]"
+      }
+    ]
+  },
+  {
+    "dir_name": "操作系统",
+    "file_stem": "Slab分配器",
+    "title": "Slab分配器与内核内存管理",
+    "course": "操作系统",
+    "chapter": "内存管理",
+    "difficulty": "ADVANCED",
+    "tags": [
+      "操作系统",
+      "Slab",
+      "内核内存",
+      "BuddySystem"
+    ],
+    "aliases": [
+      "Slab Allocator"
+    ],
+    "source": "The Slab Allocator: An Object-Caching Kernel Memory Allocator (Bonwick 1994); Linux内核mm/slab.c",
+    "sections": [
+      {
+        "heading": "核心定义",
+        "content": "Slab分配器在Buddy System之上构建，用于高效分配固定大小的内核对象。Buddy System以页为单位分配，但内核经常需要分配小对象（inode、dentry、task_struct），造成严重内部碎片。Slab维护每种对象类型的缓存(kmem_cache)，预分配slab（1到多个连续页），内部划分为object槽位。分配/释放只需标记slot状态。"
+      },
+      {
+        "heading": "关键结论",
+        "content": "1. 三种变体：SLAB(传统)、SLUB(简化版，Linux默认)、SLOB(嵌入式) 2. SLUB去掉了复杂的着色和队列，每个CPU有本地缓存 3. /proc/slabinfo查看slab使用情况"
+      },
+      {
+        "heading": "关联页面",
+        "content": "[[伙伴系统Buddy System]] [[内存分配]]"
+      }
+    ]
+  },
+  {
+    "dir_name": "操作系统",
+    "file_stem": "NUMA架构",
+    "title": "NUMA架构与内存亲和性",
+    "course": "操作系统",
+    "chapter": "内存管理",
+    "difficulty": "ADVANCED",
+    "tags": [
+      "操作系统",
+      "NUMA",
+      "内存架构",
+      "多处理器"
+    ],
+    "aliases": [
+      "Non-Uniform Memory Access"
+    ],
+    "source": "Computer Architecture: A Quantitative Approach (Hennessy & Patterson)",
+    "sections": [
+      {
+        "heading": "核心定义",
+        "content": "NUMA（非一致内存访问）是多处理器架构，每个CPU有自己的本地内存，访问本地内存快、远程内存慢（延迟差2-3倍）。UMA中所有CPU访问内存延迟相同但总线带宽是瓶颈。现代多路服务器均为NUMA架构。OS需要感知NUMA拓扑，尽量将进程内存分配在本地节点。Linux的numactl/mbind控制内存策略。"
+      },
+      {
+        "heading": "关键结论",
+        "content": "1. NUMA Ratio=远程延迟/本地延迟，通常1.5-3.0 2. Linux默认first-touch策略（首次访问的CPU所在节点分配内存）3. 数据库、JVM需要显式配置NUMA感知 4. 跨NUMA节点的锁竞争性能灾难"
+      },
+      {
+        "heading": "关联页面",
+        "content": "[[多处理器架构]] [[缓存一致性协议]] [[内存层次结构]]"
+      }
+    ]
+  },
+  {
+    "dir_name": "操作系统",
+    "file_stem": "Cgroups与容器资源隔离",
+    "title": "Cgroups与容器资源隔离",
+    "course": "操作系统",
+    "chapter": "虚拟化与容器",
+    "difficulty": "INTERMEDIATE",
+    "tags": [
+      "操作系统",
+      "cgroups",
+      "容器",
+      "Docker",
+      "资源隔离"
+    ],
+    "aliases": [
+      "Control Groups"
+    ],
+    "source": "Linux Kernel Documentation (cgroups v1/v2); Docker官方文档",
+    "sections": [
+      {
+        "heading": "核心定义",
+        "content": "Cgroups(Control Groups)是Linux内核的资源限制和统计机制，是Docker/Kubernetes等容器技术的基石。子系统：cpu（CPU配额/shares）、cpuset（CPU亲和性+NUMA）、memory（内存限制+OOM）、blkio（块设备IO限制）、net_cls（网络优先级）、pids（进程数限制）。Cgroups v2统一了层次结构。"
+      },
+      {
+        "heading": "关键结论",
+        "content": "1. 容器=Namespaces(隔离)+Cgroups(限制)+rootfs(文件系统) 2. memory.limit_in_bytes超过后触发OOM killer 3. cpu.shares是相对权重（满负载时按比例分配）"
+      },
+      {
+        "heading": "关联页面",
+        "content": "[[Docker容器技术]] [[进程隔离]] [[虚拟化技术对比]]"
+      }
+    ]
+  },
+  {
+    "dir_name": "操作系统",
+    "file_stem": "文件系统日志机制",
+    "title": "文件系统日志机制（Journaling）",
+    "course": "操作系统",
+    "chapter": "文件系统",
+    "difficulty": "INTERMEDIATE",
+    "tags": [
+      "操作系统",
+      "文件系统",
+      "日志",
+      "ext4",
+      "一致性"
+    ],
+    "aliases": [
+      "Journaling",
+      "Write-Ahead Logging"
+    ],
+    "source": "Linux ext4文档; FFS/ext3论文; File System Forensic Analysis (Carrier)",
+    "sections": [
+      {
+        "heading": "核心定义",
+        "content": "日志文件系统在修改实际数据前先将变更记录到日志区，崩溃恢复时重放日志保证一致性。模式：journal(数据+元数据都写日志，最安全最慢)、ordered(只写元数据日志，数据先于元数据写回，Linux默认)、writeback(只写元数据日志，最快但可能暴露旧数据)。ext4默认ordered模式。"
+      },
+      {
+        "heading": "关键结论",
+        "content": "1. 日志是环形缓冲区，定期checkpoint清空 2. ordered模式在大部分场景性能和安全性平衡最好 3. COW文件系统（ZFS/Btrfs）天然一致性无需日志 4. 日志不是备份——只保证元数据一致性"
+      },
+      {
+        "heading": "关联页面",
+        "content": "[[文件与文件系统]] [[文件保护]] [[磁盘调度]]"
+      }
+    ]
+  },
+  {
+    "dir_name": "操作系统",
+    "file_stem": "设备驱动程序模型",
+    "title": "Linux设备驱动程序模型",
+    "course": "操作系统",
+    "chapter": "IO系统",
+    "difficulty": "ADVANCED",
+    "tags": [
+      "操作系统",
+      "设备驱动",
+      "Linux",
+      "sysfs",
+      "总线"
+    ],
+    "aliases": [
+      "Device Driver Model"
+    ],
+    "source": "Linux Device Drivers 3rd Edition (Corbet, Rubini); Linux内核Documentation/driver-model",
+    "sections": [
+      {
+        "heading": "核心定义",
+        "content": "Linux设备驱动模型围绕三个核心抽象：bus（总线类型如PCI/USB/platform）、device（具体设备由bus发现或注册）、driver（设备驱动，匹配device后调用probe）。sysfs（/sys目录）暴露驱动模型拓扑。设备树(Device Tree)用于嵌入式平台描述硬件。platform总线用于无实际总线的片上外设。"
+      },
+      {
+        "heading": "关键结论",
+        "content": "1. 驱动加载后bus遍历device列表调用match函数 2. probe成功后在/sys/bus/*/drivers/*下创建符号链接 3. udev根据uevent创建设备节点 4. 中断处理分为顶半部(快速)和底半部(tasklet/workqueue)"
+      },
+      {
+        "heading": "关联页面",
+        "content": "[[IO系统概述]] [[中断系统]] [[DMA直接存储器访问]]"
+      }
+    ]
+  },
+  {
+    "dir_name": "操作系统",
+    "file_stem": "用户态IO与SPDK",
+    "title": "用户态IO与SPDK",
+    "course": "操作系统",
+    "chapter": "IO系统",
+    "difficulty": "ADVANCED",
+    "tags": [
+      "操作系统",
+      "SPDK",
+      "用户态IO",
+      "NVMe",
+      "DPDK"
+    ],
+    "aliases": [
+      "Storage Performance Development Kit"
+    ],
+    "source": "SPDK官方文档; Intel DPDK文档",
+    "sections": [
+      {
+        "heading": "核心定义",
+        "content": "传统IO路径瓶颈：系统调用→VFS→文件系统→块层→驱动→中断，延迟>10μs。用户态IO绕过内核：SPDK将NVMe驱动放在用户态，通过轮询替代中断，用无锁队列与硬件直接交互，延迟降至<10μs。需要UIO/VFIO将PCI BAR映射到用户空间。DPDK类似思路用于网络包处理。"
+      },
+      {
+        "heading": "关键结论",
+        "content": "1. SPDK实现NVMe-oF目标端延迟<100μs 2. 轮询导致CPU 100%使用率但延迟可预期 3. 需要hugepages减少页表开销 4. 适合延迟敏感场景(数据库、存储系统)"
+      },
+      {
+        "heading": "关联页面",
+        "content": "[[IO控制方式]] [[中断系统]] [[DMA直接存储器访问]]"
+      }
+    ]
+  },
+  {
+    "dir_name": "操作系统",
+    "file_stem": "进程间通信IPC",
+    "title": "进程间通信（IPC）机制全景",
+    "course": "操作系统",
+    "chapter": "进程管理",
+    "difficulty": "INTERMEDIATE",
+    "tags": [
+      "操作系统",
+      "IPC",
+      "管道",
+      "消息队列",
+      "共享内存",
+      "信号"
+    ],
+    "aliases": [
+      "Inter-Process Communication"
+    ],
+    "source": "Advanced Programming in the UNIX Environment (Stevens) 第15章; Linux man pages",
+    "sections": [
+      {
+        "heading": "核心定义",
+        "content": "IPC是进程间交换数据的机制。管道(Pipe)：半双工，用于父子进程通信。命名管道(FIFO)：有文件名，可用于无亲缘进程。消息队列：消息的有序链表，支持按类型选择接收。共享内存：最快IPC，多个进程映射同一物理内存区域。信号量(Semaphore)：进程间同步原语，P/V操作。信号(Signal)：异步通知机制。Socket：网络IPC，也可用于本地Unix Domain Socket。"
+      },
+      {
+        "heading": "关键结论",
+        "content": "1. 共享内存最快但需要额外同步机制 2. 管道适合流式数据，消息队列适合结构化数据 3. POSIX IPC vs System V IPC：POSIX更简洁但兼容性差 4. Unix Domain Socket性能优于TCP loopback"
+      },
+      {
+        "heading": "关联页面",
+        "content": "[[进程同步与互斥]] [[生产者消费者问题]] [[共享内存]]"
+      }
+    ]
+  },
+  {
+    "dir_name": "操作系统",
+    "file_stem": "页面置换算法综合",
+    "title": "页面置换算法综合比较",
+    "course": "操作系统",
+    "chapter": "内存管理",
+    "difficulty": "INTERMEDIATE",
+    "tags": [
+      "操作系统",
+      "页面置换",
+      "LRU",
+      "OPT",
+      "CLOCK",
+      "工作集"
+    ],
+    "aliases": [
+      "Page Replacement Algorithms"
+    ],
+    "source": "Operating System Concepts (Silberschatz) 第10章",
+    "sections": [
+      {
+        "heading": "核心定义",
+        "content": "当内存满时需选择淘汰页。OPT（最佳置换）：淘汰未来最远使用的页（理论最优，不可实现）。FIFO：淘汰最早调入的页（Belady异常：页框增多缺页反而增多）。LRU：淘汰最久未使用的页（可用栈或链表实现，开销大）。CLOCK（NRU近似LRU）：环形扫描，访问位=0的淘汰，经过时清0。改进CLOCK：增加修改位，优先淘汰未修改页。工作集模型：保持进程最近Δ次访问的页集合。"
+      },
+      {
+        "heading": "关键结论",
+        "content": "1. Belady异常仅存在于FIFO（LRU/OPT不会）2. CLOCK是实际系统最常用的近似LRU实现 3. 全局置换vs局部置换：前者允许剥夺其他进程的页框 4. 工作集策略同时解决缺页率和驻留集管理"
+      },
+      {
+        "heading": "关联页面",
+        "content": "[[分页存储管理]] [[缺页中断]] [[虚拟内存]] [[工作集模型]]"
+      }
+    ]
+  },
+  {
+    "dir_name": "操作系统",
+    "file_stem": "磁盘调度算法",
+    "title": "磁盘调度算法详解",
+    "course": "操作系统",
+    "chapter": "IO系统",
+    "difficulty": "INTERMEDIATE",
+    "tags": [
+      "操作系统",
+      "磁盘调度",
+      "SCAN",
+      "C-SCAN",
+      "电梯算法"
+    ],
+    "aliases": [
+      "Disk Scheduling"
+    ],
+    "source": "Operating System Concepts (Silberschatz) 第11章",
+    "sections": [
+      {
+        "heading": "核心定义",
+        "content": "磁盘调度算法优化磁头寻道顺序以减少平均寻道时间。FCFS：按请求顺序（公平但慢）。SSTF：最短寻道优先（可能饥饿）。SCAN（电梯算法）：磁头单向移动直到最外/内再反向，处理沿途请求。C-SCAN：单向处理到最外后立即回到最内（不处理返回路径），响应更均匀。LOOK/C-LOOK：到最远请求就返回而非到物理边界。现代SSD无寻道问题，调度重点变为IO合并和NCQ。"
+      },
+      {
+        "heading": "关键结论",
+        "content": "1. SSTF平均寻道时间最短但可能饥饿 2. SCAN适合负载均匀分布 3. C-SCAN提供更均匀的响应时间 4. 现代磁盘用NVMe/SATA NCQ原生命令队列，调度由固件完成"
+      },
+      {
+        "heading": "关联页面",
+        "content": "[[IO控制方式]] [[磁盘结构与性能]] [[IO系统概述]]"
+      }
+    ]
+  },
+  {
+    "dir_name": "操作系统",
+    "file_stem": "自旋锁与互斥锁对比",
+    "title": "自旋锁与互斥锁对比分析",
+    "course": "操作系统",
+    "chapter": "并发控制",
+    "difficulty": "INTERMEDIATE",
+    "tags": [
+      "操作系统",
+      "自旋锁",
+      "互斥锁",
+      "同步",
+      "spinlock"
+    ],
+    "aliases": [
+      "Spinlock vs Mutex"
+    ],
+    "source": "Linux Kernel Locking Documentation; Understanding the Linux Kernel (Bovet & Cesati)",
+    "sections": [
+      {
+        "heading": "核心定义",
+        "content": "自旋锁(spinlock)：线程忙等待（循环检查锁状态），不释放CPU。适用于临界区极短（<上下文切换开销）的场景。互斥锁(mutex)：线程等待时阻塞让出CPU，OS将其置入等待队列。适用于临界区较长的场景。两者核心差异：spinlock在等待期间消耗CPU但无上下文切换开销，mutex不消耗CPU但有调度开销。"
+      },
+      {
+        "heading": "关键结论",
+        "content": "1. 临界区<几次cache miss→spinlock；>几μs→mutex 2. spinlock持有者不能被抢占（否则其他CPU等它被调度回来）3. 中断上下文中只能用spinlock（不可睡眠）4. 读写锁(RW lock)允许多读者并发，写者独占"
+      },
+      {
+        "heading": "关联页面",
+        "content": "[[临界区]] [[互斥与同步机制]] [[信号量]] [[死锁]]"
+      }
+    ]
+  },
+  {
+    "dir_name": "操作系统",
+    "file_stem": "虚拟化技术对比",
+    "title": "虚拟化技术全景对比",
+    "course": "操作系统",
+    "chapter": "虚拟化与容器",
+    "difficulty": "INTERMEDIATE",
+    "tags": [
+      "操作系统",
+      "虚拟化",
+      "KVM",
+      "容器",
+      "VMware",
+      "Hypervisor"
+    ],
+    "aliases": [
+      "Virtualization Comparison"
+    ],
+    "source": "Hardware and Software Support for Virtualization (VMware/Intel/AMD技术文档)",
+    "sections": [
+      {
+        "heading": "核心定义",
+        "content": "虚拟化技术分为：Type-1 Hypervisor（裸金属）：直接运行在硬件上，如VMware ESXi、KVM（Linux内核即Hypervisor）、Xen、Hyper-V。Type-2 Hypervisor：运行在宿主机OS上，如VirtualBox、VMware Workstation。容器：OS级虚拟化，共享宿主机内核，如Docker、LXC、Podman。半虚拟化(Para-virtualization)：Guest OS需修改以配合Hypervisor，如Xen PV模式。硬件辅助虚拟化：Intel VT-x/AMD-V提供VMX/SVM指令。"
+      },
+      {
+        "heading": "关键结论",
+        "content": "1. KVM将Linux变为Type-1 Hypervisor（每个VM是一个QEMU进程）2. 容器启动毫秒级、VM启动秒级 3. VM隔离性强（独立内核），容器共享内核更轻量 4. 嵌套虚拟化支持(VM中的VM)"
+      },
+      {
+        "heading": "关联页面",
+        "content": "[[Docker容器技术]] [[Cgroups与容器资源隔离]] [[进程隔离]]"
+      }
+    ]
+  },
+  {
+    "dir_name": "操作系统",
+    "file_stem": "微内核与宏内核",
+    "title": "微内核与宏内核架构对比",
+    "course": "操作系统",
+    "chapter": "操作系统结构",
+    "difficulty": "ADVANCED",
+    "tags": [
+      "操作系统",
+      "微内核",
+      "宏内核",
+      "Minix",
+      "Mach",
+      "L4"
+    ],
+    "aliases": [
+      "Microkernel",
+      "Monolithic Kernel"
+    ],
+    "source": "Microkernel Construction (Liedtke); Tanenbaum-Torvalds Debate",
+    "sections": [
+      {
+        "heading": "核心定义",
+        "content": "宏内核(Monolithic)：整个OS运行在内核态，文件系统/网络栈/驱动都在内核中。Linux、Unix、Windows为宏内核。微内核(Microkernel)：内核态只保留最小必要功能（IPC、调度、地址空间管理），文件系统/驱动等运行在用户态服务进程。代表：Minix、QNX、seL4、Fuchsia(Zircon)。核心权衡：宏内核函数调用快但耦合高，微内核IPC开销大但隔离好。"
+      },
+      {
+        "heading": "关键结论",
+        "content": "1. 历史上的Tanenbaum-Torvalds辩论：微内核vs宏内核 2. L4微内核将IPC开销降到<100 cycle 3. macOS/iOS的XNU是混合内核（Mach微内核+BSD宏内核）4. Fuchsia(Zircon)是Google的现代微内核尝试"
+      },
+      {
+        "heading": "关联页面",
+        "content": "[[操作系统结构]] [[系统调用]] [[内核态与用户态]]"
+      }
+    ]
+  },
+  {
+    "dir_name": "操作系统",
+    "file_stem": "进程调度算法全景对比",
+    "title": "进程调度算法全景对比",
+    "course": "操作系统",
+    "chapter": "进程调度",
+    "difficulty": "BASIC",
+    "tags": [
+      "操作系统",
+      "调度",
+      "FCFS",
+      "SJF",
+      "RR",
+      "优先级"
+    ],
+    "aliases": [
+      "Scheduling Algorithms Comparison"
+    ],
+    "source": "Operating System Concepts (Silberschatz) 第6章",
+    "sections": [
+      {
+        "heading": "核心定义",
+        "content": "CPU调度是OS的核心功能。FCFS：先来先服务，非抢占，平均等待时间长（护航效应）。SJF：短作业优先，平均等待时间最小但需预知作业长度，有抢占(SRTF)和非抢占两种。优先级调度：每个进程分配优先级，可能饥饿（用老化aging解决）。RR：时间片轮转，响应时间好但周转差（时间片太小→频繁上下文切换，太大→退化为FCFS）。多级队列：进程分到不同优先级队列。"
+      },
+      {
+        "heading": "关键结论",
+        "content": "1. 平均等待时间：SJF < RR < FCFS 2. 响应时间：RR > SJF 3. 实际系统用MLFQ（自适应调度）4. 实时系统：硬实时用RMS/EDF，软实时用优先级调度"
+      },
+      {
+        "heading": "关联页面",
+        "content": "[[多级反馈队列调度MLFQ]] [[实时调度算法RMS与EDF]] [[进程控制块PCB]]"
+      }
+    ]
+  },
+  {
+    "dir_name": "操作系统",
+    "file_stem": "缺页中断处理流程",
+    "title": "缺页中断处理完整流程",
+    "course": "操作系统",
+    "chapter": "内存管理",
+    "difficulty": "INTERMEDIATE",
+    "tags": [
+      "操作系统",
+      "缺页中断",
+      "page fault",
+      "虚拟内存",
+      "换入换出"
+    ],
+    "aliases": [
+      "Page Fault Handling"
+    ],
+    "source": "Operating System Concepts (Silberschatz) 第10章; Linux内核mm/memory.c",
+    "sections": [
+      {
+        "heading": "核心定义",
+        "content": "缺页中断是当进程访问虚拟地址时，该页不在物理内存（页表项Present=0）触发的异常。处理流程：1.硬件陷入内核 2.保存上下文 3.检查虚地址合法性（是否在VMA范围内）4.查找空闲页框（无空闲则页面置换）5.从磁盘换入页面（或COW分配、零页填充、共享映射）6.更新页表项(设为Present) 7.刷新TLB 8.恢复上下文并重新执行指令。"
+      },
+      {
+        "heading": "关键结论",
+        "content": "1. 缺页中断类型：minor(无磁盘IO，如COW/共享映射)、major(需要磁盘IO)、invalid(段错误) 2. 内核通过vm_area_struct维护进程的合法地址空间 3. 预取(prefetch)可减少缺页：一次读入多页 4. TLB shootdown在多核场景需要IPI"
+      },
+      {
+        "heading": "关联页面",
+        "content": "[[虚拟内存]] [[分页存储管理]] [[页面置换算法综合]] [[TLB快表]]"
+      }
+    ]
+  },
+  {
+    "dir_name": "操作系统",
+    "file_stem": "伙伴系统BuddySystem",
+    "title": "伙伴系统（Buddy System）",
+    "course": "操作系统",
+    "chapter": "内存管理",
+    "difficulty": "INTERMEDIATE",
+    "tags": [
+      "操作系统",
+      "伙伴系统",
+      "BuddySystem",
+      "物理内存管理"
+    ],
+    "aliases": [
+      "Buddy System"
+    ],
+    "source": "Operating System Concepts (Silberschatz) 第10章; Linux内核mm/page_alloc.c",
+    "sections": [
+      {
+        "heading": "核心定义",
+        "content": "伙伴系统是Linux内核的物理页分配器。将物理内存划分为2^n个连续页的块。分配时找到满足请求的最小2^n块，必要时将大块分裂为两个'伙伴'。释放时检查伙伴是否空闲，若是则合并为更大的块，递归向上。伙伴的定义：两个大小相同、物理地址相邻、且起始地址对齐到块大小的块。"
+      },
+      {
+        "heading": "关键结论",
+        "content": "1. 分配/释放O(log n)复杂度 2. 外部碎片可控（所有空闲块大小都是2的幂）3. /proc/buddyinfo可查看当前伙伴状态 4. 内核以page->private记录order和伙伴信息"
+      },
+      {
+        "heading": "关联页面",
+        "content": "[[Slab分配器]] [[内存分配]] [[分页存储管理]]"
+      }
+    ]
+  },
+  {
+    "dir_name": "操作系统",
+    "file_stem": "上下文切换开销分析",
+    "title": "上下文切换的开销分析",
+    "course": "操作系统",
+    "chapter": "进程管理",
+    "difficulty": "INTERMEDIATE",
+    "tags": [
+      "操作系统",
+      "上下文切换",
+      "性能",
+      "调度开销"
+    ],
+    "aliases": [
+      "Context Switch Cost"
+    ],
+    "source": "Linux内核sched/core.c; Intel/AMD架构手册",
+    "sections": [
+      {
+        "heading": "核心定义",
+        "content": "上下文切换是CPU从一个进程/线程切换到另一个的过程。操作：保存当前上下文(PC、SP、寄存器、页表基址)→选择下一个进程(调度)→恢复其上下文→（可选）切换地址空间(CR3/TLB flush)。直接开销：保存/恢复寄存器(几十个cycle)+切换地址空间(TLB miss)。间接开销：冷缓存(cache miss)+TLB miss（可能数千cycle）。"
+      },
+      {
+        "heading": "关键结论",
+        "content": "1. 进程切换>线程切换（线程共享地址空间无需切换CR3）2. 虚拟化环境中切换开销更大（VM Exit→Hypervisor→VM Entry）3. 上下文切换频率过高(Ctxt/s)是性能杀手 4. Linux CFS通过时间片长度平衡切换开销和响应性"
+      },
+      {
+        "heading": "关联页面",
+        "content": "[[进程调度]] [[进程控制块PCB]] [[进程状态转换]]"
+      }
+    ]
+  },
+  {
+    "dir_name": "操作系统",
+    "file_stem": "LRU近似与CLOCK算法",
+    "title": "LRU近似算法与CLOCK",
+    "course": "操作系统",
+    "chapter": "内存管理",
+    "difficulty": "INTERMEDIATE",
+    "tags": [
+      "操作系统",
+      "LRU",
+      "CLOCK",
+      "页面置换",
+      "近似算法"
+    ],
+    "aliases": [
+      "CLOCK Algorithm"
+    ],
+    "source": "Operating System Concepts (Silberschatz) 第10章",
+    "sections": [
+      {
+        "heading": "核心定义",
+        "content": "精确LRU开销大（每次访问都要更新栈/链表），实际系统使用CLOCK近似算法。基本CLOCK：页表项有访问位(accessed bit)，缺页时循环扫描，访问位=1的置0并跳过，访问位=0的淘汰。改进CLOCK：增加修改位(dirty bit)，四类页：(0,0)最优淘汰、(0,1)次优(需写回)、(1,0)再次、(1,1)最后淘汰。两轮扫描：先找(0,0)，再找(0,1)并写回。"
+      },
+      {
+        "heading": "关键结论",
+        "content": "1. CLOCK的扫描指针在内存压力小时可能转一圈回到原位 2. 改进CLOCK比基本CLOCK减少不必要的写回磁盘 3. Linux的kswapd使用类似改进CLOCK的机制 4. 扫描策略需配合工作集模型确定驻留集大小"
+      },
+      {
+        "heading": "关联页面",
+        "content": "[[页面置换算法综合]] [[缺页中断处理流程]] [[工作集模型]]"
+      }
+    ]
+  },
+  {
+    "dir_name": "操作系统",
+    "file_stem": "信号量与P-V操作",
+    "title": "信号量与P-V操作",
+    "course": "操作系统",
+    "chapter": "同步与互斥",
+    "difficulty": "INTERMEDIATE",
+    "tags": [
+      "操作系统",
+      "信号量",
+      "PV操作",
+      "Dijkstra",
+      "同步"
+    ],
+    "aliases": [
+      "Semaphore"
+    ],
+    "source": "Cooperating Sequential Processes (Dijkstra 1965); Operating System Concepts (Silberschatz) 第6章",
+    "sections": [
+      {
+        "heading": "核心定义",
+        "content": "信号量是Dijkstra提出的经典同步原语。结构：整型计数器+等待队列。P操作(wait/proberen)：先减1，若<0则进程阻塞加入等待队列。V操作(signal/verhogen)：加1，若≤0则唤醒等待队列中的一个进程。二元信号量计数=0或1（等价于互斥锁）。计数信号量可控制多资源并发访问。"
+      },
+      {
+        "heading": "关键结论",
+        "content": "1. P/V必须是原子操作（关中断或使用硬件原子指令）2. 信号量vs互斥锁：信号量可用作条件同步（生产者-消费者）3. 信号量编程易错：顺序错误、遗忘V操作、死锁 4. POSIX信号量：sem_wait/sem_post，System V信号量功能更强但API复杂"
+      },
+      {
+        "heading": "关联页面",
+        "content": "[[临界区]] [[互斥与同步机制]] [[生产者消费者问题]] [[自旋锁与互斥锁对比]]"
+      }
+    ]
+  },
+  {
+    "dir_name": "操作系统",
+    "file_stem": "死锁检测与恢复",
+    "title": "死锁检测与恢复",
+    "course": "操作系统",
+    "chapter": "死锁",
+    "difficulty": "INTERMEDIATE",
+    "tags": [
+      "操作系统",
+      "死锁",
+      "死锁检测",
+      "资源分配图",
+      "死锁恢复"
+    ],
+    "aliases": [
+      "Deadlock Detection and Recovery"
+    ],
+    "source": "Operating System Concepts (Silberschatz) 第8章",
+    "sections": [
+      {
+        "heading": "核心定义",
+        "content": "死锁检测不预防也不避免死锁，而是允许系统进入死锁然后检测并恢复。检测方法：资源分配图化简——不断移除不阻塞的进程，若最终剩有进程则存在死锁。每种资源多实例时使用银行家算法的安全检查变体（检测算法）。检测频率取决于死锁发生频率和受影响进程数。恢复方法：进程终止（全部/逐个）、资源抢占（从某些进程抢占资源给死锁进程）。"
+      },
+      {
+        "heading": "关键结论",
+        "content": "1. 检测算法与银行家算法类似但方向不同（检测已有死锁而非判断安全性）2. 选择终止哪些进程：优先级最低、已运行时间最短、持有资源最少 3. 回滚代价高（需要checkpoint机制）4. 实际系统多用鸵鸟策略（不处理）+ 重启解决"
+      },
+      {
+        "heading": "关联页面",
+        "content": "[[死锁的四个必要条件]] [[银行家算法]] [[死锁预防]]"
+      }
+    ]
+  },
+  {
+    "dir_name": "数据结构",
+    "file_stem": "跳表SkipList",
+    "title": "跳表（Skip List）",
+    "course": "数据结构",
+    "chapter": "高级数据结构",
+    "difficulty": "ADVANCED",
+    "tags": [
+      "数据结构",
+      "跳表",
+      "概率数据结构",
+      "Redis"
+    ],
+    "aliases": [
+      "Skip List"
+    ],
+    "source": "Skip Lists: A Probabilistic Alternative to Balanced Trees (Pugh 1990); Redis ZSet实现",
+    "sections": [
+      {
+        "heading": "核心定义",
+        "content": "跳表是概率平衡的链表扩展，通过多层索引实现O(log n)查找。Redis ZSet用跳表实现。每层是有序链表，每个节点以概率p=0.5随机决定是否出现在上一层。期望高度log_2(n)，查找/插入/删除O(log n)，空间O(n)(期望2n)。"
+      },
+      {
+        "heading": "关键结论",
+        "content": "1. 相比平衡树：实现简单、支持范围查询、并发控制更容易 2. Redis ZSet=跳表(范围查询)+哈希表(O(1)成员查找) 3. 插入时random_level决定新节点层数"
+      },
+      {
+        "heading": "关联页面",
+        "content": "[[平衡二叉树-AVL]] [[B+树]] [[Redis数据结构]]"
+      }
+    ]
+  },
+  {
+    "dir_name": "数据结构",
+    "file_stem": "布隆过滤器",
+    "title": "布隆过滤器（Bloom Filter）",
+    "course": "数据结构",
+    "chapter": "高级数据结构",
+    "difficulty": "INTERMEDIATE",
+    "tags": [
+      "数据结构",
+      "布隆过滤器",
+      "哈希",
+      "概率数据结构"
+    ],
+    "aliases": [
+      "Bloom Filter"
+    ],
+    "source": "Space/Time Trade-offs in Hash Coding with Allowable Errors (Bloom 1970); RedisBloom模块",
+    "sections": [
+      {
+        "heading": "核心定义",
+        "content": "布隆过滤器是空间高效的概率性数据结构，判断元素是否在集合中。可能误判(FPR)，但不会漏判。结构：m位比特数组+k个独立哈希函数。假阳性率p≈(1-e^(-kn/m))^k，最优k=(m/n)·ln2。应用：缓存穿透防护、爬虫URL去重、拼写检查。"
+      },
+      {
+        "heading": "关键结论",
+        "content": "1. 空间效率是哈希表的1/10~1/100 2. 不可删除(Counting Bloom Filter可以) 3. Google Bigtable、Apache HBase、Cassandra都使用Bloom Filter"
+      },
+      {
+        "heading": "关联页面",
+        "content": "[[哈希表-开放定址法]] [[哈希冲突解决]]"
+      }
+    ]
+  },
+  {
+    "dir_name": "数据结构",
+    "file_stem": "线段树SegmentTree",
+    "title": "线段树（Segment Tree）",
+    "course": "数据结构",
+    "chapter": "高级数据结构",
+    "difficulty": "ADVANCED",
+    "tags": [
+      "数据结构",
+      "线段树",
+      "区间查询",
+      "RMQ",
+      "懒标记"
+    ],
+    "aliases": [
+      "Segment Tree"
+    ],
+    "source": "Introduction to Algorithms (CLRS) 第14章; Competitive Programming (Halim)",
+    "sections": [
+      {
+        "heading": "核心定义",
+        "content": "线段树是二叉树结构，每个节点代表一个区间。用于区间查询（和/最小值/最大值/gcd）和区间更新。根节点覆盖[0,n-1]，叶子节点是单个元素。构建O(n)、查询O(log n)、更新O(log n)，空间O(4n)。懒标记(lazy propagation)支持区间更新（将更新推迟到真正需要时下推）。"
+      },
+      {
+        "heading": "关键结论",
+        "content": "1. 相比树状数组，支持更多区间操作（区间查询+更新+自定义合并）2. 动态开点节省空间 3. 持久化线段树支持查询历史版本"
+      },
+      {
+        "heading": "关联页面",
+        "content": "[[树状数组Fenwick]] [[树]] [[二叉树]]"
+      }
+    ]
+  },
+  {
+    "dir_name": "数据结构",
+    "file_stem": "树状数组Fenwick",
+    "title": "树状数组（Fenwick Tree）",
+    "course": "数据结构",
+    "chapter": "高级数据结构",
+    "difficulty": "INTERMEDIATE",
+    "tags": [
+      "数据结构",
+      "树状数组",
+      "Fenwick",
+      "BIT",
+      "前缀和"
+    ],
+    "aliases": [
+      "Binary Indexed Tree",
+      "Fenwick Tree"
+    ],
+    "source": "A New Data Structure for Cumulative Frequency Tables (Fenwick 1994); Competitive Programming",
+    "sections": [
+      {
+        "heading": "核心定义",
+        "content": "树状数组（BIT）用数组模拟树结构，支持前缀和查询和单点更新O(log n)，空间O(n)。核心操作：lowbit(x)=x&-x（取二进制最低位的1）。更新：从i开始，每次i+=lowbit(i)。查询：从i开始，每次i-=lowbit(i)。比线段树代码量少且常数小，但功能更受限。"
+      },
+      {
+        "heading": "关键结论",
+        "content": "1. 不支持区间更新（除非用差分数组技巧）2. 轻松扩展到二维(RMQ) 3. lowbit是理解BIT的核心 4. 适用：动态前缀和、求逆序对、二维偏序"
+      },
+      {
+        "heading": "关联页面",
+        "content": "[[线段树SegmentTree]] [[前缀和]] [[逆序对问题]]"
+      }
+    ]
+  },
+  {
+    "dir_name": "数据结构",
+    "file_stem": "红黑树RBT",
+    "title": "红黑树（Red-Black Tree）",
+    "course": "数据结构",
+    "chapter": "高级数据结构",
+    "difficulty": "ADVANCED",
+    "tags": [
+      "数据结构",
+      "红黑树",
+      "平衡树",
+      "STL",
+      "TreeMap"
+    ],
+    "aliases": [
+      "Red-Black Tree"
+    ],
+    "source": "Introduction to Algorithms (CLRS) 第13章; A Dichromatic Framework for Balanced Trees (Guibas & Sedgewick 1978)",
+    "sections": [
+      {
+        "heading": "核心定义",
+        "content": "红黑树是自平衡二叉搜索树，满足五条性质：1.节点红或黑 2.根为黑 3.叶子(NIL)为黑 4.红节点的子节点必黑（无连续红）5.任一节点到其所有后代叶子的黑高相等。最坏高度≤2log(n+1)，查找/插入/删除均O(log n)。C++ std::map、Java TreeMap、Linux CFS调度器均使用红黑树。"
+      },
+      {
+        "heading": "关键结论",
+        "content": "1. 旋转次数少于AVL（插入最多2次旋转），适合频繁插入删除 2. 红黑树的五条性质保证了近似平衡 3. 左倾红黑树(LLRB)用2-3树类比简化实现 4. Linux CFS用红黑树按vruntime组织进程"
+      },
+      {
+        "heading": "关联页面",
+        "content": "[[平衡二叉树-AVL]] [[二叉搜索树]] [[B+树]]"
+      }
+    ]
+  },
+  {
+    "dir_name": "数据结构",
+    "file_stem": "KMP字符串匹配",
+    "title": "KMP字符串匹配算法",
+    "course": "数据结构",
+    "chapter": "字符串",
+    "difficulty": "INTERMEDIATE",
+    "tags": [
+      "数据结构",
+      "KMP",
+      "字符串匹配",
+      "next数组"
+    ],
+    "aliases": [
+      "Knuth-Morris-Pratt Algorithm"
+    ],
+    "source": "Fast Pattern Matching in Strings (Knuth, Morris, Pratt 1977)",
+    "sections": [
+      {
+        "heading": "核心定义",
+        "content": "KMP是线性时间的字符串匹配算法，O(n+m)。核心思想：利用部分匹配信息避免回退，构建next数组（失配时模式串应跳转的位置）。next[j]=k：在pattern[0..j-1]中，长度为k的前缀等于长度为k的后缀。匹配过程中主串指针i不回退，只移动模式串指针j。"
+      },
+      {
+        "heading": "关键结论",
+        "content": "1. next数组的构建本身也是一个KMP匹配过程（模式串匹配自身）2. 优化的nextval可跳过相同字符的重复比较 3. BM和Sunday算法在实际中常数更优但最坏仍是O(nm)"
+      },
+      {
+        "heading": "代码示例",
+        "content": "```python\ndef kmp(s, p):\n    nxt = [0] * len(p)\n    j = 0\n    for i in range(1, len(p)):\n        while j > 0 and p[i] != p[j]: j = nxt[j-1]\n        if p[i] == p[j]: j += 1\n        nxt[i] = j\n    j = 0\n    for i in range(len(s)):\n        while j > 0 and s[i] != p[j]: j = nxt[j-1]\n        if s[i] == p[j]: j += 1\n        if j == len(p): return i - j + 1\n    return -1\n```"
+      },
+      {
+        "heading": "关联页面",
+        "content": "[[字符串匹配算法对比]] [[文本检索]]"
+      }
+    ]
+  },
+  {
+    "dir_name": "数据结构",
+    "file_stem": "字典树Trie",
+    "title": "字典树（Trie）",
+    "course": "数据结构",
+    "chapter": "字符串",
+    "difficulty": "INTERMEDIATE",
+    "tags": [
+      "数据结构",
+      "Trie",
+      "字典树",
+      "前缀树",
+      "自动补全"
+    ],
+    "aliases": [
+      "Prefix Tree"
+    ],
+    "source": "Algorithms on Strings, Trees, and Sequences (Gusfield); 算法导论",
+    "sections": [
+      {
+        "heading": "核心定义",
+        "content": "Trie（字典树/前缀树）是用于存储字符串集合的树形结构。每个节点代表一个字符串前缀，边代表添加一个字符。根节点为空串。插入和查找O(L)（L为字符串长度）。应用：自动补全、IP路由（最长前缀匹配）、拼写检查、词频统计。压缩Trie：合并单子节点路径减少节点数。AC自动机：KMP+Trie多模式匹配。"
+      },
+      {
+        "heading": "关键结论",
+        "content": "1. 空间换时间，节点数可到O(总字符数) 2. 孩子表示法用哈希表(灵活)或定长数组(快但费空间) 3. 基数树(Radix Tree)合并单子节点节省空间 4. 双数组Trie在中文分词中广泛使用"
+      },
+      {
+        "heading": "关联页面",
+        "content": "[[哈希表-开放定址法]] [[字符串匹配]] [[自动机理论]]"
+      }
+    ]
+  },
+  {
+    "dir_name": "数据结构",
+    "file_stem": "最短路径Dijkstra",
+    "title": "最短路径算法（Dijkstra）",
+    "course": "数据结构",
+    "chapter": "图论",
+    "difficulty": "INTERMEDIATE",
+    "tags": [
+      "数据结构",
+      "Dijkstra",
+      "最短路径",
+      "贪心",
+      "优先队列"
+    ],
+    "aliases": [
+      "Dijkstra's Algorithm"
+    ],
+    "source": "A Note on Two Problems in Connection with Graphs (Dijkstra 1959); Introduction to Algorithms (CLRS) 第24章",
+    "sections": [
+      {
+        "heading": "核心定义",
+        "content": "Dijkstra算法解决非负权图的单源最短路径问题。贪心策略：每次从未确定最短距离的顶点中选择距离最小的，松弛其所有邻边。朴素实现O(V²)，二叉堆优化O((V+E)log V)，斐波那契堆优化O(E+V log V)。不能处理负权边（负权边需要用Bellman-Ford）。"
+      },
+      {
+        "heading": "关键结论",
+        "content": "1. Dijkstra的关键是不存在负权边（贪心选择性质成立）2. 稠密图(E≈V²)用朴素数组，稀疏图用堆 3. 扩展：双向Dijkstra加速点对点查询 4. A*算法是Dijkstra的启发式推广"
+      },
+      {
+        "heading": "关联页面",
+        "content": "[[最小生成树]] [[拓扑排序]] [[图遍历BFS与DFS]]"
+      }
+    ]
+  },
+  {
+    "dir_name": "数据结构",
+    "file_stem": "并查集UnionFind",
+    "title": "并查集（Disjoint Set Union）",
+    "course": "数据结构",
+    "chapter": "高级数据结构",
+    "difficulty": "INTERMEDIATE",
+    "tags": [
+      "数据结构",
+      "并查集",
+      "DSU",
+      "路径压缩",
+      "按秩合并"
+    ],
+    "aliases": [
+      "Union-Find",
+      "Disjoint Set Union"
+    ],
+    "source": "Efficiency of a Good But Not Linear Set Union Algorithm (Tarjan 1975); Introduction to Algorithms (CLRS) 第21章",
+    "sections": [
+      {
+        "heading": "核心定义",
+        "content": "并查集维护不相交集合，支持Union(合并)和Find(查找所属集合)操作。优化：路径压缩（Find时将查找路径上所有节点直接挂到根下）和按秩合并（Union时将矮树挂到高树下）。两者同时使用时均摊时间复杂度O(α(n))，其中α是反阿克曼函数（实际<5）。"
+      },
+      {
+        "heading": "关键结论",
+        "content": "1. α(n)在可观测宇宙范围内≤4，近乎O(1) 2. 只有路径压缩或只有按秩合并是O(log n) 3. 应用：Kruskal MST、连通分量、等价关系"
+      },
+      {
+        "heading": "代码示例",
+        "content": "```python\nclass DSU:\n    def __init__(self, n):\n        self.p = list(range(n))\n        self.r = [0] * n\n    def find(self, x):\n        if self.p[x] != x:\n            self.p[x] = self.find(self.p[x])\n        return self.p[x]\n    def union(self, x, y):\n        x, y = self.find(x), self.find(y)\n        if x == y: return\n        if self.r[x] < self.r[y]: x, y = y, x\n        self.p[y] = x\n        if self.r[x] == self.r[y]: self.r[x] += 1\n```"
+      },
+      {
+        "heading": "关联页面",
+        "content": "[[最小生成树]] [[连通分量]] [[图论基础]]"
+      }
+    ]
+  },
+  {
+    "dir_name": "数据结构",
+    "file_stem": "堆与优先队列",
+    "title": "堆与优先队列",
+    "course": "数据结构",
+    "chapter": "基础数据结构",
+    "difficulty": "INTERMEDIATE",
+    "tags": [
+      "数据结构",
+      "堆",
+      "优先队列",
+      "二叉堆",
+      "堆排序"
+    ],
+    "aliases": [
+      "Heap",
+      "Priority Queue"
+    ],
+    "source": "Introduction to Algorithms (CLRS) 第6章",
+    "sections": [
+      {
+        "heading": "核心定义",
+        "content": "堆是完全二叉树满足堆序性质：父节点≤子节点（最小堆）或父节点≥子节点（最大堆）。二叉堆用数组实现（i的左子2i+1，右子2i+2，父(i-1)//2）。插入(O(log n))：放入末尾然后上滤(sift-up)。删除堆顶(O(log n))：取末尾元素放堆顶然后下滤(sift-down)。建堆(O(n))：从最后一个非叶节点开始向前下滤。"
+      },
+      {
+        "heading": "关键结论",
+        "content": "1. 二叉堆vs斐波那契堆：前者常数小适合简单场景，后者理论更优但常数大 2. 优先队列=Dijkstra/任务调度的基础 3. Python heapq提供最小堆，最大堆需取反 4. 堆排序O(n log n)原地但缓存不友好"
+      },
+      {
+        "heading": "关联页面",
+        "content": "[[堆排序]] [[最短路径Dijkstra]] [[哈夫曼编码]]"
+      }
+    ]
+  },
+  {
+    "dir_name": "数据结构",
+    "file_stem": "图遍历BFS与DFS",
+    "title": "图遍历（BFS与DFS）",
+    "course": "数据结构",
+    "chapter": "图论",
+    "difficulty": "BASIC",
+    "tags": [
+      "数据结构",
+      "BFS",
+      "DFS",
+      "图遍历",
+      "连通分量"
+    ],
+    "aliases": [
+      "Breadth-First Search",
+      "Depth-First Search"
+    ],
+    "source": "Introduction to Algorithms (CLRS) 第22章",
+    "sections": [
+      {
+        "heading": "核心定义",
+        "content": "BFS(广度优先搜索)：使用队列，按距离逐层访问节点，得到最短路径（无权图）。时间复杂度O(V+E)。应用：最短路径、连通分量、二分图检测。DFS(深度优先搜索)：使用栈（递归），沿路径深入直到无法继续再回溯。记录发现时间d[v]和完成时间f[v]。边的分类：树边、回边、前向边、交叉边。"
+      },
+      {
+        "heading": "关键结论",
+        "content": "1. BFS求最短路径（无权图），DFS不适合求最短路径 2. DFS的括号结构(finish time)是拓扑排序和SCC的基础 3. 图太大时用迭代DFS避免栈溢出 4. 双向BFS可显著加速（分支因子减半）"
+      },
+      {
+        "heading": "关联页面",
+        "content": "[[最短路径Dijkstra]] [[拓扑排序]] [[强连通分量]] [[图和图的基本概念]]"
+      }
+    ]
+  },
+  {
+    "dir_name": "数据结构",
+    "file_stem": "平衡二叉树AVL",
+    "title": "AVL树旋转操作详解",
+    "course": "数据结构",
+    "chapter": "高级数据结构",
+    "difficulty": "INTERMEDIATE",
+    "tags": [
+      "数据结构",
+      "AVL",
+      "平衡二叉树",
+      "旋转",
+      "平衡因子"
+    ],
+    "aliases": [
+      "AVL Tree"
+    ],
+    "source": "An Algorithm for the Organization of Information (Adelson-Velsky & Landis 1962)",
+    "sections": [
+      {
+        "heading": "核心定义",
+        "content": "AVL树是最早的自平衡BST，定义平衡因子BF=左子树高-右子树高，|BF|≤1。四种旋转：LL(右单旋)：左子树的左子树插入导致不平衡。RR(左单旋)：右子树的右子树插入导致不平衡。LR(先左后右)：左子树的右子树插入导致不平衡。RL(先右后左)：右子树的左子树插入导致不平衡。"
+      },
+      {
+        "heading": "关键结论",
+        "content": "1. 插入最多2次旋转（LR/RL需两次），删除可能需要O(log n)次旋转 2. AVL比红黑树更严格平衡→查找更快但插入删除旋转更多 3. 适合查找远多于插入删除的场景 4. 实际工程中红黑树更常见"
+      },
+      {
+        "heading": "关联页面",
+        "content": "[[红黑树RBT]] [[二叉搜索树]] [[2-3树与B树]]"
+      }
+    ]
+  },
+  {
+    "dir_name": "数据结构",
+    "file_stem": "最小生成树MST",
+    "title": "最小生成树（Prim与Kruskal）",
+    "course": "数据结构",
+    "chapter": "图论",
+    "difficulty": "INTERMEDIATE",
+    "tags": [
+      "数据结构",
+      "最小生成树",
+      "Prim",
+      "Kruskal",
+      "MST"
+    ],
+    "aliases": [
+      "Minimum Spanning Tree"
+    ],
+    "source": "Introduction to Algorithms (CLRS) 第23章",
+    "sections": [
+      {
+        "heading": "核心定义",
+        "content": "最小生成树是连接图中所有顶点的权值最小的无环子图。Kruskal算法：按边权排序，贪心选取不构成环的边。使用并查集判环，O(E log E)。适合稀疏图。Prim算法：从任意顶点开始，每次选择与当前树相连的最小权边对应的顶点加入。用优先队列O((V+E)log V)。适合稠密图。"
+      },
+      {
+        "heading": "关键结论",
+        "content": "1. 权值都不同时MST唯一 2. Kruskal适用于边少（稀疏图），Prim适用于边多（稠密图）3. MST的割性质和环性质是正确性基础 4. 应用：网络布线、聚类分析、近似TSP"
+      },
+      {
+        "heading": "关联页面",
+        "content": "[[并查集UnionFind]] [[最短路径Dijkstra]] [[图论基础]]"
+      }
+    ]
+  },
+  {
+    "dir_name": "数据结构",
+    "file_stem": "拓扑排序",
+    "title": "拓扑排序与AOV网",
+    "course": "数据结构",
+    "chapter": "图论",
+    "difficulty": "INTERMEDIATE",
+    "tags": [
+      "数据结构",
+      "拓扑排序",
+      "AOV",
+      "DAG",
+      "课程安排"
+    ],
+    "aliases": [
+      "Topological Sort"
+    ],
+    "source": "Introduction to Algorithms (CLRS) 第22章",
+    "sections": [
+      {
+        "heading": "核心定义",
+        "content": "拓扑排序是将有向无环图(DAG)的所有顶点排成线性序列，使得对每条有向边(u,v)，u在序列中排在v之前。Kahn算法(BFS)：不断移除入度为0的节点加入序列，O(V+E)。DFS算法：节点按完成时间逆序排列即为拓扑排序。应用：依赖解析、课程安排、构建系统(Makefile)、编译顺序。"
+      },
+      {
+        "heading": "关键结论",
+        "content": "1. 有环图不存在拓扑排序 2. Kahn算法可检测环（结束后仍有入度>0的节点）3. 拓扑序列不唯一 4. 关键路径CPM基于拓扑排序"
+      },
+      {
+        "heading": "关联页面",
+        "content": "[[图遍历BFS与DFS]] [[图论基础]] [[最短路径Dijkstra]]"
+      }
+    ]
+  },
+  {
+    "dir_name": "数据结构",
+    "file_stem": "哈希一致性哈希",
+    "title": "一致性哈希（Consistent Hashing）",
+    "course": "数据结构",
+    "chapter": "分布式系统",
+    "difficulty": "ADVANCED",
+    "tags": [
+      "数据结构",
+      "一致性哈希",
+      "分布式",
+      "负载均衡",
+      "哈希环"
+    ],
+    "aliases": [
+      "Consistent Hashing"
+    ],
+    "source": "Consistent Hashing and Random Trees (Karger 1997); Dynamo (Amazon 2007)",
+    "sections": [
+      {
+        "heading": "核心定义",
+        "content": "一致性哈希解决分布式系统中节点动态增减时的数据重新分配问题。将哈希空间映射到环[0, 2^32-1]，节点和数据都哈希到环上。数据分配给环上顺时针第一个节点。节点增减时只影响相邻节点的数据（而非所有数据）。虚拟节点：每个物理节点映射到环上多个位置，提高负载均衡性。"
+      },
+      {
+        "heading": "关键结论",
+        "content": "1. 传统哈希（mod N）增减节点导致几乎所有数据重分配 2. 一致性哈希增减节点只影响约1/N的数据 3. 虚拟节点越多负载越均衡但内存开销大 4. 应用：Memcached、Redis Cluster、DynamoDB、CDN"
+      },
+      {
+        "heading": "关联页面",
+        "content": "[[哈希冲突解决]] [[分布式哈希表DHT]] [[负载均衡]]"
+      }
+    ]
+  },
+  {
+    "dir_name": "数据结构",
+    "file_stem": "强连通分量SCC",
+    "title": "强连通分量与Kosaraju算法",
+    "course": "数据结构",
+    "chapter": "图论",
+    "difficulty": "ADVANCED",
+    "tags": [
+      "数据结构",
+      "SCC",
+      "强连通分量",
+      "Kosaraju",
+      "Tarjan"
+    ],
+    "aliases": [
+      "Strongly Connected Component"
+    ],
+    "source": "Introduction to Algorithms (CLRS) 第22章",
+    "sections": [
+      {
+        "heading": "核心定义",
+        "content": "强连通分量是有向图中的极大子图，其中任意两顶点互相可达。Kosaraju算法O(V+E)：1.对原图做DFS，按完成时间入栈 2.反转所有边(转置图) 3.按出栈顺序在转置图上做DFS，每棵DFS树为一个SCC。Tarjan算法一次DFS即可，用dfn和low数组判断SCC根。应用：2-SAT、社交网络群体发现。"
+      },
+      {
+        "heading": "关键结论",
+        "content": "1. SCC的逆拓扑序构成一个DAG（凝聚图）2. Kosaraju两遍DFS简洁易懂，Tarjan一遍DFS更高效 3. 有向图至少有一个源SCC和一个汇SCC 4. 2-SAT问题可线性求解归约为SCC"
+      },
+      {
+        "heading": "关联页面",
+        "content": "[[图遍历BFS与DFS]] [[拓扑排序]] [[图论基础]]"
+      }
+    ]
+  },
+  {
+    "dir_name": "数据结构",
+    "file_stem": "B树与B+树",
+    "title": "B树与B+树全面对比",
+    "course": "数据结构",
+    "chapter": "高级数据结构",
+    "difficulty": "INTERMEDIATE",
+    "tags": [
+      "数据结构",
+      "B树",
+      "B+树",
+      "索引",
+      "数据库",
+      "文件系统"
+    ],
+    "aliases": [
+      "B-Tree",
+      "B+Tree"
+    ],
+    "source": "Introduction to Algorithms (CLRS) 第18章; The Ubiquitous B-Tree (Comer 1979)",
+    "sections": [
+      {
+        "heading": "核心定义",
+        "content": "B树是平衡多路搜索树，每个节点可以有多个键和子节点。m阶B树性质：每个节点最多m-1个键和m个子节点，根至少1个键，非根节点至少⌈m/2⌉-1个键，所有叶子在同一层。B+树变体：所有键值存于叶子节点，内部节点只存索引。叶子节点通过链表连接支持范围查询。"
+      },
+      {
+        "heading": "关键结论",
+        "content": "1. B+树扇出更大（内节点不存数据）→树更矮→IO更少 2. B+树叶子链表天然支持范围查询，B树需要中序遍历 3. B+树是数据库索引的标准结构（MySQL InnoDB、PostgreSQL）4. B树更适合键值直接存于内部节点的场景"
+      },
+      {
+        "heading": "关联页面",
+        "content": "[[B+树存储引擎]] [[红黑树RBT]] [[数据库索引设计]]"
+      }
+    ]
+  },
+  {
+    "dir_name": "数据结构",
+    "file_stem": "LRU缓存实现",
+    "title": "LRU缓存设计与实现",
+    "course": "数据结构",
+    "chapter": "高级数据结构",
+    "difficulty": "INTERMEDIATE",
+    "tags": [
+      "数据结构",
+      "LRU",
+      "缓存",
+      "哈希链表"
+    ],
+    "aliases": [
+      "LRU Cache"
+    ],
+    "source": "LeetCode 146; Redis LRU实现; 操作系统",
+    "sections": [
+      {
+        "heading": "核心定义",
+        "content": "LRU(Least Recently Used)缓存淘汰策略：当缓存满时淘汰最久未使用的条目。实现：哈希表+双向链表。哈希表提供O(1)查找，双向链表维护访问顺序。get：查找并移到链表头部。put：插入到头部，若满则删除尾部节点。Python可用collections.OrderedDict。Redis使用近似LRU（采样n个键淘汰其中最久未使用的）。"
+      },
+      {
+        "heading": "关键结论",
+        "content": "1. Java LinkedHashMap可一行实现LRU(accessOrder=true+removeEldestEntry) 2. 真实系统用近似LRU避免维护精确顺序的开销 3. LFU(最不频繁使用)是另一种常见策略"
+      },
+      {
+        "heading": "关联页面",
+        "content": "[[页面置换算法综合]] [[Redis数据结构]] [[哈希表-开放定址法]]"
+      }
+    ]
+  },
+  {
+    "dir_name": "数据结构",
+    "file_stem": "哈夫曼编码",
+    "title": "哈夫曼编码与数据压缩",
+    "course": "数据结构",
+    "chapter": "应用",
+    "difficulty": "BASIC",
+    "tags": [
+      "数据结构",
+      "哈夫曼",
+      "编码",
+      "压缩",
+      "贪心"
+    ],
+    "aliases": [
+      "Huffman Coding"
+    ],
+    "source": "A Method for the Construction of Minimum-Redundancy Codes (Huffman 1952)",
+    "sections": [
+      {
+        "heading": "核心定义",
+        "content": "哈夫曼编码是最优前缀码（任何编码不是另一个编码的前缀），用于数据压缩。算法：1.统计字符频率 2.将每个字符作为单节点树放入优先队列（按频率）3.每次取最小频率的两棵树合并为新树（频率=两树频率之和）4.重复直到只剩一棵树 5.左分支赋值0右分支赋值1，从根到叶的路径即为编码。"
+      },
+      {
+        "heading": "关键结论",
+        "content": "1. 哈夫曼编码是最优前缀码（平均码长最短）2. 频率高的字符编码更短 3. 需要传递编码树(可传递频率表让接收端重建) 4. DEFLATE(LZ77+哈夫曼)用于ZIP/gzip/PNG"
+      },
+      {
+        "heading": "关联页面",
+        "content": "[[堆与优先队列]] [[树]] [[二叉树]]"
+      }
+    ]
+  },
+  {
+    "dir_name": "数据结构",
+    "file_stem": "背包问题DP",
+    "title": "背包问题（0-1背包与完全背包）",
+    "course": "数据结构",
+    "chapter": "动态规划",
+    "difficulty": "INTERMEDIATE",
+    "tags": [
+      "数据结构",
+      "背包",
+      "DP",
+      "动态规划",
+      "组合优化"
+    ],
+    "aliases": [
+      "Knapsack Problem"
+    ],
+    "source": "Introduction to Algorithms (CLRS); Programming Pearls (Bentley)",
+    "sections": [
+      {
+        "heading": "核心定义",
+        "content": "0-1背包：容量W，n个物品各重w[i]值v[i]，每件选或不选，求最大总价值。dp[i][j]=前i件物品容量j的最大价值=max(dp[i-1][j], dp[i-1][j-w[i]]+v[i])。可压缩为一维dp（j从大到小遍历）。完全背包：每件物品无限取。dp[i][j]=max(dp[i-1][j], dp[i][j-w[i]]+v[i])（一维时j从小到大）。"
+      },
+      {
+        "heading": "关键结论",
+        "content": "1. 0-1背包一维倒序，完全背包一维正序——方向区别是核心 2. 多重背包可用二进制拆分优化为O(nW log m) 3. 分组背包、混合背包、二维费用背包等变体 4. 背包DP的状态定义模式可迁移到许多问题"
+      },
+      {
+        "heading": "关联页面",
+        "content": "[[动态规划]] [[动态规划方法论]]"
+      }
+    ]
+  },
+  {
+    "dir_name": "计算机网络",
+    "file_stem": "TCP头格式详解",
+    "title": "TCP头格式详解",
+    "course": "计算机网络",
+    "chapter": "传输层",
+    "difficulty": "INTERMEDIATE",
+    "tags": [
+      "计算机网络",
+      "TCP",
+      "传输层",
+      "报文格式"
+    ],
+    "aliases": [
+      "TCP Header"
+    ],
+    "source": "RFC 793 (TCP); RFC 7323 (TCP Extensions)",
+    "sections": [
+      {
+        "heading": "核心定义",
+        "content": "TCP头部固定20字节(不含选项)：Source/Dest Port各16位、Sequence Number(32位，本报文段首字节序号)、ACK Number(32位，期望收到对方的下一个字节序号)、Data Offset(4位，头部长度/4)、控制标志URG/ACK/PSH/RST/SYN/FIN(各1位)、Window Size(16位，接收窗口)、Checksum(16位，含伪首部)、Urgent Pointer(16位)。选项最长40字节：MSS、窗口缩放、时间戳、SACK等。"
+      },
+      {
+        "heading": "关键结论",
+        "content": "1. Seq和ACK Number都是字节序号不是报文序号 2. SYN和FIN各占一个序号 3. Window Size最大65535，窗口缩放选项可扩展到1GB 4. TCP伪首部包括源/目的IP+协议号+TCP长度防止路由错误"
+      },
+      {
+        "heading": "关联页面",
+        "content": "[[TCP三次握手]] [[TCP四次挥手]] [[TCP流量控制]] [[TCP拥塞控制]]"
+      }
+    ]
+  },
+  {
+    "dir_name": "计算机网络",
+    "file_stem": "DNS解析全过程",
+    "title": "DNS解析全过程",
+    "course": "计算机网络",
+    "chapter": "应用层",
+    "difficulty": "BASIC",
+    "tags": [
+      "计算机网络",
+      "DNS",
+      "域名解析",
+      "应用层"
+    ],
+    "aliases": [
+      "DNS Resolution"
+    ],
+    "source": "RFC 1034; RFC 1035",
+    "sections": [
+      {
+        "heading": "核心定义",
+        "content": "DNS将域名转换为IP地址。解析顺序：浏览器缓存→OS hosts文件→本地DNS服务器→根域名服务器(.)→顶级域名服务器(.com/.org)→权威DNS服务器。递归查询：客户端→本地DNS→根→顶级→权威，层层代为查询。迭代查询：本地DNS逐个向根、顶级、权威查询。DNS使用UDP端口53(≤512字节)和TCP端口53(区域传送/大响应)。"
+      },
+      {
+        "heading": "关键结论",
+        "content": "1. 根服务器全球13组(A-M)，采用Anycast 2. DNS劫持/DNS污染是常见安全问题 3. DNSSEC通过数字签名防止DNS欺骗 4. DNS over HTTPS(DoH)和DNS over TLS(DoT)加密DNS查询"
+      },
+      {
+        "heading": "关联页面",
+        "content": "[[DNS域名系统]] [[HTTP协议基础]] [[HTTPS安全超文本传输协议]]"
+      }
+    ]
+  },
+  {
+    "dir_name": "计算机网络",
+    "file_stem": "QUIC协议原理",
+    "title": "QUIC协议原理",
+    "course": "计算机网络",
+    "chapter": "传输层",
+    "difficulty": "ADVANCED",
+    "tags": [
+      "计算机网络",
+      "QUIC",
+      "HTTP3",
+      "UDP",
+      "传输层"
+    ],
+    "aliases": [
+      "Quick UDP Internet Connections"
+    ],
+    "source": "RFC 9000 (QUIC); RFC 9114 (HTTP/3); Google QUIC设计文档",
+    "sections": [
+      {
+        "heading": "核心定义",
+        "content": "QUIC是基于UDP的下一代传输协议，HTTP/3的底层。核心改进：0-RTT握手（缓存server config后首次连接0-RTT）、多路复无用流ID替代TCP序列号消除队头阻塞(HOL blocking)、连接迁移用Connection ID而非四元组(切换WiFi/4G不断连)、内置TLS 1.3加密(无明文握手)。"
+      },
+      {
+        "heading": "关键结论",
+        "content": "1. QUIC在用户态实现了TCP+TLS+HTTP/2多路复用融合 2. 队头阻塞消除是最大优势——TCP丢一个包阻塞整个连接，QUIC只阻塞该流 3. 已在Google/YouTube/CDN大量部署 4. 拥塞控制算法可插拔(NewReno/Cubic/BBR)"
+      },
+      {
+        "heading": "关联页面",
+        "content": "[[TCP拥塞控制]] [[HTTP2与HTTP3对比]] [[TLS安全协议]]"
+      }
+    ]
+  },
+  {
+    "dir_name": "计算机网络",
+    "file_stem": "TCP拥塞控制算法演化",
+    "title": "TCP拥塞控制算法演化史",
+    "course": "计算机网络",
+    "chapter": "传输层",
+    "difficulty": "ADVANCED",
+    "tags": [
+      "计算机网络",
+      "TCP",
+      "拥塞控制",
+      "BBR",
+      "CUBIC"
+    ],
+    "aliases": [
+      "TCP Congestion Control Evolution"
+    ],
+    "source": "RFC 2581 (NewReno); RFC 8312 (CUBIC); Van Jacobson 1988",
+    "sections": [
+      {
+        "heading": "核心定义",
+        "content": "TCP拥塞控制演化：Tahoe(1988)→Reno(1990)→NewReno(1997)→CUBIC(Linux 2006)→BBR(Google 2016)。Tahoe：慢启动+拥塞避免+AIMD+RTO超时。Reno：增加快重传(3 dup ACK)+快恢复(不进入慢启动)。CUBIC：用三次函数代替AIMD的线性增长，适合高BDP网络。BBR：不再基于丢包而基于Bottleneck Bandwidth和RTT建模，主动探测带宽。"
+      },
+      {
+        "heading": "关键结论",
+        "content": "1. 基于丢包的算法(CUBIC)在浅缓冲网络公平但在深缓冲有bufferbloat 2. BBR在有一定丢包率的链路上远超CUBIC但早期版本公平性存疑 3. 实际选择：互联网→CUBIC(公平)，数据中心→DCTCP，跨洋→BBR"
+      },
+      {
+        "heading": "关联页面",
+        "content": "[[TCP拥塞控制]] [[QUIC协议原理]] [[TCP流量控制]]"
+      }
+    ]
+  },
+  {
+    "dir_name": "计算机网络",
+    "file_stem": "HTTP2与HTTP3对比",
+    "title": "HTTP/2与HTTP/3全面对比",
+    "course": "计算机网络",
+    "chapter": "应用层",
+    "difficulty": "INTERMEDIATE",
+    "tags": [
+      "计算机网络",
+      "HTTP2",
+      "HTTP3",
+      "QUIC",
+      "多路复用"
+    ],
+    "aliases": [
+      "HTTP/2 vs HTTP/3"
+    ],
+    "source": "RFC 7540 (HTTP/2); RFC 9114 (HTTP/3); web.dev HTTP性能指南",
+    "sections": [
+      {
+        "heading": "核心定义",
+        "content": "HTTP/2(基于TCP+TLS)：二进制分帧、流多路复用(单连接多流)、头部压缩(HPACK)、服务器推送。但TCP层面的队头阻塞问题依然存在。HTTP/3(基于QUIC+UDP)：同样支持多路复用但消除了TCP层面的队头阻塞、0-RTT连接建立、连接迁移。HTTP语义(方法/状态码/头部)在两版本中保持一致。"
+      },
+      {
+        "heading": "关键结论",
+        "content": "1. HTTP/2让请求并行但丢包仍阻塞所有流，HTTP/3丢包只影响相关流 2. 头部压缩：HPACK(HTTP/2)→QPACK(HTTP/3，减少队头阻塞) 3. 高丢包网络(移动端)HTTP/3提升显著 4. 主流浏览器/服务器(nginx/curl)已支持HTTP/3"
+      },
+      {
+        "heading": "关联页面",
+        "content": "[[QUIC协议原理]] [[HTTP协议基础]] [[TCP拥塞控制]]"
+      }
+    ]
+  },
+  {
+    "dir_name": "计算机网络",
+    "file_stem": "TCP三次握手详解",
+    "title": "TCP三次握手详解",
+    "course": "计算机网络",
+    "chapter": "传输层",
+    "difficulty": "BASIC",
+    "tags": [
+      "计算机网络",
+      "TCP",
+      "三次握手",
+      "连接建立"
+    ],
+    "aliases": [
+      "TCP Three-Way Handshake"
+    ],
+    "source": "RFC 793 (TCP); UNIX Network Programming (Stevens)",
+    "sections": [
+      {
+        "heading": "核心定义",
+        "content": "TCP连接建立需三次握手：1.客户端→服务端：SYN=1, seq=x（客户端进入SYN-SENT）2.服务端→客户端：SYN=1, ACK=1, seq=y, ack=x+1（服务端进入SYN-RCVD）3.客户端→服务端：ACK=1, seq=x+1, ack=y+1（双方进入ESTABLISHED）。SYN Flood攻击：大量伪造IP的SYN包占满服务端SYN队列，用SYN Cookie防御。"
+      },
+      {
+        "heading": "关键结论",
+        "content": "1. 为什么不是两次？防止旧连接请求建立会话 2. 为什么不是四次？服务端的SYN和ACK可以合并（捎带）3. 初始序号(ISN)随机生成防序列号攻击 4. TCP Fast Open(TFO)在SYN中携带数据实现0-RTT"
+      },
+      {
+        "heading": "关联页面",
+        "content": "[[TCP四次挥手]] [[TCP头格式详解]] [[TCP流量控制]]"
+      }
+    ]
+  },
+  {
+    "dir_name": "计算机网络",
+    "file_stem": "TCP四次挥手与TIME_WAIT",
+    "title": "TCP四次挥手与TIME_WAIT",
+    "course": "计算机网络",
+    "chapter": "传输层",
+    "difficulty": "INTERMEDIATE",
+    "tags": [
+      "计算机网络",
+      "TCP",
+      "四次挥手",
+      "TIME_WAIT",
+      "连接关闭"
+    ],
+    "aliases": [
+      "TCP Four-Way Handshake"
+    ],
+    "source": "RFC 793 (TCP); UNIX Network Programming (Stevens)",
+    "sections": [
+      {
+        "heading": "核心定义",
+        "content": "TCP连接关闭需四次挥手：1.主动方→被动方：FIN=1, seq=u（FIN-WAIT-1）2.被动方→主动方：ACK=1, ack=u+1（CLOSE-WAIT，主动方进入FIN-WAIT-2）3.被动方→主动方：FIN=1, seq=v（LAST-ACK）4.主动方→被动方：ACK=1, ack=v+1（TIME-WAIT→等待2MSL后CLOSED）。TIME_WAIT持续2MSL(最大报文生存时间，通常60s)，确保最后的ACK能被对方收到且旧连接的报文全部消失。"
+      },
+      {
+        "heading": "关键结论",
+        "content": "1. TIME_WAIT期间(IP, Port)对不可复用（服务器端常有大量TIME_WAIT）2. SO_REUSEADDR允许重用处于TIME_WAIT的端口 3. 被动关闭方不会有TIME_WAIT（直接CLOSED）4. 大量TIME_WAIT的解决方法：连接池、tcp_tw_reuse"
+      },
+      {
+        "heading": "关联页面",
+        "content": "[[TCP三次握手详解]] [[TCP头格式详解]]"
+      }
+    ]
+  },
+  {
+    "dir_name": "计算机网络",
+    "file_stem": "IP分片与重组",
+    "title": "IP分片与重组",
+    "course": "计算机网络",
+    "chapter": "网络层",
+    "difficulty": "INTERMEDIATE",
+    "tags": [
+      "计算机网络",
+      "IP",
+      "分片",
+      "MTU",
+      "路径MTU发现"
+    ],
+    "aliases": [
+      "IP Fragmentation"
+    ],
+    "source": "RFC 791 (IPv4); RFC 8200 (IPv6); TCP/IP Illustrated (Stevens) 第11章",
+    "sections": [
+      {
+        "heading": "核心定义",
+        "content": "当IP数据报大于链路MTU时需要分片。IPv4分片可在源主机和中间路由器进行，通过Identification标识同一数据报、Flags(DF禁止分片/MF更多分片)、Fragment Offset(偏移量以8字节为单位)。到达目的主机后根据这些字段重组。IPv6禁止中间路由器分片，源主机通过Path MTU Discovery确定最小MTU。"
+      },
+      {
+        "heading": "关键结论",
+        "content": "1. 分片降低效率（丢失一个分片整个数据报重传）2. 通常设置DF=1配合Path MTU Discovery避免分片 3. PMTUD通过ICMP 'Fragmentation Needed'消息探测 4. TCP MSS协商可避免IP层分片"
+      },
+      {
+        "heading": "关联页面",
+        "content": "[[IP协议基础]] [[IPv4与IPv6]] [[ICMP协议]]"
+      }
+    ]
+  },
+  {
+    "dir_name": "计算机网络",
+    "file_stem": "BGP协议与互联网路由",
+    "title": "BGP协议与互联网路由",
+    "course": "计算机网络",
+    "chapter": "网络层",
+    "difficulty": "ADVANCED",
+    "tags": [
+      "计算机网络",
+      "BGP",
+      "路由协议",
+      "AS",
+      "互联网"
+    ],
+    "aliases": [
+      "Border Gateway Protocol"
+    ],
+    "source": "RFC 4271 (BGP-4); BGP Design and Implementation (Zhang & Bartell)",
+    "sections": [
+      {
+        "heading": "核心定义",
+        "content": "BGP是互联网的核心路由协议，运行在自治系统(AS)之间。使用路径向量协议，AS_PATH记录路由经过的AS序列（防止环路——收到含自身AS的路径则忽略）。BGP Speaker通过TCP 179端口建立对等连接，交换NLRI(网络层可达信息)。选路流程按属性优先级：Local Preference→AS_PATH长度→Origin→MED→eBGP>iBGP→最低IGP metric→最低Router ID。"
+      },
+      {
+        "heading": "关键结论",
+        "content": "1. BGP是策略路由（非性能路由），选路体现商业关系 2. 前缀劫持是重大安全威胁（通过RPKI防御）3. BGP收敛慢（分钟级），影响全球可达性 4. iBGP全互联需求通过Route Reflector或Confederation解决"
+      },
+      {
+        "heading": "关联页面",
+        "content": "[[路由协议对比RIP与OSPF]] [[IP协议基础]] [[自治系统]]"
+      }
+    ]
+  },
+  {
+    "dir_name": "计算机网络",
+    "file_stem": "路由协议对比RIP与OSPF",
+    "title": "路由协议对比（RIP与OSPF）",
+    "course": "计算机网络",
+    "chapter": "网络层",
+    "difficulty": "INTERMEDIATE",
+    "tags": [
+      "计算机网络",
+      "RIP",
+      "OSPF",
+      "路由协议",
+      "IGP"
+    ],
+    "aliases": [
+      "RIP",
+      "OSPF"
+    ],
+    "source": "RFC 2453 (RIPv2); RFC 2328 (OSPFv2); TCP/IP Illustrated (Stevens)",
+    "sections": [
+      {
+        "heading": "核心定义",
+        "content": "RIP(路由信息协议)：距离向量协议，跳数为度量（最大15跳），每30s广播完整路由表，实现简单但收敛慢且不适用大型网络。OSPF(开放最短路径优先)：链路状态协议，使用Dijkstra计算最短路径树。基于区域(Area)层次化设计（Area 0为骨干），支持VLSM/CIDR。链路状态变化时通过LSA洪泛增量更新。"
+      },
+      {
+        "heading": "关键结论",
+        "content": "1. RIP适用于小型扁平网络，OSPF适用于企业/ISP大型网络 2. OSPF的无环收敛远快于RIP的计数到无穷 3. OSPF Area划分减少LSA洪泛范围 4. IS-IS与OSPF功能类似，运营商更偏好IS-IS"
+      },
+      {
+        "heading": "关联页面",
+        "content": "[[BGP协议与互联网路由]] [[最短路径Dijkstra]] [[网络层概述]]"
+      }
+    ]
+  },
+  {
+    "dir_name": "计算机网络",
+    "file_stem": "VLAN与网络虚拟化",
+    "title": "VLAN与802.1Q",
+    "course": "计算机网络",
+    "chapter": "数据链路层",
+    "difficulty": "INTERMEDIATE",
+    "tags": [
+      "计算机网络",
+      "VLAN",
+      "802.1Q",
+      "Trunk",
+      "交换机"
+    ],
+    "aliases": [
+      "Virtual LAN"
+    ],
+    "source": "IEEE 802.1Q标准; CCNA Official Cert Guide",
+    "sections": [
+      {
+        "heading": "核心定义",
+        "content": "VLAN(虚拟局域网)在二层交换机上将物理网络划分为多个逻辑隔离的广播域。802.1Q标签插入以太网帧Header中（4字节：TPID 0x8100 + PCP 3bit + DEI 1bit + VLAN ID 12bit = 4094个VLAN）。Trunk端口承载多个VLAN流量（打标签），Access端口承载单个VLAN（不打标签）。VLAN间通信需通过三层路由（SVI或路由子接口）。"
+      },
+      {
+        "heading": "关键结论",
+        "content": "1. VLAN隔离广播域（不经过三层路由无法跨VLAN通信）2. Native VLAN的帧不打标签（默认为VLAN 1）3. VXLAN(24bit VNI)解决数据中心VLAN ID不足问题 4. VLAN跳跃攻击通过双标签绕过VLAN隔离"
+      },
+      {
+        "heading": "关联页面",
+        "content": "[[以太网帧格式]] [[交换机工作原理]] [[网络虚拟化]]"
+      }
+    ]
+  },
+  {
+    "dir_name": "计算机网络",
+    "file_stem": "TLS握手与HTTPS",
+    "title": "TLS握手与HTTPS工作原理",
+    "course": "计算机网络",
+    "chapter": "安全",
+    "difficulty": "INTERMEDIATE",
+    "tags": [
+      "计算机网络",
+      "TLS",
+      "HTTPS",
+      "SSL",
+      "安全"
+    ],
+    "aliases": [
+      "TLS Handshake",
+      "HTTPS"
+    ],
+    "source": "RFC 8446 (TLS 1.3); RFC 5246 (TLS 1.2); Bulletproof SSL and TLS (Ristic)",
+    "sections": [
+      {
+        "heading": "核心定义",
+        "content": "TLS(传输层安全)在TCP之上提供加密、认证和完整性保护。TLS 1.2握手(2-RTT)：ClientHello→ServerHello+Certificate+ServerKeyExchange→ClientKeyExchange+ChangeCipherSpec→Finished。TLS 1.3(1-RTT)：简化为ClientHello(+Key Share)→ServerHello+EncryptedExtensions+Certificate+Finished→Finished。0-RTT支持PSK恢复会话。证书链由CA签发，客户端验证证书链到根CA。"
+      },
+      {
+        "heading": "关键结论",
+        "content": "1. TLS 1.0/1.1已弃用（2021），TLS 1.3是当前标准 2. 前向安全性(Forward Secrecy)由DHE/ECDHE密钥交换保证 3. 证书透明度(Certificate Transparency)防止恶意CA签发 4. SNI(Server Name Indication)支持同一IP多域名HTTPS"
+      },
+      {
+        "heading": "关联页面",
+        "content": "[[HTTPS安全超文本传输协议]] [[HTTP协议基础]] [[网络安全基础]]"
+      }
+    ]
+  },
+  {
+    "dir_name": "计算机网络",
+    "file_stem": "CDN内容分发网络",
+    "title": "CDN内容分发网络原理",
+    "course": "计算机网络",
+    "chapter": "应用层",
+    "difficulty": "INTERMEDIATE",
+    "tags": [
+      "计算机网络",
+      "CDN",
+      "内容分发",
+      "缓存",
+      "负载均衡"
+    ],
+    "aliases": [
+      "Content Delivery Network"
+    ],
+    "source": "Web Caching and CDN技术文献; Akamai/Cloudflare架构文档",
+    "sections": [
+      {
+        "heading": "核心定义",
+        "content": "CDN通过在全球部署边缘节点，将内容缓存到离用户最近的服务器。核心组件：源站(Origin)、边缘节点(Edge/POP)、DNS调度(GSLB)、内容分发管理系统。工作流程：用户请求→DNS解析到最近POP→若命中缓存直接返回→未命中回源站获取。关键技术：Anycast IP、HTTP缓存策略、动态加速(路由优化/协议优化/连接复用)。"
+      },
+      {
+        "heading": "关键结论",
+        "content": "1. 静态内容CDN化最有效（图片/CSS/JS/视频）2. 动态加速通过智能路由和连接复用减少延迟 3. 回源策略：超时回源、预热回源、分层回源 4. 安全增值：DDoS防护(WAF)、CC攻击防护、Bot管理"
+      },
+      {
+        "heading": "关联页面",
+        "content": "[[DNS解析全过程]] [[HTTP协议基础]] [[负载均衡技术]]"
+      }
+    ]
+  },
+  {
+    "dir_name": "计算机网络",
+    "file_stem": "NAT技术与穿透",
+    "title": "NAT技术与穿透方案",
+    "course": "计算机网络",
+    "chapter": "网络层",
+    "difficulty": "INTERMEDIATE",
+    "tags": [
+      "计算机网络",
+      "NAT",
+      "端口映射",
+      "穿透",
+      "IPv4"
+    ],
+    "aliases": [
+      "Network Address Translation"
+    ],
+    "source": "RFC 2663 (NAT); RFC 3489 (STUN); RFC 8656 (TURN); RFC 8445 (ICE)",
+    "sections": [
+      {
+        "heading": "核心定义",
+        "content": "NAT(网络地址转换)将私有IP映射为公网IP解决IPv4地址枯竭。类型：SNAT(源地址转换/内网出)、DNAT(目的地址转换/端口映射)、PAT(端口地址转换/NAPT——IP+Port复用)。穿透方案：STUN(获取公网映射地址)、TURN(中继转发，最可靠但带宽成本高)、ICE(综合STUN+TURN自动选择最佳路径)、UPnP/NAT-PMP(端口映射协议)。"
+      },
+      {
+        "heading": "关键结论",
+        "content": "1. Full Cone NAT最宽松（任何外部主机可访问映射端口）2. Symmetric NAT最严格（仅被访问过的外部主机可回访）3. 运营商级NAT(CGNAT/Carrier-Grade NAT)使一个公网IP共享给数百用户 4. IPv6下的NAT66一般不推荐"
+      },
+      {
+        "heading": "关联页面",
+        "content": "[[IP协议基础]] [[IPv4与IPv6]] [[P2P网络]]"
+      }
+    ]
+  },
+  {
+    "dir_name": "计算机网络",
+    "file_stem": "WebSocket协议",
+    "title": "WebSocket协议详解",
+    "course": "计算机网络",
+    "chapter": "应用层",
+    "difficulty": "INTERMEDIATE",
+    "tags": [
+      "计算机网络",
+      "WebSocket",
+      "实时通信",
+      "全双工"
+    ],
+    "aliases": [
+      "WebSocket Protocol"
+    ],
+    "source": "RFC 6455 (WebSocket); MDN WebSocket API文档",
+    "sections": [
+      {
+        "heading": "核心定义",
+        "content": "WebSocket在HTTP升级连接后提供全双工的持久TCP通道。握手：客户端发送Upgrade: websocket+Sec-WebSocket-Key，服务端返回101 Switching Protocols+Sec-WebSocket-Accept(基于Key计算)。之后通信使用WebSocket帧：opcode(文本/二进制/ping/pong/close)、masking key(客户端→服务端必须掩码防中间件缓存投毒)、payload。"
+      },
+      {
+        "heading": "关键结论",
+        "content": "1. 相比HTTP轮询：减少延迟和头部开销 2. 心跳保活：ping/pong帧（应用层或浏览器自动）3. 代理和防火墙可能阻断WS连接（需wss://或回退HTTP长轮询）4. SSE(Server-Sent Events)适合单向推送，WebSocket适合双向"
+      },
+      {
+        "heading": "关联页面",
+        "content": "[[HTTP协议基础]] [[实时通信技术对比]]"
+      }
+    ]
+  },
+  {
+    "dir_name": "计算机网络",
+    "file_stem": "SSL与PKI体系",
+    "title": "公钥基础设施（PKI）与数字证书",
+    "course": "计算机网络",
+    "chapter": "安全",
+    "difficulty": "INTERMEDIATE",
+    "tags": [
+      "计算机网络",
+      "PKI",
+      "证书",
+      "CA",
+      "x509"
+    ],
+    "aliases": [
+      "Public Key Infrastructure"
+    ],
+    "source": "RFC 5280 (X.509); Bulletproof SSL and TLS (Ristic)",
+    "sections": [
+      {
+        "heading": "核心定义",
+        "content": "PKI是管理数字证书的体系，解决公钥认证问题。核心组件：CA(证书颁发机构，验证身份后签发证书)、RA(注册机构，审核请求)、证书吊销列表(CRL)、OCSP(在线证书状态协议)。X.509证书内容：主题(CN/SAN)、颁发者、有效期、公钥、签名、扩展(密钥用法/SAN/基本约束)。证书链：EE证书←中间CA←根CA(自签名，预装于信任库)。"
+      },
+      {
+        "heading": "关键结论",
+        "content": "1. 信任锚(Trust Anchor)是预装的根CA证书（操作系统的信任存储）2. 任何CA颁发的证书都能被信任→最弱环节 3. Let's Encrypt通过ACME协议免费自动签发DV证书 4. 证书吊销：CRL(全量列表)+OCSP(在线查询)+OCSP Stapling(服务端主动附带)"
+      },
+      {
+        "heading": "关联页面",
+        "content": "[[TLS握手与HTTPS]] [[HTTPS安全超文本传输协议]] [[RSA与非对称加密]]"
+      }
+    ]
+  },
+  {
+    "dir_name": "计算机网络",
+    "file_stem": "HTTP缓存策略",
+    "title": "HTTP缓存策略详解",
+    "course": "计算机网络",
+    "chapter": "应用层",
+    "difficulty": "INTERMEDIATE",
+    "tags": [
+      "计算机网络",
+      "HTTP",
+      "缓存",
+      "ETag",
+      "Cache-Control"
+    ],
+    "aliases": [
+      "HTTP Caching"
+    ],
+    "source": "RFC 9111 (HTTP Caching); MDN HTTP Caching文档",
+    "sections": [
+      {
+        "heading": "核心定义",
+        "content": "HTTP缓存通过复用已有响应减少请求和延迟。浏览器缓存：强缓存(Cache-Control: max-age/Expires，不发送请求直接使用)→协商缓存(ETag/If-None-Match 或 Last-Modified/If-Modified-Since，带条件请求验证资源是否更新，304 Not Modified则用缓存)。Cache-Control指令：public/private、no-cache(协商)、no-store(不缓存)、s-maxage(共享缓存优先)、stale-while-revalidate(先给缓存后异步更新)。"
+      },
+      {
+        "heading": "关键结论",
+        "content": "1. 强缓存优先于协商缓存 2. ETag比Last-Modified更精确（秒级精度不够）3. Webpack/CRA通过contenthash实现文件级别缓存失效 4. CDN缓存策略（遵循源站Cache-Control但可覆盖）"
+      },
+      {
+        "heading": "关联页面",
+        "content": "[[HTTP协议基础]] [[CDN内容分发网络]] [[Web性能优化]]"
+      }
+    ]
+  },
+  {
+    "dir_name": "计算机网络",
+    "file_stem": "TCP滑动窗口与流量控制",
+    "title": "TCP滑动窗口与零窗口",
+    "course": "计算机网络",
+    "chapter": "传输层",
+    "difficulty": "INTERMEDIATE",
+    "tags": [
+      "计算机网络",
+      "TCP",
+      "滑动窗口",
+      "流量控制",
+      "零窗口"
+    ],
+    "aliases": [
+      "Sliding Window",
+      "Zero Window"
+    ],
+    "source": "RFC 793 (TCP); TCP/IP Illustrated (Stevens) 第20章",
+    "sections": [
+      {
+        "heading": "核心定义",
+        "content": "滑动窗口机制实现TCP流量控制：接收方在ACK中通告Window Size(可接收字节数)，发送方确保已发送但未ACK的字节数≤窗口大小。发送窗口=min(拥塞窗口cwnd, 接收窗口rwnd)。零窗口：接收方缓冲区满通告win=0，发送方停止发送并启动持久计时器(persist timer)，周期性发送窗口探针(window probe)检测窗口是否恢复。糊涂窗口综合征(Silly Window Syndrome)：收发双方每次都处理极小数据量，用Nagle算法和Clark方案解决。"
+      },
+      {
+        "heading": "关键结论",
+        "content": "1. rwnd是端到端流量控制，cwnd是网络拥塞控制——两者独立 2. 零窗口探测可被恶意利用（零窗口攻击）3. Nagle算法延迟小包发送直到收到ACK或凑满MSS"
+      },
+      {
+        "heading": "关联页面",
+        "content": "[[TCP头格式详解]] [[TCP拥塞控制]] [[TCP三次握手详解]]"
+      }
+    ]
+  },
+  {
+    "dir_name": "计算机网络",
+    "file_stem": "ARP协议与欺骗",
+    "title": "ARP协议与ARP欺骗",
+    "course": "计算机网络",
+    "chapter": "数据链路层",
+    "difficulty": "INTERMEDIATE",
+    "tags": [
+      "计算机网络",
+      "ARP",
+      "ARP欺骗",
+      "中间人攻击",
+      "MAC"
+    ],
+    "aliases": [
+      "Address Resolution Protocol"
+    ],
+    "source": "RFC 826 (ARP); TCP/IP Illustrated (Stevens) 第4章",
+    "sections": [
+      {
+        "heading": "核心定义",
+        "content": "ARP将IP地址解析为MAC地址。主机广播ARP Request(Who has IP x.x.x.x?)，目标主机单播ARP Reply(I have, MAC=aa:bb:cc)。ARP缓存保存IP-MAC映射（动态条目的过期时间通常几分钟）。ARP欺骗(ARP Spoofing/Poisoning)：攻击者发送伪造ARP Reply将IP映射到自己的MAC，实现中间人攻击。防御：静态ARP、DAI(动态ARP检测)、802.1X。"
+      },
+      {
+        "heading": "关键结论",
+        "content": "1. ARP是无状态协议（可接收未请求的Reply）→本质不安全 2. Gratuitous ARP用于IP变更通知和冲突检测 3. ARP仅限同一广播域（二层网络）4. IPv6用NDP(邻居发现协议)替代ARP"
+      },
+      {
+        "heading": "关联页面",
+        "content": "[[以太网帧格式]] [[IP协议基础]] [[网络安全基础]]"
+      }
+    ]
+  },
+  {
+    "dir_name": "计算机网络",
+    "file_stem": "IPv4与IPv6对比",
+    "title": "IPv4与IPv6全面对比",
+    "course": "计算机网络",
+    "chapter": "网络层",
+    "difficulty": "BASIC",
+    "tags": [
+      "计算机网络",
+      "IPv4",
+      "IPv6",
+      "网络层",
+      "地址空间"
+    ],
+    "aliases": [
+      "IPv4 vs IPv6"
+    ],
+    "source": "RFC 791 (IPv4); RFC 8200 (IPv6); TCP/IP Illustrated",
+    "sections": [
+      {
+        "heading": "核心定义",
+        "content": "IPv4: 32位地址(约43亿)，点分十进制，有类/无类(CIDR)，需NAT解决枯竭。头部20-60字节含checksum需路由器重新计算。IPv6: 128位地址(约3.4×10^38)，冒号十六进制，无NAT(端到端)，头部固定40字节无checksum。地址类型：全球单播(2000::/3)、链路本地(fe80::/10)、唯一本地(fc00::/7)、多播(ff00::/8)。IPv6无广播(用多播替代)。过渡技术：双栈、隧道(6to4/6in4/6rd)、NAT64/DNS64。"
+      },
+      {
+        "heading": "关键结论",
+        "content": "1. IPv6无checksum(由上层保证)→路由器转发更快 2. SLAAC(无状态自动配置)实现即插即用 3. 过渡缓慢因迁移成本高昂→双栈+CGNAT将长期共存 4. 移动IPv6比移动IPv4更简洁(路由优化)"
+      },
+      {
+        "heading": "关联页面",
+        "content": "[[IP分片与重组]] [[NAT技术与穿透]] [[ICMP协议]]"
+      }
+    ]
+  },
+  {
+    "dir_name": "计算机网络",
+    "file_stem": "HTTP状态码全览",
+    "title": "HTTP状态码全览",
+    "course": "计算机网络",
+    "chapter": "应用层",
+    "difficulty": "BASIC",
+    "tags": [
+      "计算机网络",
+      "HTTP",
+      "状态码",
+      "REST"
+    ],
+    "aliases": [
+      "HTTP Status Codes"
+    ],
+    "source": "RFC 9110 (HTTP Semantics); MDN HTTP Status Codes",
+    "sections": [
+      {
+        "heading": "核心定义",
+        "content": "HTTP状态码分五类：1xx信息(100 Continue, 101 Switching Protocols)。2xx成功：200 OK、201 Created、204 No Content、206 Partial Content(断点续传)。3xx重定向：301永久、302临时、304 Not Modified(协商缓存)、307临时(保持方法)、308永久(保持方法)。4xx客户端错误：400 Bad Request、401 Unauthorized、403 Forbidden、404 Not Found、405 Method Not Allowed、429 Too Many Requests。5xx服务端错误：500 Internal Server Error、502 Bad Gateway、503 Service Unavailable、504 Gateway Timeout。"
+      },
+      {
+        "heading": "关键结论",
+        "content": "1. 301 vs 302: SEO影响（301转移权重，302不转移）2. 401(未认证)vs 403(已认证但无权限) 3. 503应带Retry-After头 4. RESTful API设计应正确使用状态码"
+      },
+      {
+        "heading": "关联页面",
+        "content": "[[HTTP协议基础]] [[RESTful API设计]] [[HTTPS安全超文本传输协议]]"
+      }
+    ]
+  },
+  {
+    "dir_name": "计算机网络",
+    "file_stem": "零拷贝与sendfile",
+    "title": "零拷贝技术与sendfile",
+    "course": "计算机网络",
+    "chapter": "应用层",
+    "difficulty": "ADVANCED",
+    "tags": [
+      "计算机网络",
+      "零拷贝",
+      "sendfile",
+      "DMA",
+      "高性能"
+    ],
+    "aliases": [
+      "Zero Copy",
+      "sendfile"
+    ],
+    "source": "Linux man pages sendfile(2); Efficient File Serving (Nginx文档)",
+    "sections": [
+      {
+        "heading": "核心定义",
+        "content": "零拷贝(zero-copy)技术消除CPU在用户态和内核态之间的数据拷贝，让DMA引擎直接在设备间搬运数据。传统文件发送需4次拷贝（磁盘→内核缓冲区→用户缓冲区→socket缓冲区→网卡）。sendfile系统调用将拷贝降至2次（磁盘→内核缓冲区→网卡DMA）。Linux splice/vmsplice实现管道零拷贝。mmap+write将拷贝减为3次但减少一次用户态拷贝。"
+      },
+      {
+        "heading": "关键结论",
+        "content": "1. sendfile在Nginx/Kafka/静态文件服务器中广泛使用 2. 真正零拷贝需要网卡支持Scatter-Gather DMA 3. Kafka零拷贝：生产者文件→Socket无需中间buffer 4. 零拷贝不适合需修改数据的场景（如SSL加密）"
+      },
+      {
+        "heading": "关联页面",
+        "content": "[[内存映射mmap]] [[IO多路复用select-poll-epoll]] [[DMA直接存储器访问]]"
+      }
+    ]
+  },
+  {
+    "dir_name": "计算机网络",
+    "file_stem": "负载均衡技术",
+    "title": "负载均衡技术全景（L4与L7）",
+    "course": "计算机网络",
+    "chapter": "架构",
+    "difficulty": "INTERMEDIATE",
+    "tags": [
+      "计算机网络",
+      "负载均衡",
+      "L4",
+      "L7",
+      "反向代理"
+    ],
+    "aliases": [
+      "Load Balancing"
+    ],
+    "source": "Nginx官方文档; HAProxy文档; AWS ELB文档",
+    "sections": [
+      {
+        "heading": "核心定义",
+        "content": "负载均衡将请求分发到多个后端服务器。L4负载均衡：工作在传输层，根据IP+Port分发，不解析应用层。方式：NAT模式(修改目标IP)、DR模式(修改MAC、后端直接回复)、Tunnel模式。L7负载均衡(反向代理)：工作在应用层，可解析HTTP头/Cookie/Path做内容路由，支持SSL offload、缓存、压缩、WAF。算法：轮询/RR、加权轮询、最少连接、IP Hash、一致性哈希。健康检查：TCP check / HTTP check / 脚本自定义。"
+      },
+      {
+        "heading": "关键结论",
+        "content": "1. L4性能高(简单转发)但无应用层能力 2. L7功能丰富但性能低于L4 3. 常见架构：L4入口→L7反向代理→后端服务 4. 会话保持(sticky session)可用Cookie或在L4用源IP Hash"
+      },
+      {
+        "heading": "关联页面",
+        "content": "[[一致性哈希]] [[CDN内容分发网络]] [[反向代理与正向代理]]"
+      }
+    ]
+  },
+  {
+    "dir_name": "数据库原理",
+    "file_stem": "三范式与反范式化",
+    "title": "数据库三范式与反范式化",
+    "course": "数据库原理",
+    "chapter": "关系数据库设计",
+    "difficulty": "INTERMEDIATE",
+    "tags": [
+      "数据库",
+      "范式",
+      "1NF",
+      "2NF",
+      "3NF",
+      "反范式化"
+    ],
+    "aliases": [
+      "Database Normalization",
+      "Denormalization"
+    ],
+    "source": "Database System Concepts (Silberschatz) 第8章; Codd 1970",
+    "sections": [
+      {
+        "heading": "核心定义",
+        "content": "范式是消除数据冗余、避免更新异常的数据组织方法。1NF：列不可再分(原子性)。2NF：满足1NF+非主属性完全函数依赖主键(消除部分依赖)。3NF：满足2NF+非主属性不传递依赖主键(消除传递依赖)。BCNF：所有决定因素都是候选键。反范式化：故意引入冗余以提高查询性能。"
+      },
+      {
+        "heading": "关键结论",
+        "content": "1. 工程实践通常只做到3NF，BCNF成本高 2. 反范式化手段：冗余列、派生列、表合并、预计算聚合 3. NoSQL从设计上就是反范式化的(嵌套文档、宽列) 4. 范式化=写优化，反范式化=读优化"
+      },
+      {
+        "heading": "关联页面",
+        "content": "[[范式理论-1NF与2NF]] [[范式理论-3NF与BCNF]] [[关系模型]]"
+      }
+    ]
+  },
+  {
+    "dir_name": "数据库原理",
+    "file_stem": "LSM树存储引擎",
+    "title": "LSM树存储引擎",
+    "course": "数据库原理",
+    "chapter": "存储引擎",
+    "difficulty": "ADVANCED",
+    "tags": [
+      "数据库",
+      "LSM树",
+      "存储引擎",
+      "LevelDB",
+      "RocksDB"
+    ],
+    "aliases": [
+      "Log-Structured Merge-Tree"
+    ],
+    "source": "The Log-Structured Merge-Tree (O'Neil 1996); RocksDB Wiki; LevelDB实现",
+    "sections": [
+      {
+        "heading": "核心定义",
+        "content": "LSM树是写优化的存储结构：将随机写转为顺序写。结构：MemTable(内存有序结构，通常跳表)→WAL(预写日志)→SSTable(磁盘有序文件，不可变)→Compaction(后台合并SSTable)。写入：WAL→MemTable→满后flush为SSTable→后台compaction。读取：查MemTable→查Block Cache→查SSTable(用Bloom Filter快速排除+索引定位)。"
+      },
+      {
+        "heading": "关键结论",
+        "content": "1. 写放大：compaction导致数据被多次重写(LevelDB≈10x，通过Universal/Level compaction优化) 2. 读放大可能需要查多层SSTable+Bloom Filter缓解 3. 代表：LevelDB、RocksDB、Cassandra、HBase、ClickHouse MergeTree"
+      },
+      {
+        "heading": "关联页面",
+        "content": "[[B+树存储引擎]] [[NoSQL数据库对比]] [[LevelDB与RocksDB]]"
+      }
+    ]
+  },
+  {
+    "dir_name": "数据库原理",
+    "file_stem": "B+树与InnoDB索引",
+    "title": "B+树存储引擎与InnoDB",
+    "course": "数据库原理",
+    "chapter": "存储引擎",
+    "difficulty": "ADVANCED",
+    "tags": [
+      "数据库",
+      "B+树",
+      "InnoDB",
+      "MySQL",
+      "聚簇索引"
+    ],
+    "aliases": [
+      "B+Tree Storage Engine"
+    ],
+    "source": "MySQL 8.0 Reference Manual (InnoDB); Database System Concepts (Silberschatz) 第12章",
+    "sections": [
+      {
+        "heading": "核心定义",
+        "content": "B+树是数据库中最常用的索引结构，数据只存储在叶子节点。InnoDB中：聚簇索引(主键索引)的叶子节点存储完整行数据，二级索引的叶子节点存储主键值（回表查询）。页(B+树节点)=16KB(默认)。页内记录通过单向链表连接，页间通过双向链表连接。插入可能导致页分裂(50/50 split)，删除导致页合并。"
+      },
+      {
+        "heading": "关键结论",
+        "content": "1. 聚簇索引决定了行的物理存储顺序 2. 二级索引回表是常见性能瓶颈，覆盖索引可避免 3. 页分裂和页合并是B+树维护的主要开销 4. 自增主键减少页分裂（总在尾部插入）"
+      },
+      {
+        "heading": "关联页面",
+        "content": "[[B树与B+树]] [[聚簇索引与非聚簇索引]] [[查询优化]]"
+      }
+    ]
+  },
+  {
+    "dir_name": "数据库原理",
+    "file_stem": "MVCC多版本并发控制",
+    "title": "MVCC多版本并发控制详解",
+    "course": "数据库原理",
+    "chapter": "事务与并发",
+    "difficulty": "ADVANCED",
+    "tags": [
+      "数据库",
+      "MVCC",
+      "事务",
+      "并发控制",
+      "PostgreSQL",
+      "MySQL"
+    ],
+    "aliases": [
+      "Multiversion Concurrency Control"
+    ],
+    "source": "PostgreSQL官方文档第13章; MySQL InnoDB Multi-Versioning; 数据库系统概念",
+    "sections": [
+      {
+        "heading": "核心定义",
+        "content": "MVCC通过保存数据的多个版本来实现非阻塞读和高效并发控制。读不阻塞写，写不阻塞读。PostgreSQL：每个元组有xmin(创建事务ID)和xmax(删除事务ID)。MySQL InnoDB：undo log保存旧版本，ReadView确定可见性。快照隔离(SI)：每个事务看到数据库的一致性快照。写偏斜(Write Skew)是SI的已知异常。"
+      },
+      {
+        "heading": "关键结论",
+        "content": "1. PG直接在元组中管理版本(需要VACUUM清理)，MySQL通过undo log回溯 2. 长事务导致旧版本堆积：MySQL undo膨胀，PG表膨胀 3. SSI(Serializable SI)可检测写偏斜"
+      },
+      {
+        "heading": "关联页面",
+        "content": "[[多版本并发控制MVCC]] [[事务ACID特性]] [[并发调度协议]]"
+      }
+    ]
+  },
+  {
+    "dir_name": "数据库原理",
+    "file_stem": "数据库连接池原理",
+    "title": "数据库连接池原理与调优",
+    "course": "数据库原理",
+    "chapter": "数据库应用",
+    "difficulty": "INTERMEDIATE",
+    "tags": [
+      "数据库",
+      "连接池",
+      "HikariCP",
+      "连接管理"
+    ],
+    "aliases": [
+      "Connection Pool"
+    ],
+    "source": "HikariCP官方文档; PostgreSQL Connection Pooling; 高性能MySQL",
+    "sections": [
+      {
+        "heading": "核心定义",
+        "content": "连接池维护一组预建立的数据库连接，应用从中借用和归还，避免频繁建立/销毁TCP连接和DB会话的开销。核心参数：maximumPoolSize(最大连接数)、minimumIdle(最小空闲)、connectionTimeout(等待超时)、idleTimeout(空闲回收)、maxLifetime(最大存活时间)。HikariCP通过字节码级优化成为Java生态最快连接池。"
+      },
+      {
+        "heading": "关键结论",
+        "content": "1. pool_size=(CPU核心数*2)+磁盘数，过多连接导致上下文切换 2. PgBouncer做数据库侧连接池(事务级/语句级/会话级) 3. 连接泄漏检测：未归还超时告警"
+      },
+      {
+        "heading": "关联页面",
+        "content": "[[数据库性能优化]] [[数据库系统概述与发展]]"
+      }
+    ]
+  },
+  {
+    "dir_name": "数据库原理",
+    "file_stem": "事务隔离级别与异常",
+    "title": "事务隔离级别与并发异常",
+    "course": "数据库原理",
+    "chapter": "事务与并发",
+    "difficulty": "INTERMEDIATE",
+    "tags": [
+      "数据库",
+      "事务",
+      "隔离级别",
+      "脏读",
+      "幻读"
+    ],
+    "aliases": [
+      "Transaction Isolation Levels"
+    ],
+    "source": "SQL标准 ISO/IEC 9075; PostgreSQL官方文档; 数据库系统概念",
+    "sections": [
+      {
+        "heading": "核心定义",
+        "content": "SQL标准定义四种隔离级别：Read Uncommitted(可脏读)、Read Committed(不可脏读但可不可重复读/幻读)、Repeatable Read(不可脏读/不可重复读但可幻读)、Serializable(所有异常均不可能)。并发异常：脏读(读到未提交数据)、不可重复读(同一事务两次读同行结果不同)、幻读(同一事务两次读同条件结果集不同，有新行插入)、写偏斜(基于旧数据的写入决策)。"
+      },
+      {
+        "heading": "关键结论",
+        "content": "1. PostgreSQL的RR级别已消除幻读(通过快照)，MySQL InnoDB的RR也未消除部分幻读(间隙锁) 2. 大多数数据库默认RC(平衡性能与一致性) 3. Serializable通过SSI或严格两阶段锁实现"
+      },
+      {
+        "heading": "关联页面",
+        "content": "[[MVCC多版本并发控制]] [[事务ACID特性]] [[并发调度协议]]"
+      }
+    ]
+  },
+  {
+    "dir_name": "数据库原理",
+    "file_stem": "索引设计方法论",
+    "title": "数据库索引设计方法论",
+    "course": "数据库原理",
+    "chapter": "索引与查询优化",
+    "difficulty": "INTERMEDIATE",
+    "tags": [
+      "数据库",
+      "索引",
+      "查询优化",
+      "B+树"
+    ],
+    "aliases": [
+      "Index Design Methodology"
+    ],
+    "source": "高性能MySQL 3rd Edition; PostgreSQL索引文档; SQL Performance Explained (Winand)",
+    "sections": [
+      {
+        "heading": "核心定义",
+        "content": "索引设计原则：1.选择性高的列优先建索引（选择性=distinct/总数，越高越好）2.复合索引的最左前缀原则（索引(a,b,c)不支持单独查b或c但不支持a）3.覆盖索引避免回表（索引包含查询所需全部列）4.避免在索引列上使用函数导致索引失效 5.区分度过滤：WHERE中等值条件排在复合索引前面。索引类型：B+Tree(范围查询/排序)、Hash(等值查询，不支持范围)、全文索引、空间索引。"
+      },
+      {
+        "heading": "关键结论",
+        "content": "1. EXPLAIN/EXPLAIN ANALYZE是最重要的索引分析工具 2. 索引不是越多越好（维护索引需要代价）3. 三星索引：WHERE列靠前+ORDER BY列居中+SELECT列靠后 4. 部分索引/函数索引解决特殊查询"
+      },
+      {
+        "heading": "关联页面",
+        "content": "[[B+树与InnoDB索引]] [[查询优化]] [[SQL执行计划分析]]"
+      }
+    ]
+  },
+  {
+    "dir_name": "数据库原理",
+    "file_stem": "SQL执行计划分析",
+    "title": "SQL执行计划分析（EXPLAIN）",
+    "course": "数据库原理",
+    "chapter": "索引与查询优化",
+    "difficulty": "INTERMEDIATE",
+    "tags": [
+      "数据库",
+      "EXPLAIN",
+      "执行计划",
+      "查询优化"
+    ],
+    "aliases": [
+      "EXPLAIN",
+      "Query Plan"
+    ],
+    "source": "PostgreSQL/MySQL官方文档; SQL Performance Explained (Winand)",
+    "sections": [
+      {
+        "heading": "核心定义",
+        "content": "EXPLAIN展示查询的执行计划。各字段含义：id(执行顺序)、select_type(SIMPLE/PRIMARY/SUBQUERY/DERIVED)、type(访问类型从优到劣：system>const>eq_ref>ref>range>index>ALL)、possible_keys(可用索引)、key(实际使用索引)、rows(估计扫描行数)、Extra(Using index/Using filesort/Using temporary/Using where)。Using filesort需额外排序，Using temporary需临时表——性能隐患。"
+      },
+      {
+        "heading": "关键结论",
+        "content": "1. type=ALL(全表扫描)在大表上必须优化 2. Using filesort可添加覆盖索引避免 3. Using index(覆盖索引)是最优的Extra 4. 执行计划是估算，实际用EXPLAIN ANALYZE看真实耗时"
+      },
+      {
+        "heading": "关联页面",
+        "content": "[[索引设计方法论]] [[查询优化]] [[B+树与InnoDB索引]]"
+      }
+    ]
+  },
+  {
+    "dir_name": "数据库原理",
+    "file_stem": "数据库锁机制",
+    "title": "数据库锁机制分类与粒度",
+    "course": "数据库原理",
+    "chapter": "事务与并发",
+    "difficulty": "INTERMEDIATE",
+    "tags": [
+      "数据库",
+      "锁",
+      "行锁",
+      "表锁",
+      "间隙锁"
+    ],
+    "aliases": [
+      "Database Locking"
+    ],
+    "source": "MySQL InnoDB锁文档; PostgreSQL锁文档; 数据库系统概念",
+    "sections": [
+      {
+        "heading": "核心定义",
+        "content": "锁是并发控制的基本手段。按粒度：表锁(MyISAM/DDL)、页锁(BDB)、行锁(InnoDB/PostgreSQL)。按模式：共享锁(S锁/读锁)、排他锁(X锁/写锁)、意向锁(IS/IX/表级，InnoDB特有，用于协调行锁和表锁)。MySQL InnoDB的Next-Key Lock=行锁+间隙锁(防止幻读)。死锁检测：等待图检测+回滚其中一个事务。"
+      },
+      {
+        "heading": "关键结论",
+        "content": "1. 行锁适合OLTP(细粒度高并发)，表锁适合OLAP(批量操作) 2. MySQL InnoDB行锁是索引锁(不通过索引→锁全表) 3. PostgreSQL用SI杜绝读-写冲突，行锁通过xmax控制 4. SELECT ... FOR UPDATE加排他行锁"
+      },
+      {
+        "heading": "关联页面",
+        "content": "[[MVCC多版本并发控制]] [[事务隔离级别与异常]] [[死锁检测与恢复]]"
+      }
+    ]
+  },
+  {
+    "dir_name": "数据库原理",
+    "file_stem": "WAL预写日志",
+    "title": "WAL（Write-Ahead Log）原理",
+    "course": "数据库原理",
+    "chapter": "存储引擎",
+    "difficulty": "ADVANCED",
+    "tags": [
+      "数据库",
+      "WAL",
+      "预写日志",
+      "崩溃恢复",
+      "ARIES"
+    ],
+    "aliases": [
+      "Write-Ahead Logging"
+    ],
+    "source": "ARIES: A Transaction Recovery Method (Mohan 1992); PostgreSQL/MySQL WAL文档",
+    "sections": [
+      {
+        "heading": "核心定义",
+        "content": "WAL是数据库崩溃恢复的基石。核心规则：修改数据页前必须先将REDO日志刷到持久存储（先记后写）。日志包含REDO(重做信息：如何重做修改)和UNDO(回滚信息：如何撤销修改)。ARIES恢复算法三阶段：1.Analysis(重放日志确定哪些事务活跃、需要REDO哪些页) 2.REDO(从checkpoint开始重做所有修改) 3.UNDO(回滚未提交事务)。"
+      },
+      {
+        "heading": "关键结论",
+        "content": "1. WAL将随机写变为顺序写（性能关键优化）2. Checkpoint减少恢复时需REDO的日志量 3. PostgreSQL WAL是物理日志(页级)，MySQL Redo Log也是物理日志 4. 崩溃恢复后保证已提交事务不丢失(持久性)"
+      },
+      {
+        "heading": "关联页面",
+        "content": "[[事务ACID特性]] [[文件系统日志机制]] [[LSM树存储引擎]]"
+      }
+    ]
+  },
+  {
+    "dir_name": "数据库原理",
+    "file_stem": "CAP与BASE理论",
+    "title": "CAP定理与BASE理论",
+    "course": "数据库原理",
+    "chapter": "分布式数据库",
+    "difficulty": "INTERMEDIATE",
+    "tags": [
+      "数据库",
+      "CAP",
+      "BASE",
+      "分布式",
+      "一致性"
+    ],
+    "aliases": [
+      "CAP Theorem",
+      "BASE"
+    ],
+    "source": "Towards Robust Distributed Systems (Brewer 2000); CAP Proof (Gilbert & Lynch 2002)",
+    "sections": [
+      {
+        "heading": "核心定义",
+        "content": "CAP定理：分布式系统在网络分区(P)发生时，只能在一致性(C)和可用性(A)之间二选一。CP系统(MongoDB/HBase/ZooKeeper)：分区时选一致性，可能拒写。AP系统(Cassandra/DynamoDB/CouchDB)：分区时选可用性，允许短暂不一致。CA在分布式系统中不存在（网络分区不可避免）。BASE理论（Basically Available + Soft-state + Eventually consistent）：AP系统的设计理念，牺牲强一致性换取高可用，最终达到一致性。"
+      },
+      {
+        "heading": "关键结论",
+        "content": "1. CAP的C是强一致性(线性一致性)，不是最终一致性 2. 实际系统是连续性而非二元选择（在C和A之间调参）3. PACELC是对CAP的补充：分区时选A或C，正常时选L(latency)或C(consistency)"
+      },
+      {
+        "heading": "关联页面",
+        "content": "[[NoSQL数据库对比]] [[分布式一致性协议]] [[Raft与Paxos]]"
+      }
+    ]
+  },
+  {
+    "dir_name": "数据库原理",
+    "file_stem": "NoSQL数据库对比",
+    "title": "NoSQL数据库全景对比",
+    "course": "数据库原理",
+    "chapter": "数据库概述",
+    "difficulty": "BASIC",
+    "tags": [
+      "数据库",
+      "NoSQL",
+      "键值",
+      "文档",
+      "列族",
+      "图"
+    ],
+    "aliases": [
+      "NoSQL Database Comparison"
+    ],
+    "source": "Designing Data-Intensive Applications (Kleppmann) 第2章",
+    "sections": [
+      {
+        "heading": "核心定义",
+        "content": "NoSQL数据库按数据模型分类：键值存储(Redis，DynamoDB，etcd)——简单KV操作极快。文档存储(MongoDB，CouchDB，Firestore)——JSON文档，灵活schema。列族存储(Cassandra，HBase)——宽列，高写入吞吐。图数据库(Neo4j，ArangoDB)——节点+边，图遍历查询。时序数据库(InfluxDB，TimescaleDB)——时间戳主键，高压缩。"
+      },
+      {
+        "heading": "关键结论",
+        "content": "1. 选择标准：数据模型匹配是第一优先级 2. 关系型vs NoSQL：并非替代而是互补（多模型架构）3. NewSQL(CockroachDB/TiDB/Spanner)试图统一SQL+水平扩展 4. 大多数实际系统使用混合持久化(Polyglot Persistence)"
+      },
+      {
+        "heading": "关联页面",
+        "content": "[[CAP与BASE理论]] [[LSM树存储引擎]] [[B+树存储引擎]]"
+      }
+    ]
+  },
+  {
+    "dir_name": "数据库原理",
+    "file_stem": "聚簇索引与非聚簇索引",
+    "title": "聚簇索引与非聚簇索引",
+    "course": "数据库原理",
+    "chapter": "索引与查询优化",
+    "difficulty": "INTERMEDIATE",
+    "tags": [
+      "数据库",
+      "聚簇索引",
+      "非聚簇索引",
+      "回表",
+      "覆盖索引"
+    ],
+    "aliases": [
+      "Clustered Index",
+      "Non-Clustered Index"
+    ],
+    "source": "MySQL 8.0 Reference Manual; SQL Server索引架构; PostgreSQL",
+    "sections": [
+      {
+        "heading": "核心定义",
+        "content": "聚簇索引：数据的物理存储顺序与索引顺序一致，叶子节点存储完整行。每表只能有一个聚簇索引（决定了行的物理顺序）。非聚簇索引（二级索引）：叶子节点存储聚簇索引的键值而非完整行。回表查询：二级索引查到聚簇键值后再到聚簇索引中查找完整行（多一次B+树查找）。覆盖索引：二级索引包含查询所需的所有列，无需回表。"
+      },
+      {
+        "heading": "关键结论",
+        "content": "1. MySQL InnoDB必须有聚簇索引（显式主键或隐式rowid）2. PostgreSQL没有聚簇索引（全部为非聚簇），但有CLUSTER命令物理排序 3. 覆盖索引可显著提升查询性能 4. 非自增主键导致页分裂（随机插入）"
+      },
+      {
+        "heading": "关联页面",
+        "content": "[[B+树与InnoDB索引]] [[索引设计方法论]] [[查询优化]]"
+      }
+    ]
+  },
+  {
+    "dir_name": "数据库原理",
+    "file_stem": "慢查询分析与优化案例",
+    "title": "慢查询分析与优化实战",
+    "course": "数据库原理",
+    "chapter": "数据库应用",
+    "difficulty": "INTERMEDIATE",
+    "tags": [
+      "数据库",
+      "慢查询",
+      "性能优化",
+      "实战"
+    ],
+    "aliases": [
+      "Slow Query Analysis"
+    ],
+    "source": "高性能MySQL; PostgreSQL性能优化指南; 各大厂实战分享",
+    "sections": [
+      {
+        "heading": "核心定义",
+        "content": "慢查询优化流程：1.开启慢查询日志(long_query_time阈值) 2.用pt-query-digest/pg_stat_statements找出Top N慢查询 3.EXPLAIN分析执行计划 4.检查索引使用情况(type/rows/Extra) 5.优化方案：加索引/改SQL/分库分表/加缓存/改业务逻辑。常见问题：隐式类型转换(where varchar_col=123)、函数包装(where DATE(col)='2023-01-01')、OR替代UNION导致全表扫描。"
+      },
+      {
+        "heading": "关键结论",
+        "content": "1. 80%慢查询可通过添加合适索引解决 2. 大表JOIN考虑分步查询+应用层组装 3. LIMIT大偏移量用游标分页 4. 批量操作代替逐行处理"
+      },
+      {
+        "heading": "关联页面",
+        "content": "[[SQL执行计划分析]] [[索引设计方法论]] [[数据库性能优化]]"
+      }
+    ]
+  },
+  {
+    "dir_name": "数据库原理",
+    "file_stem": "数据库备份与恢复",
+    "title": "数据库备份与恢复策略",
+    "course": "数据库原理",
+    "chapter": "数据库管理",
+    "difficulty": "INTERMEDIATE",
+    "tags": [
+      "数据库",
+      "备份",
+      "恢复",
+      "PITR",
+      "灾难恢复"
+    ],
+    "aliases": [
+      "Backup and Recovery"
+    ],
+    "source": "PostgreSQL备份文档; MySQL备份与恢复; 数据库系统概念",
+    "sections": [
+      {
+        "heading": "核心定义",
+        "content": "备份类型：逻辑备份(pg_dump/mysqldump——输出SQL语句，可跨版本但慢)、物理备份(文件系统级拷贝/PITR——快，但需同架构)。全量备份+增量备份(基于WAL/binlog)。PITR(Point-in-Time Recovery)利用归档日志恢复到任意时间点。备份策略：全量(每周)+增量/差异(每天)+WAL归档(持续)。RPO(恢复点目标-丢失数据量)和RTO(恢复时间目标-恢复时长)是衡量指标。"
+      },
+      {
+        "heading": "关键结论",
+        "content": "1. 未验证过的备份不算备份（定期做恢复演练）2. pg_basebackup物理全量、pg_dump逻辑全量 3. WAL归档是PITR的基础 4. 备份存储需与生产隔离（异地/异云/异账号）"
+      },
+      {
+        "heading": "关联页面",
+        "content": "[[WAL预写日志]] [[数据库高可用架构]]"
+      }
+    ]
+  },
+  {
+    "dir_name": "数据库原理",
+    "file_stem": "分布式事务与2PC",
+    "title": "分布式事务与两阶段提交（2PC）",
+    "course": "数据库原理",
+    "chapter": "分布式数据库",
+    "difficulty": "ADVANCED",
+    "tags": [
+      "数据库",
+      "分布式事务",
+      "2PC",
+      "3PC",
+      "XA"
+    ],
+    "aliases": [
+      "Two-Phase Commit",
+      "XA"
+    ],
+    "source": "Distributed Systems (van Steen & Tanenbaum); XA规范; MySQL XA文档",
+    "sections": [
+      {
+        "heading": "核心定义",
+        "content": "2PC(两阶段提交)实现跨多个数据库的原子提交。协调者(Coordinator)管理事务。阶段1(Prepare)：协调者向所有参与者发送准备请求，参与者执行事务但不提交，记录REDO/UNDO日志后回复Yes/No。阶段2(Commit/Abort)：若全部Yes则协调者发Commit，否则发Abort。3PC增加预提交阶段减少阻塞概率。XA是2PC的开放标准，RDBMS通过XA接口支持。"
+      },
+      {
+        "heading": "关键结论",
+        "content": "1. 2PC是阻塞协议——协调者崩溃导致参与者锁资源悬挂 2. 实际场景中2PC性能开销大（多轮网络+日志刷盘）3. 业务层通过补偿事务(Saga)替代2PC是趋势 4. Seata的AT模式实现了应用层2PC"
+      },
+      {
+        "heading": "关联页面",
+        "content": "[[事务ACID特性]] [[分布式一致性协议]] [[CAP与BASE理论]]"
+      }
+    ]
+  },
+  {
+    "dir_name": "算法设计与分析",
+    "file_stem": "主定理MasterTheorem",
+    "title": "主定理（Master Theorem）",
+    "course": "算法设计与分析",
+    "chapter": "算法分析",
+    "difficulty": "ADVANCED",
+    "tags": [
+      "算法",
+      "主定理",
+      "复杂度分析",
+      "递归"
+    ],
+    "aliases": [
+      "Master Theorem"
+    ],
+    "source": "Introduction to Algorithms (CLRS) 第4章",
+    "sections": [
+      {
+        "heading": "核心定义",
+        "content": "主定理求解T(n)=aT(n/b)+f(n)递归式复杂度(a≥1,b>1)。比较f(n)和n^log_b(a)的增长：情况1(叶子主导)：f(n)=O(n^(log_b(a)-ε))→T(n)=Θ(n^log_b(a))。情况2(均衡)：f(n)=Θ(n^log_b(a)·log^k n)→T(n)=Θ(n^log_b(a)·log^(k+1)n)。情况3(根主导)：f(n)=Ω(n^(log_b(a)+ε))+正则条件→T(n)=Θ(f(n))。"
+      },
+      {
+        "heading": "关键结论",
+        "content": "1. log_b(a)>c→情况1，=c→情况2，<c→情况3 2. T(n)=2T(n/2)+n log n属于情况2：T(n)=Θ(n log² n) 3. T(n)=2T(n/2)+n/log n不适用（差值不是多项式级）"
+      },
+      {
+        "heading": "关联页面",
+        "content": "[[渐进记号与大O记号]] [[递归]] [[分治法]]"
+      }
+    ]
+  },
+  {
+    "dir_name": "算法设计与分析",
+    "file_stem": "Kadane最大子数组",
+    "title": "最大子数组问题（Kadane算法）",
+    "course": "算法设计与分析",
+    "chapter": "动态规划",
+    "difficulty": "INTERMEDIATE",
+    "tags": [
+      "算法",
+      "最大子数组",
+      "Kadane",
+      "DP"
+    ],
+    "aliases": [
+      "Kadane's Algorithm"
+    ],
+    "source": "Programming Pearls (Bentley) 第8章",
+    "sections": [
+      {
+        "heading": "核心定义",
+        "content": "给定整数数组找和最大的连续子数组。Kadane O(n)：dp[i]=以nums[i]结尾的最大子数组和=max(nums[i], dp[i-1]+nums[i])，答案=max(dp[0..n-1])。空间优化为O(1)：cur_max=max(x, cur_max+x)。扩展：二维矩阵O(n³)降维DP；环形数组取max(普通Kadane, 总和-最小子数组)。"
+      },
+      {
+        "heading": "关联页面",
+        "content": "[[动态规划]] [[动态规划方法论]] [[分治法]]"
+      }
+    ]
+  },
+  {
+    "dir_name": "算法设计与分析",
+    "file_stem": "动态规划方法论",
+    "title": "动态规划方法论与状态设计",
+    "course": "算法设计与分析",
+    "chapter": "动态规划",
+    "difficulty": "INTERMEDIATE",
+    "tags": [
+      "算法",
+      "动态规划",
+      "DP",
+      "状态转移",
+      "最优子结构"
+    ],
+    "aliases": [
+      "Dynamic Programming Methodology"
+    ],
+    "source": "Introduction to Algorithms (CLRS) 第15章; Programming Pearls (Bentley)",
+    "sections": [
+      {
+        "heading": "核心定义",
+        "content": "DP的适用条件：最优子结构（最优解包含子问题最优解）+重叠子问题（子问题被反复计算）。解题步骤：1.定义状态含义 2.推导状态转移方程(递推关系) 3.确定初始条件和边界 4.确定计算顺序(自底向上/自顶向下记忆化) 5.答案的提取方式。空间优化：滚动数组(只保留必要的状态)、倒序/正序遍历选择（0-1背包倒序，完全背包正序）。"
+      },
+      {
+        "heading": "关键结论",
+        "content": "1. 状态定义是最关键的步骤——决定了转移的难易 2. DP vs 分治：DP有重叠子问题 3. 常见DP类型：线性DP、区间DP、树形DP、状压DP、数位DP 4. 记忆化搜索=自顶向下DP（递归+缓存）"
+      },
+      {
+        "heading": "关联页面",
+        "content": "[[Kadane最大子数组]] [[背包问题DP]] [[最长递增子序列LIS]]"
+      }
+    ]
+  },
+  {
+    "dir_name": "算法设计与分析",
+    "file_stem": "分治法经典应用",
+    "title": "分治法经典算法分析",
+    "course": "算法设计与分析",
+    "chapter": "算法设计策略",
+    "difficulty": "INTERMEDIATE",
+    "tags": [
+      "算法",
+      "分治",
+      "归并排序",
+      "快速排序",
+      "大整数乘法"
+    ],
+    "aliases": [
+      "Divide and Conquer"
+    ],
+    "source": "Introduction to Algorithms (CLRS) 第2-4章",
+    "sections": [
+      {
+        "heading": "核心定义",
+        "content": "分治法三步：Divide(分解为子问题)→Conquer(递归求解，若子问题足够小则直接解)→Combine(合并子解)。归并排序：T(n)=2T(n/2)+O(n)→O(n log n)，稳定排序。快速排序：Partition划分O(n)+两端递归，平均O(n log n)最坏O(n²)，不稳定。大整数乘法(Karatsuba)：T(n)=3T(n/2)+O(n)→O(n^log_2(3))≈O(n^1.585)。Strassen矩阵乘法：T(n)=7T(n/2)+O(n²)→O(n^log_2(7))≈O(n^2.81)。"
+      },
+      {
+        "heading": "关键结论",
+        "content": "1. 分治高效的数学基础是主定理 2. 分治法通常可并行化（子问题独立）3. 递归深度可能栈溢出（需尾递归优化或迭代实现）"
+      },
+      {
+        "heading": "关联页面",
+        "content": "[[主定理MasterTheorem]] [[归并排序]] [[快速排序]] [[递归]]"
+      }
+    ]
+  },
+  {
+    "dir_name": "算法设计与分析",
+    "file_stem": "渐进记号详解",
+    "title": "渐进记号与大O分析",
+    "course": "算法设计与分析",
+    "chapter": "算法分析",
+    "difficulty": "BASIC",
+    "tags": [
+      "算法",
+      "大O",
+      "渐进记号",
+      "复杂度分析"
+    ],
+    "aliases": [
+      "Asymptotic Notation",
+      "Big-O"
+    ],
+    "source": "Introduction to Algorithms (CLRS) 第3章",
+    "sections": [
+      {
+        "heading": "核心定义",
+        "content": "渐进记号精确描述函数增长上/下/紧界。O(g(n))：上界——存在c,N使f(n)≤c·g(n)(n≥N)。Ω(g(n))：下界——f(n)≥c·g(n)。Θ(g(n))：紧界——同时是O和Ω。o(g(n))：非紧上界——lim f/g=0。ω(g(n))：非紧下界——lim f/g=∞。常见复杂度排序：O(1)<O(log n)<O(√n)<O(n)<O(n log n)<O(n²)<O(n³)<O(2^n)<O(n!)。"
+      },
+      {
+        "heading": "关键结论",
+        "content": "1. O和o的区别：O允许相等增长，o不允许 2. 去掉低阶项和常数因子后看增长阶 3. 递归树法和代入法也可分析复杂度 4. 均摊分析(Amortized)分析的是序列操作的均摊代价"
+      },
+      {
+        "heading": "关联页面",
+        "content": "[[主定理MasterTheorem]] [[复杂度分析]] [[递归]]"
+      }
+    ]
+  },
+  {
+    "dir_name": "算法设计与分析",
+    "file_stem": "贪心算法理论",
+    "title": "贪心算法正确性证明",
+    "course": "算法设计与分析",
+    "chapter": "算法设计策略",
+    "difficulty": "ADVANCED",
+    "tags": [
+      "算法",
+      "贪心",
+      "正确性证明",
+      "最优子结构"
+    ],
+    "aliases": [
+      "Greedy Algorithm"
+    ],
+    "source": "Introduction to Algorithms (CLRS) 第16章; Algorithm Design (Kleinberg & Tardos)",
+    "sections": [
+      {
+        "heading": "核心定义",
+        "content": "贪心算法每一步做局部最优选择，最终得到全局最优解。适用条件：贪心选择性质(局部最优能导向全局最优)和最优子结构。正确性证明方法：1.归纳法(证明贪心选择留在某个最优解中) 2.交换论证(证明任何非贪心解可交换为不更差的贪心解) 3.拟阵理论(拟阵上的贪心一定最优)。经典贪心：Huffman编码、Dijkstra、Kruskal、活动选择、找零钱(特定面值)"
+      },
+      {
+        "heading": "关键结论",
+        "content": "1. 贪心不一定正确——需要证明 2. 拟阵是贪心可解问题的数学框架 3. 贪心vs DP：DP考虑所有可能，贪心只选一个方向 4. 当DP多维度过高时可尝试贪心近似"
+      },
+      {
+        "heading": "关联页面",
+        "content": "[[哈夫曼编码]] [[最短路径Dijkstra]] [[最小生成树MST]] [[拟阵理论]]"
+      }
+    ]
+  },
+  {
+    "dir_name": "算法设计与分析",
+    "file_stem": "NP完全理论",
+    "title": "NP完全性与归约",
+    "course": "算法设计与分析",
+    "chapter": "计算复杂性",
+    "difficulty": "ADVANCED",
+    "tags": [
+      "算法",
+      "NP",
+      "P vs NP",
+      "归约",
+      "计算复杂性"
+    ],
+    "aliases": [
+      "NP-Completeness",
+      "P vs NP"
+    ],
+    "source": "Introduction to Algorithms (CLRS) 第34章",
+    "sections": [
+      {
+        "heading": "核心定义",
+        "content": "P类：可在多项式时间求解的问题。NP类：可在多项式时间验证解的问题。NP-Hard：不弱于任何NP问题(所有NP问题可归约到它)。NP-Complete：既是NP又是NP-Hard。Cook定理：SAT是第一个被证明为NP-Complete的问题。归约：将问题A的实例在多项式时间内转化(不是解决)为问题B的实例，证明B至少和A一样难。经典NPC问题：SAT、3-SAT、团(Clique)、顶点覆盖、哈密顿回路、子集和、旅行商(TSP)。"
+      },
+      {
+        "heading": "关键结论",
+        "content": "1. P⊆NP，P=?NP是计算机科学的未解千禧年问题 2. 证明NPC：先证属于NP，再归约已知NPC到该问题 3. 工程实践：遇到NPC用近似算法、参数化算法或启发式"
+      },
+      {
+        "heading": "关联页面",
+        "content": "[[计算模型与复杂度类]] [[回溯法]] [[分支限界法]]"
+      }
+    ]
+  },
+  {
+    "dir_name": "算法设计与分析",
+    "file_stem": "回溯法与剪枝",
+    "title": "回溯法与剪枝策略",
+    "course": "算法设计与分析",
+    "chapter": "算法设计策略",
+    "difficulty": "INTERMEDIATE",
+    "tags": [
+      "算法",
+      "回溯法",
+      "剪枝",
+      "DFS",
+      "约束满足"
+    ],
+    "aliases": [
+      "Backtracking",
+      "Pruning"
+    ],
+    "source": "Introduction to Algorithms (CLRS); Algorithm Design (Kleinberg & Tardos)",
+    "sections": [
+      {
+        "heading": "核心定义",
+        "content": "回溯法是系统搜索解空间的方法，可看作DFS+剪枝。解空间通常组织为树(子集树/排列树)。回溯在搜索过程中判断当前部分解是否可能导致有效解，若不可能则回溯(剪枝)。约束剪枝：违反约束条件。限界剪枝：已不可能优于当前最优解。经典应用：N皇后、图的着色、0-1背包(分支限界更优)、数独、子集和。"
+      },
+      {
+        "heading": "关键结论",
+        "content": "1. 剪枝策略是回溯效率的关键 2. 预处理(排序/去重/对称破缺)减少搜索空间 3. 回溯vs分支限界：回溯深度优先，分支限界广度/BFS优先(可最快找到最优解) 4. DLX(舞蹈链)是精确覆盖问题的高效回溯实现"
+      },
+      {
+        "heading": "关联页面",
+        "content": "[[图遍历BFS与DFS]] [[NP完全理论]] [[分支限界法]]"
+      }
+    ]
+  },
+  {
+    "dir_name": "算法设计与分析",
+    "file_stem": "Astar启发式搜索",
+    "title": "A*启发式搜索算法",
+    "course": "算法设计与分析",
+    "chapter": "搜索算法",
+    "difficulty": "ADVANCED",
+    "tags": [
+      "算法",
+      "A*",
+      "启发式搜索",
+      "路径规划"
+    ],
+    "aliases": [
+      "A* Search"
+    ],
+    "source": "A Formal Basis for the Heuristic Determination of Minimum Cost Paths (Hart, Nilsson & Raphael 1968)",
+    "sections": [
+      {
+        "heading": "核心定义",
+        "content": "A*是Dijkstra和贪心最佳优先搜索的结合。代价函数f(n)=g(n)+h(n)：g(n)为起点到n的实际代价，h(n)为n到目标的启发式估计。若h(n)≤真实代价则保证最优（admissible），若h(n)≤h*(n)且满足三角不等式则一致性(consistent)→每个节点最多入队一次。常见启发式：网格地图的曼哈顿距离(四方向)/欧氏距离(八方向)/切比雪夫距离。"
+      },
+      {
+        "heading": "关键结论",
+        "content": "1. h(n)=0时A*退化为Dijkstra 2. h(n)越紧(不影响可采纳性)搜索越快 3. 加权A*(Weighted A*)牺牲最优性换取速度 4. 应用：游戏AI寻路、机器人路径规划、拼图求解"
+      },
+      {
+        "heading": "关联页面",
+        "content": "[[最短路径Dijkstra]] [[图遍历BFS与DFS]]"
+      }
+    ]
+  },
+  {
+    "dir_name": "算法设计与分析",
+    "file_stem": "排序算法复杂度下界",
+    "title": "比较排序的下界证明",
+    "course": "算法设计与分析",
+    "chapter": "排序",
+    "difficulty": "ADVANCED",
+    "tags": [
+      "算法",
+      "排序",
+      "下界",
+      "决策树",
+      "线性排序"
+    ],
+    "aliases": [
+      "Sorting Lower Bound"
+    ],
+    "source": "Introduction to Algorithms (CLRS) 第8章",
+    "sections": [
+      {
+        "heading": "核心定义",
+        "content": "基于比较的排序算法最坏情况至少需要Ω(n log n)次比较。证明基于决策树模型：每个叶子对应一种排列，n个元素有n!种排列，二叉树高度h需满足2^h≥n!，由Stirling近似得h≥log(n!)=Ω(n log n)。线性时间排序(非比较排序)突破此下界：计数排序O(n+k)（k为值域大小，稳定）、基数排序O(d·(n+k))（稳定，LSD/MSD）、桶排序O(n)（均匀分布假设）。"
+      },
+      {
+        "heading": "关键结论",
+        "content": "1. 非比较排序通过键值的分布而非比较来定位元素 2. 基数排序配合计数排序可以O(n)排序有界整数 3. 实际中Timsort(比较排序)利用部分有序突破平均O(n log n)"
+      },
+      {
+        "heading": "关联页面",
+        "content": "[[快速排序]] [[归并排序]] [[堆排序]]"
+      }
+    ]
+  },
+  {
+    "dir_name": "算法设计与分析",
+    "file_stem": "网络流与最大流",
+    "title": "网络流与Ford-Fulkerson算法",
+    "course": "算法设计与分析",
+    "chapter": "图算法",
+    "difficulty": "ADVANCED",
+    "tags": [
+      "算法",
+      "网络流",
+      "最大流",
+      "最小割",
+      "Edmonds-Karp"
+    ],
+    "aliases": [
+      "Network Flow",
+      "Max Flow"
+    ],
+    "source": "Flows in Networks (Ford & Fulkerson 1962); Introduction to Algorithms (CLRS) 第26章",
+    "sections": [
+      {
+        "heading": "核心定义",
+        "content": "网络流模型：有向图G=(V,E)，源s汇t，每条边有容量c(u,v)。流量f需满足容量限制(f≤c)、反对称性(f(u,v)=-f(v,u))、流量守恒(除s,t外入流=出流)。Ford-Fulkerson：不断在残量网络中找增广路，总流增加该路的最小残量。Edmonds-Karp用BFS找最短增广路保证O(VE²)。Dinic分层图+Dinic算法O(V²E)。最大流最小割定理：最大流值=最小割容量。"
+      },
+      {
+        "heading": "关键结论",
+        "content": "1. 残量网络允许取消已分配的流量 2. 最小割可用于图像分割、项目选择、可靠性分析 3. 二分图最大匹配可归约为最大流(添加s和t) 4. 实际中Push-Relabel算法更高效"
+      },
+      {
+        "heading": "关联页面",
+        "content": "[[图遍历BFS与DFS]] [[图论基础]] [[二分图匹配]]"
+      }
+    ]
+  },
+  {
+    "dir_name": "算法设计与分析",
+    "file_stem": "快速幂与矩阵快速幂",
+    "title": "快速幂与矩阵快速幂",
+    "course": "算法设计与分析",
+    "chapter": "数学算法",
+    "difficulty": "INTERMEDIATE",
+    "tags": [
+      "算法",
+      "快速幂",
+      "矩阵快速幂",
+      "二分法"
+    ],
+    "aliases": [
+      "Binary Exponentiation",
+      "Fast Power"
+    ],
+    "source": "Introduction to Algorithms (CLRS); 算法竞赛入门经典",
+    "sections": [
+      {
+        "heading": "核心定义",
+        "content": "快速幂用二分法将a^n的O(n)计算降至O(log n)：当n为偶数时a^n=(a^(n/2))²，奇数时a^n=a·(a^((n-1)/2))²。迭代实现：结果初始化为1，n二进制展开，从低位到高位，每位为1则乘入结果。矩阵快速幂用于线性递推的O(k³ log n)计算：如斐波那契第n项——[[1,1],[1,0]]^n。"
+      },
+      {
+        "heading": "关键结论",
+        "content": "1. 快速幂是许多数论算法的基础（模逆元、素性测试）2. 矩阵快速幂解决任何线性递推的O(log n)计算 3. 应用：图邻接矩阵的k次幂=长度为k的路径数"
+      },
+      {
+        "heading": "关联页面",
+        "content": "[[模运算与同余]] [[斐波那契与递推]] [[线性代数基础]]"
+      }
+    ]
+  },
+  {
+    "dir_name": "算法设计与分析",
+    "file_stem": "并查集复杂度分析",
+    "title": "并查集的均摊复杂度分析",
+    "course": "算法设计与分析",
+    "chapter": "均摊分析",
+    "difficulty": "ADVANCED",
+    "tags": [
+      "算法",
+      "并查集",
+      "均摊分析",
+      "反阿克曼函数"
+    ],
+    "aliases": [
+      "Union-Find Analysis"
+    ],
+    "source": "Efficiency of a Good But Not Linear Set Union Algorithm (Tarjan 1975); CLRS 第21章",
+    "sections": [
+      {
+        "heading": "核心定义",
+        "content": "同时使用路径压缩和按秩合并的并查集，均摊时间复杂度O(α(n))，α为反阿克曼函数。α(n)增长极慢：α(2^65536)≈5。分析关键：秩的性质——秩为r的节点至少有2^r个后代(按秩合并保证)，路径压缩缩短查找路径但改变树结构不改变秩。势能函数分析：势能=∑log(rank[parent]-rank[node])，每次Find的均摊成本O(α(n))。"
+      },
+      {
+        "heading": "关键结论",
+        "content": "1. 仅路径压缩O(log n)均摊，仅按秩合并O(log n)最坏 2. 实际应用中α(n)≤4→近乎O(1) 3. 这是数据结构均摊分析的经典案例"
+      },
+      {
+        "heading": "关联页面",
+        "content": "[[并查集UnionFind]] [[渐进记号详解]]"
+      }
+    ]
+  },
+  {
+    "dir_name": "算法设计与分析",
+    "file_stem": "线段树高级应用",
+    "title": "线段树高级应用（持久化/动态开点）",
+    "course": "算法设计与分析",
+    "chapter": "数据结构专题",
+    "difficulty": "ADVANCED",
+    "tags": [
+      "算法",
+      "线段树",
+      "持久化",
+      "动态开点",
+      "主席树"
+    ],
+    "aliases": [
+      "Persistent Segment Tree"
+    ],
+    "source": "Competitive Programming (Halim); OI Wiki",
+    "sections": [
+      {
+        "heading": "核心定义",
+        "content": "持久化线段树保留每次更新后的版本(版本之间共享不变的节点)，空间O(n log n)。每次更新创建O(log n)个新节点，旧版本仍可访问。主席树(chairman tree)用于区间第K大：建立前缀版本的持久化权值线段树，查询[l,r]第K大时用版本r-版本(l-1)的节点差值在线段树中二分。动态开点线段树：不为可能不使用的区间预先分配节点，只在访问时分配。"
+      },
+      {
+        "heading": "关键结论",
+        "content": "1. 持久化数据结构的关键是函数式编程(不可变性) 2. 可持久化的前提是结构改变只影响局部(如平衡树的旋转就难持久化) 3. 区间第K大用主席树O(log n)替代离线莫队"
+      },
+      {
+        "heading": "关联页面",
+        "content": "[[线段树SegmentTree]] [[树状数组Fenwick]]"
+      }
+    ]
+  },
+  {
+    "dir_name": "算法设计与分析",
+    "file_stem": "字符串哈希与Rabin-Karp",
+    "title": "字符串哈希与Rabin-Karp算法",
+    "course": "算法设计与分析",
+    "chapter": "字符串算法",
+    "difficulty": "INTERMEDIATE",
+    "tags": [
+      "算法",
+      "字符串哈希",
+      "Rabin-Karp",
+      "滚动哈希"
+    ],
+    "aliases": [
+      "Rabin-Karp Algorithm"
+    ],
+    "source": "Introduction to Algorithms (CLRS) 第32章",
+    "sections": [
+      {
+        "heading": "核心定义",
+        "content": "Rabin-Karp使用滚动哈希高效匹配字符串。核心：hash(T[i...i+m-1])可在O(1)从上一个哈希值计算（减去旧字符贡献+加上新字符贡献）。典型哈希：∑t[i]·B^(m-1-i) mod M，其中B为基数(如256/131)，M为大质数。双哈希(double hash)或更大M避免哈希碰撞。平均O(n+m)，最坏O(nm)（需验证碰撞）。用于多模式串匹配、检测字符串相似性和子串判重。"
+      },
+      {
+        "heading": "关键结论",
+        "content": "1. 滚动哈希预处理前缀哈希后O(1)求任意子串哈希 2. 自然溢出(unsigned long long)相当于mod 2^64，可能被卡 3. 双哈希(B1=131,M1=1e9+7,B2=13331,M2=1e9+9)安全性高"
+      },
+      {
+        "heading": "关联页面",
+        "content": "[[KMP字符串匹配]] [[哈希冲突解决]]"
+      }
+    ]
+  },
+  {
+    "dir_name": "算法设计与分析",
+    "file_stem": "凸包与计算几何基础",
+    "title": "凸包与计算几何基础",
+    "course": "算法设计与分析",
+    "chapter": "计算几何",
+    "difficulty": "ADVANCED",
+    "tags": [
+      "算法",
+      "凸包",
+      "Graham扫描",
+      "计算几何"
+    ],
+    "aliases": [
+      "Convex Hull",
+      "Graham Scan"
+    ],
+    "source": "Computational Geometry: Algorithms and Applications (de Berg); Introduction to Algorithms (CLRS) 第33章",
+    "sections": [
+      {
+        "heading": "核心定义",
+        "content": "凸包是包含所有给定点的最小凸多边形。Graham Scan O(n log n)：1.找到最左下点p0 2.其余点按极角排序 3.栈维护当前凸包，加入新点时检查是否构成右转(弹出栈顶点直到左转)。判定用叉积cross(o,a,b)=(a.x-o.x)*(b.y-o.y)-(a.y-o.y)*(b.x-o.x)，>0左转(保留)，<0右转(弹出)。Andrew算法(上下凸壳)：按x排序，分别构造上下凸壳。"
+      },
+      {
+        "heading": "关键结论",
+        "content": "1. 极角排序用atan2或叉积比较（叉积避免浮点误差）2. 在线算法(Jarvis步进)O(nh)，h为凸包点数 3. 应用：碰撞检测、最远点对、最小包围矩形"
+      },
+      {
+        "heading": "关联页面",
+        "content": "[[最近点对算法]] [[排序算法]]"
+      }
+    ]
+  },
+  {
+    "dir_name": "算法设计与分析",
+    "file_stem": "最近点对算法",
+    "title": "最近点对（Closest Pair）算法",
+    "course": "算法设计与分析",
+    "chapter": "分治法",
+    "difficulty": "ADVANCED",
+    "tags": [
+      "算法",
+      "最近点对",
+      "分治",
+      "计算几何"
+    ],
+    "aliases": [
+      "Closest Pair of Points"
+    ],
+    "source": "Introduction to Algorithms (CLRS) 第33章; Computational Geometry (de Berg)",
+    "sections": [
+      {
+        "heading": "核心定义",
+        "content": "在n个点中找距离最近的点对。暴力O(n²)，分治法O(n log n)：按x坐标均分为左右，递归求左右各自最近距离δ，合并时考虑横跨分界线的点对——只需检查x坐标距离中线<δ的候选点，按y排序后每个点最多检查后续7个点（由鸽巢原理可证）。总体T(n)=2T(n/2)+O(n log n)=O(n log² n)，通过归并排序可降至O(n log n)。"
+      },
+      {
+        "heading": "关键结论",
+        "content": "1. 分治法合并O(n)是算法的核心难点 2. 鸽巢原理保证了每个点只需检查常数个邻居（7个以内）3. 高维最近点对可用KD-Tree KNN搜索"
+      },
+      {
+        "heading": "关联页面",
+        "content": "[[分治法经典应用]] [[鸽巢原理及其推广]]"
+      }
+    ]
+  },
+  {
+    "dir_name": "算法设计与分析",
+    "file_stem": "AC自动机",
+    "title": "Aho-Corasick自动机",
+    "course": "算法设计与分析",
+    "chapter": "字符串算法",
+    "difficulty": "ADVANCED",
+    "tags": [
+      "算法",
+      "AC自动机",
+      "多模式匹配",
+      "Trie",
+      "自动机"
+    ],
+    "aliases": [
+      "Aho-Corasick Automaton"
+    ],
+    "source": "Efficient String Matching: An Aid to Bibliographic Search (Aho & Corasick 1975)",
+    "sections": [
+      {
+        "heading": "核心定义",
+        "content": "AC自动机是Trie+KMP的结合，一次扫描文本找出所有模式串。构建：1.将模式串建Trie 2.BFS遍历Trie构建失败指针(fail link)=KMP的next数组在Trie上的推广：节点u的fail=v表示v的最长后缀在Trie中是u的后缀。匹配时若当前节点无对应字符的子节点，沿fail跳转到有该子节点处。每个节点的output存储以此为后缀的所有模式串。"
+      },
+      {
+        "heading": "关键结论",
+        "content": "1. 构建O(总模式串长度)，匹配O(|text|+匹配数) 2. 应用：敏感词过滤、多模式搜索、DNA序列检索 3. 优化为Trie Graph：所有字符都有转移（无需while跳fail）"
+      },
+      {
+        "heading": "关联页面",
+        "content": "[[字典树Trie]] [[KMP字符串匹配]] [[自动机理论]]"
+      }
+    ]
+  },
+  {
+    "dir_name": "算法设计与分析",
+    "file_stem": "二分查找与变形",
+    "title": "二分查找及其变形",
+    "course": "算法设计与分析",
+    "chapter": "基础算法",
+    "difficulty": "BASIC",
+    "tags": [
+      "算法",
+      "二分查找",
+      "Binary Search",
+      "边界"
+    ],
+    "aliases": [
+      "Binary Search"
+    ],
+    "source": "Programming Pearls (Bentley) 第4-5章",
+    "sections": [
+      {
+        "heading": "核心定义",
+        "content": "二分查找在有序数组中O(log n)查找目标值。三种变形：1.查找相等值(标准二分) 2.查找第一个≥target的位置(lower_bound) 3.查找第一个>target的位置(upper_bound)。统一模板：l=0,r=n(左闭右开)，while l<r: m=l+(r-l)//2; if a[m]≥target: r=m; else: l=m+1; return l。要诀：确定二分方向的条件、循环不变式。"
+      },
+      {
+        "heading": "关键结论",
+        "content": "1. 左闭右开[l,r)模板是通用性最好的 2. m=l+(r-l)//2避免溢出优于(l+r)//2 3. 循环条件是l<r不是l≤r(闭区间用l≤r) 4. 二分答案法：对单调性问题(如最小最大)二分答案+判定"
+      },
+      {
+        "heading": "关联页面",
+        "content": "[[排序算法]] [[搜索算法]] [[最长递增子序列LIS]]"
+      }
+    ]
+  },
+  {
+    "dir_name": "算法设计与分析",
+    "file_stem": "动态规划经典问题综述",
+    "title": "DP经典问题综述",
+    "course": "算法设计与分析",
+    "chapter": "动态规划",
+    "difficulty": "INTERMEDIATE",
+    "tags": [
+      "算法",
+      "DP",
+      "经典问题",
+      "LCS",
+      "编辑距离",
+      "硬币找零"
+    ],
+    "aliases": [
+      "Classic DP Problems"
+    ],
+    "source": "Introduction to Algorithms (CLRS) 第15章",
+    "sections": [
+      {
+        "heading": "核心定义",
+        "content": "LCS最长公共子序列：dp[i][j]=dp[i-1][j-1]+1(若a[i]=b[j])，否则max(dp[i-1][j],dp[i][j-1])。编辑距离(Levenshtein)：插入/删除/替换的最小次数。硬币找零：最少硬币数dp[i]=min(dp[i-c[j]])+1。矩阵链乘：dp[i][j]=min(dp[i][k]+dp[k+1][j]+p[i-1]p[k]p[j])。回文子序列/子串：区间DP。正则表达式匹配：dp[i][j]表示s[0..i)与p[0..j)是否匹配。"
+      },
+      {
+        "heading": "关键结论",
+        "content": "1. LCS可空间优化到O(min(m,n)) 2. 编辑距离应用：diff、DNA比对、拼写纠错 3. 很多DP可以输出最优方案(回溯转移来源) 4. 区间DP通常O(n³)，枚举划分点k"
+      },
+      {
+        "heading": "关联页面",
+        "content": "[[动态规划方法论]] [[Kadane最大子数组]] [[背包问题DP]]"
+      }
+    ]
+  },
+  {
+    "dir_name": "算法设计与分析",
+    "file_stem": "排序算法大全",
+    "title": "排序算法大全与可视化",
+    "course": "算法设计与分析",
+    "chapter": "排序",
+    "difficulty": "BASIC",
+    "tags": [
+      "算法",
+      "排序",
+      "排序对比"
+    ],
+    "aliases": [
+      "Sorting Algorithms Overview"
+    ],
+    "source": "Introduction to Algorithms (CLRS) 第6-8章; Algorithm Design (Kleinberg & Tardos)",
+    "sections": [
+      {
+        "heading": "核心定义",
+        "content": "比较排序：冒泡排序O(n²)(稳定，原地)、选择排序O(n²)(不稳定，原地，少交换)、插入排序O(n²)(稳定，原地，近乎有序时O(n))、希尔排序O(n log n)~O(n²)不等(不稳定)、归并排序O(n log n)(稳定，需O(n)辅助空间)、快速排序O(n log n)平均(不稳定，原地)、堆排序O(n log n)(不稳定，原地)。非比较排序：计数排序O(n+k)(稳定)、基数排序O(d·(n+k))(稳定)、桶排序O(n)平均。"
+      },
+      {
+        "heading": "关键结论",
+        "content": "1. 小数据量(≈<50)插入排序最快(常数极小) 2. Timsort(Python/Java默认)结合归并和插入排序利用部分有序 3. 选择排序固定O(n²)交换次数最少(≤n-1次) 4. 库排序用IntroSort(快排+堆排兜底)"
+      },
+      {
+        "heading": "关联页面",
+        "content": "[[排序算法复杂度下界]] [[快速排序]] [[归并排序]]"
+      }
+    ]
+  },
+  {
+    "dir_name": "编译原理",
+    "file_stem": "三地址码与中间表示IR",
+    "title": "三地址码与中间表示IR",
+    "course": "编译原理",
+    "chapter": "中间代码生成",
+    "difficulty": "ADVANCED",
+    "tags": [
+      "编译原理",
+      "三地址码",
+      "中间表示",
+      "IR",
+      "LLVM"
+    ],
+    "aliases": [
+      "Three-Address Code",
+      "IR"
+    ],
+    "source": "Compilers: Principles, Techniques, and Tools (Dragon Book) 第6章; LLVM Language Reference",
+    "sections": [
+      {
+        "heading": "核心定义",
+        "content": "三地址码(TAC)是中间表示，每条指令最多3个地址(2源1目标)：x=y op z。常见TAC指令：赋值x=y、双目x=y op z、单目x=op y、无条件goto L、条件if x relop y goto L、过程param x;call p,n、索引x=y[i]和x[i]=y、地址/指针x=&y;x=*y;*x=y。LLVM IR是SSA形式的三地址码(每个变量只赋值一次)。"
+      },
+      {
+        "heading": "关键结论",
+        "content": "1. TAC是AST和目标代码之间的桥梁 2. LLVM IR被Clang/Rust/Swift/Julia等广泛使用 3. SSA简化了数据流分析和优化 4. Java Bytecode也是变体TAC(栈式而非寄存器式)"
+      },
+      {
+        "heading": "关联页面",
+        "content": "[[静态单赋值SSA]] [[语法树]] [[代码优化综合]]"
+      }
+    ]
+  },
+  {
+    "dir_name": "编译原理",
+    "file_stem": "静态单赋值SSA",
+    "title": "静态单赋值形式（SSA）",
+    "course": "编译原理",
+    "chapter": "中间代码生成",
+    "difficulty": "ADVANCED",
+    "tags": [
+      "编译原理",
+      "SSA",
+      "中间表示",
+      "编译器优化",
+      "φ函数"
+    ],
+    "aliases": [
+      "Static Single Assignment"
+    ],
+    "source": "Efficiently Computing Static Single Assignment Form (Cytron 1991); LLVM SSA文档",
+    "sections": [
+      {
+        "heading": "核心定义",
+        "content": "SSA是IR的一种形式，每个变量在程序中恰好被赋值一次。当控制流合并时使用φ函数选择来自不同路径的值。将非SSA转为SSA需要：1.插入φ节点(在支配边界的汇合点) 2.变量重命名(version number)。支配边界精确确定φ节点插入位置。离开SSA时需要消除φ节点(用move指令替代)。"
+      },
+      {
+        "heading": "关键结论",
+        "content": "1. SSA使use-def链变得显式(每个值只有一个定义) 2. 稀疏条件常量传播(SCCP)、全局值编号(GVN)等优化在SSA上更简单高效 3. SSA代价是插入大量φ和临时变量增加了IR体积"
+      },
+      {
+        "heading": "关联页面",
+        "content": "[[三地址码与中间表示IR]] [[代码优化综合]] [[支配树]]"
+      }
+    ]
+  },
+  {
+    "dir_name": "编译原理",
+    "file_stem": "词法分析与DFA",
+    "title": "词法分析与自动机",
+    "course": "编译原理",
+    "chapter": "词法分析",
+    "difficulty": "INTERMEDIATE",
+    "tags": [
+      "编译原理",
+      "词法分析",
+      "DFA",
+      "NFA",
+      "正则"
+    ],
+    "aliases": [
+      "Lexical Analysis",
+      "DFA"
+    ],
+    "source": "Compilers: Principles, Techniques, and Tools (Dragon Book) 第3章",
+    "sections": [
+      {
+        "heading": "核心定义",
+        "content": "词法分析将字符序列转换为Token序列。正则表达式→NFA(Thompson构造法)→DFA(子集构造法)→最小化DFA(Hopcroft算法)。Token结构：<类型, 属性值>。DFA模拟：根据当前状态和输入字符查转移表，接受状态识别Token。最大匹配(Maximal Munch)：尽量匹配最长Token。Flex/Lex是基于DFA的词法生成器。"
+      },
+      {
+        "heading": "关键结论",
+        "content": "1. NFA→DFA态射可能引起指数爆炸(理论上2^n，实际通常多项式) 2. DFA最小化确保每个等价状态类合并(唯一最小DFA) 3. 超前搜索(lookahead)解决关键字vs标识符歧义"
+      },
+      {
+        "heading": "关联页面",
+        "content": "[[正则语言与泵引理]] [[有限自动机]] [[语法分析]]"
+      }
+    ]
+  },
+  {
+    "dir_name": "编译原理",
+    "file_stem": "LL与LR语法分析对比",
+    "title": "LL与LR分析算法对比",
+    "course": "编译原理",
+    "chapter": "语法分析",
+    "difficulty": "ADVANCED",
+    "tags": [
+      "编译原理",
+      "LL",
+      "LR",
+      "语法分析",
+      "语法分析器"
+    ],
+    "aliases": [
+      "LL Parsing",
+      "LR Parsing"
+    ],
+    "source": "Compilers: Principles, Techniques, and Tools (Dragon Book) 第4章; Parsing Techniques (Grune & Jacobs)",
+    "sections": [
+      {
+        "heading": "核心定义",
+        "content": "语法分析检查Token序列是否符合文法并构建语法树。LL(k)自上而下分析：从开始符号出发，每次根据下k个lookahead符号预测产生式。需消除左递归和提取左公因子。LL(1)计算FIRST/FOLLOW集合构建预测表。LR(k)自下而上分析：从输入Token开始，通过移进(shift)和归约(reduce)最终到达开始符号。LR项集族构造DFA，解决移进-归约冲突和归约-归约冲突。"
+      },
+      {
+        "heading": "关键结论",
+        "content": "1. LL文法⊂LR文法（LR可以处理更多文法）2. LL手工构造方便(递归下降)，LR需生成器(YACC/Bison) 3. LR(0)→SLR→LR(1)→LALR(1)功能递增，LALR(1)是实用折中(YACC使用)"
+      },
+      {
+        "heading": "关联页面",
+        "content": "[[语法分析概览]] [[语法树]] [[算符优先分析]]"
+      }
+    ]
+  },
+  {
+    "dir_name": "编译原理",
+    "file_stem": "抽象语法树AST",
+    "title": "抽象语法树（AST）设计",
+    "course": "编译原理",
+    "chapter": "语法分析",
+    "difficulty": "INTERMEDIATE",
+    "tags": [
+      "编译原理",
+      "AST",
+      "语法树",
+      "语义分析"
+    ],
+    "aliases": [
+      "Abstract Syntax Tree"
+    ],
+    "source": "Compilers: Principles, Techniques, and Tools (Dragon Book) 第4-5章",
+    "sections": [
+      {
+        "heading": "核心定义",
+        "content": "AST是源代码的树形表示，去掉语法细节(分号/括号/关键字)只保留语义信息。每个节点类型对应语言构造(If/While/Assign/Call/BinaryOp)。CST(具体语法树/解析树)包含所有语法细节。AST通过语法制导翻译在parse过程中构建：每个产生式关联语义动作(创建AST节点+连接子节点)。"
+      },
+      {
+        "heading": "关键结论",
+        "content": "1. AST是后续所有分析和转换的基础 2. Clang/TypeScript Compiler API提供遍历AST的visitor模式 3. AST序列化为文本可以跨语言交换(如Babel解析JS→AST→转换→generate) 4. 符号表通常在AST遍历时填充"
+      },
+      {
+        "heading": "关联页面",
+        "content": "[[语法分析]] [[语义分析]] [[三地址码与中间表示IR]]"
+      }
+    ]
+  },
+  {
+    "dir_name": "编译原理",
+    "file_stem": "类型检查与类型推导",
+    "title": "类型系统与类型推导",
+    "course": "编译原理",
+    "chapter": "语义分析",
+    "difficulty": "ADVANCED",
+    "tags": [
+      "编译原理",
+      "类型系统",
+      "类型推导",
+      "HM系统",
+      "多态"
+    ],
+    "aliases": [
+      "Type Checking",
+      "Type Inference"
+    ],
+    "source": "Types and Programming Languages (Pierce); Programming Language Pragmatics (Scott) 第7章",
+    "sections": [
+      {
+        "heading": "核心定义",
+        "content": "类型检查防止程序中出现类型错误。静态检查(编译时)vs动态检查(运行时)。强/弱类型：强类型禁止隐式类型转换。Hindley-Milner(HM)类型推导：无需显式类型标注自动推导(ML/Haskell/Rust)。子类型多态(OOP)、参数多态(泛型)、ad-hoc多态(函数重载)。类型统一(unification)是类型推导核心算法。"
+      },
+      {
+        "heading": "关键结论",
+        "content": "1. 静态类型≠强类型(C是静态弱类型) 2. Rust的类型系统还包含所有权(ownership)和生命周期(lifetime) 3. TypeScript的类型是结构性(Structural)非名字性(Nominal) 4. 类型推导是机器学习在编译器领域的出发点"
+      },
+      {
+        "heading": "关联页面",
+        "content": "[[语义分析]] [[泛型与模板]] [[抽象语法树AST]]"
+      }
+    ]
+  },
+  {
+    "dir_name": "编译原理",
+    "file_stem": "寄存器分配与图着色",
+    "title": "寄存器分配与图着色算法",
+    "course": "编译原理",
+    "chapter": "代码优化与生成",
+    "difficulty": "ADVANCED",
+    "tags": [
+      "编译原理",
+      "寄存器分配",
+      "图着色",
+      "Chaitin",
+      "LSRA"
+    ],
+    "aliases": [
+      "Register Allocation",
+      "Graph Coloring"
+    ],
+    "source": "Register Allocation via Coloring (Chaitin 1981); Linear Scan Register Allocation (Poletto & Sarkar 1999)",
+    "sections": [
+      {
+        "heading": "核心定义",
+        "content": "寄存器分配将无限虚拟寄存器映射到有限物理寄存器。图着色法：构建冲突图(interference graph)——两个变量同时活跃则有一条边。k色可着色则可用k个寄存器分配。若无法着色则spill(溢出)部分变量到栈，拆分为更小活跃范围后重建冲突图。Chaitin-Briggs算法优化了spill决策。线性扫描(LSRA)法：按活跃期起点排序，依次分配可用寄存器，无空闲时溢出到栈。比图着色快但分配质量略差。"
+      },
+      {
+        "heading": "关键结论",
+        "content": "1. 图着色是NP完全问题，实际用启发式 2. 线性扫描用于JIT(如HotSpot、V8)，编译时间优先 3. SSA形式简化了寄存器分配——每个值只有一个定义 4. 调用约定(calling convention)也影响分配(哪些寄存器传参/保存)"
+      },
+      {
+        "heading": "关联页面",
+        "content": "[[静态单赋值SSA]] [[代码优化综合]] [[代码生成]]"
+      }
+    ]
+  },
+  {
+    "dir_name": "编译原理",
+    "file_stem": "代码优化技术综述",
+    "title": "代码优化技术综述",
+    "course": "编译原理",
+    "chapter": "代码优化与生成",
+    "difficulty": "INTERMEDIATE",
+    "tags": [
+      "编译原理",
+      "优化",
+      "编译器优化",
+      "代码生成"
+    ],
+    "aliases": [
+      "Compiler Optimizations Overview"
+    ],
+    "source": "Compilers: Principles, Techniques, and Tools (Dragon Book) 第9-10章; LLVM Pass文档",
+    "sections": [
+      {
+        "heading": "核心定义",
+        "content": "编译器优化分阶段：1.IR优化(LLVM Pass/GCC GIMPLE) 2.目标代码优化。标量优化：常量折叠(constant folding)、常量传播(constant propagation)、死代码消除(DCE)、公共子表达式消除(CSE)、循环不变代码外提(hoisting)、强度削弱(strength reduction)、内联(inlining)。循环优化：循环展开(unrolling)、向量化(vectorization)——SIMD利用、循环交换(loop interchange——改善缓存)、循环融合/分裂。"
+      },
+      {
+        "heading": "关键结论",
+        "content": "1. 优化顺序很重要——前一个优化可能为后续创造机会 2. O0(无优化)/O2(标准)/O3(激进+内联+向量化)/Os(体积)/Oz(更小) 3. PGO(Profile-Guided Optimization)使用运行时数据引导优化"
+      },
+      {
+        "heading": "关联页面",
+        "content": "[[寄存器分配与图着色]] [[指令调度]] [[三地址码与中间表示IR]]"
+      }
+    ]
+  },
+  {
+    "dir_name": "编译原理",
+    "file_stem": "GCC与LLVM架构对比",
+    "title": "GCC与LLVM编译器架构对比",
+    "course": "编译原理",
+    "chapter": "编译器综述",
+    "difficulty": "INTERMEDIATE",
+    "tags": [
+      "编译原理",
+      "GCC",
+      "LLVM",
+      "编译器架构"
+    ],
+    "aliases": [
+      "GCC vs LLVM"
+    ],
+    "source": "LLVM官方文档; GCC Internals文档",
+    "sections": [
+      {
+        "heading": "核心定义",
+        "content": "GCC(1987)：传统三阶段设计——前端(语言特有)/中端(GIMPLE IR+优化passes)/后端(RTL→目标码)。单体架构，各pass紧耦合。LLVM(2000s)：模块化设计——前端(Clang)→LLVM IR(SSA形式，bitcode)→中端优化passes→后端(Legalization→ISel→寄存器分配→MC层)。IR分层设计(high/low level)，各pass独立运行。重要区别：LLVM是库(libLLVM/libClang)而非工具——可嵌入IDE/JIT中。"
+      },
+      {
+        "heading": "关键结论",
+        "content": "1. LLVM的IR设计是其最大优势：可读、可序列化(LTO)、JIT可用 2. Clang提供更好的错误信息(准确的源码位置+修复建议) 3. LLVM JIT使Julia/Swift/Python(CPython正迁移到LLVM)等高性能动态语言成为可能 4. GCC仍广泛用于Linux内核构建"
+      },
+      {
+        "heading": "关联页面",
+        "content": "[[三地址码与中间表示IR]] [[静态单赋值SSA]] [[JIT编译技术]]"
+      }
+    ]
+  },
+  {
+    "dir_name": "编译原理",
+    "file_stem": "JIT编译技术",
+    "title": "JIT（Just-In-Time）编译技术",
+    "course": "编译原理",
+    "chapter": "编译器综述",
+    "difficulty": "ADVANCED",
+    "tags": [
+      "编译原理",
+      "JIT",
+      "动态编译",
+      "Java",
+      "JavaScript"
+    ],
+    "aliases": [
+      "Just-In-Time Compilation"
+    ],
+    "source": "Java HotSpot Performance Engine; V8 Design Documents; Modern Compiler Implementation (Appel)",
+    "sections": [
+      {
+        "heading": "核心定义",
+        "content": "JIT在运行时将字节码/脚本转换为本地机器码。分层编译(Tiered Compilation)：interpreter(启动快)→Baseline JIT(简单编译，无优化)→Optimizing JIT(热点代码深度优化，用profile数据)。HotSpot JVM使用C1(Client)和C2(Server/用Sea of Nodes IR做激进的优化)。V8的Crankshaft→TurboFan→Sparkplug/Maglev，通过内联缓存(Inline Cache)和隐藏类(Hidden Class)优化JS动态特性。"
+      },
+      {
+        "heading": "关键结论",
+        "content": "1. JIT根据运行时profiling做推测优化(需要bailout/deoptimization路径) 2. OSR(On-Stack Replacement)将正在运行的解释执行替换为编译代码 3. AOT vs JIT：AOT启动快但无profiling，JIT可做profile引导的投机优化"
+      },
+      {
+        "heading": "关联页面",
+        "content": "[[GCC与LLVM架构对比]] [[字节码与虚拟机]] [[代码优化技术综述]]"
+      }
+    ]
+  },
+  {
+    "dir_name": "编译原理",
+    "file_stem": "字节码与虚拟机",
+    "title": "字节码与虚拟机工作原理",
+    "course": "编译原理",
+    "chapter": "编译器综述",
+    "difficulty": "INTERMEDIATE",
+    "tags": [
+      "编译原理",
+      "字节码",
+      "虚拟机",
+      "JVM",
+      "解释器"
+    ],
+    "aliases": [
+      "Bytecode",
+      "Virtual Machine"
+    ],
+    "source": "Java Virtual Machine Specification; Lua源代码; Python字节码文档",
+    "sections": [
+      {
+        "heading": "核心定义",
+        "content": "字节码是平台无关的中间指令(比机器码高级，比源代码低级)，由虚拟机执行。栈式VM(JVM/.NET)：操作数栈+局部变量表，指令隐式操作栈顶——iload/istore/iadd。寄存器式VM(Dalvik/Lua/Python)：指令显式指定寄存器——MOVE R1,R2; ADD R3,R1,R2。栈式指令短但指令数多，寄存器式指令长但指令数少。JVM字节码单字节操作码(最多256条指令)，Java Bytecode通过栈帧+程序计数器实现控制流。"
+      },
+      {
+        "heading": "关键结论",
+        "content": "1. 栈式VM实现简单(无需寄存器分配)，寄存器式性能更好 2. JIT编译器将热点字节码编译为本地码 3. WebAssembly是平台无关的寄存器式字节码（比JVM更轻量）"
+      },
+      {
+        "heading": "关联页面",
+        "content": "[[JIT编译技术]] [[三地址码与中间表示IR]]"
+      }
+    ]
+  },
+  {
+    "dir_name": "编译原理",
+    "file_stem": "属性文法与语法制导翻译",
+    "title": "属性文法与语法制导翻译",
+    "course": "编译原理",
+    "chapter": "语义分析",
+    "difficulty": "INTERMEDIATE",
+    "tags": [
+      "编译原理",
+      "属性文法",
+      "语法制导翻译",
+      "SDD",
+      "SDT"
+    ],
+    "aliases": [
+      "Attribute Grammar"
+    ],
+    "source": "Compilers: Principles, Techniques, and Tools (Dragon Book) 第5章",
+    "sections": [
+      {
+        "heading": "核心定义",
+        "content": "属性文法为每个文法符号关联属性值。综合属性(Synthesized)：从子节点属性计算父节点属性(自底向上)。继承属性(Inherited)：从父节点/兄弟节点属性计算(自顶向下)。S-属性定义只有综合属性(语法制导定义SDD)，L-属性定义允许继承属性但只能从左兄弟继承。语法制导翻译方案(SDT)在产生式中嵌入语义动作。"
+      },
+      {
+        "heading": "关键结论",
+        "content": "1. S-属性可在LR分析(自底向上)时计算 2. L-属性可用递归下降(自顶向下)计算 3. 语法树节点保存属性值作为后续分析(类型/IR)的基础"
+      },
+      {
+        "heading": "关联页面",
+        "content": "[[抽象语法树AST]] [[LL与LR语法分析对比]] [[语义分析]]"
+      }
+    ]
+  },
+  {
+    "dir_name": "编译原理",
+    "file_stem": "文法设计与二义性消除",
+    "title": "文法设计与二义性消除",
+    "course": "编译原理",
+    "chapter": "语法分析",
+    "difficulty": "INTERMEDIATE",
+    "tags": [
+      "编译原理",
+      "文法",
+      "二义性",
+      "文法设计"
+    ],
+    "aliases": [
+      "Grammar Design",
+      "Ambiguity Resolution"
+    ],
+    "source": "Compilers: Principles, Techniques, and Tools (Dragon Book) 第4章; Parsing Techniques (Grune & Jacobs)",
+    "sections": [
+      {
+        "heading": "核心定义",
+        "content": "文法二义性：一个句子可以产生两棵不同的语法树。消除二义性方法：1.重写文法(引入新非终结符分层——运算符优先级) 2.规定结合性(左结合/右结合——运算符结合性) 3.悬空else问题：规定else匹配最近的未匹配if(最近嵌套规则)。优先级爬升(Pratt Parser)：每个运算符有左绑定力(lbp)和右绑定力(rbp)，递归下降统一处理表达式分析。"
+      },
+      {
+        "heading": "关键结论",
+        "content": "1. 表达式文法典型的分层设计：Term(+/−)→Factor(*/÷)→Primary(num/paren) 2. Yacc/Bison用%left/%right/%nonassoc声明优先级和结合性 3. LR分析器比LL能处理更自然的文法(容忍部分二义性)"
+      },
+      {
+        "heading": "关联页面",
+        "content": "[[LL与LR语法分析对比]] [[语法分析概览]] [[抽象语法树AST]]"
+      }
+    ]
+  },
+  {
+    "dir_name": "编译原理",
+    "file_stem": "并行的语法分析算法",
+    "title": "并行语法分析算法（GLR与Packrat）",
+    "course": "编译原理",
+    "chapter": "语法分析",
+    "difficulty": "ADVANCED",
+    "tags": [
+      "编译原理",
+      "GLR",
+      "Packrat",
+      "并行语法分析",
+      "PEG"
+    ],
+    "aliases": [
+      "GLR Parsing",
+      "PEG Parsing"
+    ],
+    "source": "Parsing Techniques (Grune & Jacobs); PEG论文 (Ford 2004)",
+    "sections": [
+      {
+        "heading": "核心定义",
+        "content": "GLR(Generalized LR)：当LR遇到冲突时同时探索所有可能(分叉搜索+栈合并)，适合任何上下文无关文法但在冲突多时指数膨胀。Packrat Parsing(PEG解析)：基于解析表达文法(PEG)，使用记忆化回溯(memoization)保证线性时间。PEG的选择/是ordered choice先匹配左，左递归需特殊处理。GLL(Generalized LL)是LL的广义版本。"
+      },
+      {
+        "heading": "关键结论",
+        "content": "1. GLR用于处理难以改写为LR(1)的复杂文法(如C++需要语义反馈) 2. PEG无二义性但左递归是难点 3. ANTLR 4使用Adaptive LL(*)——运行时自适应选择产生式"
+      },
+      {
+        "heading": "关联页面",
+        "content": "[[LL与LR语法分析对比]] [[文法设计与二义性消除]]"
+      }
+    ]
+  },
+  {
+    "dir_name": "编译原理",
+    "file_stem": "异常处理与运行时支持",
+    "title": "异常处理的编译实现",
+    "course": "编译原理",
+    "chapter": "代码优化与生成",
+    "difficulty": "INTERMEDIATE",
+    "tags": [
+      "编译原理",
+      "异常处理",
+      "DWARF",
+      "栈展开",
+      "zero-cost"
+    ],
+    "aliases": [
+      "Exception Handling Implementation"
+    ],
+    "source": "Itanium C++ ABI: Exception Handling; LLVM EH Documentation",
+    "sections": [
+      {
+        "heading": "核心定义",
+        "content": "异常处理的编译器实现方案：setjmp/longjmp(简单但性能差)、基于表的零开销异常(zero-cost exception handling)——正常路径无额外指令，异常时查表做栈展开。DWARF Call Frame Information (CFI)：记录每个PC对应的寄存器保存位置，用于栈展开。LSDA(Language-Specific Data Area)：记录try/catch区域、异常类型匹配信息、cleanup代码。"
+      },
+      {
+        "heading": "关键结论",
+        "content": "1. Itanium C++ ABI定义了跨编译器C++异常处理兼容标准 2. zero-cost ≠ 零开销(只有异常路径开销大→适合异常少的场景) 3. Rust的panic与C++异常机制类似 4. 防止回调用noexcept标记(编译器可避免生成展开表)"
+      },
+      {
+        "heading": "关联页面",
+        "content": "[[运行时系统]] [[栈帧与调用约定]] [[代码生成]]"
+      }
+    ]
+  },
+  {
+    "dir_name": "编译原理",
+    "file_stem": "垃圾回收算法",
+    "title": "垃圾回收（GC）算法与实现",
+    "course": "编译原理",
+    "chapter": "运行时系统",
+    "difficulty": "ADVANCED",
+    "tags": [
+      "编译原理",
+      "GC",
+      "垃圾回收",
+      "内存管理",
+      "运行时"
+    ],
+    "aliases": [
+      "Garbage Collection"
+    ],
+    "source": "The Garbage Collection Handbook (Jones, Hosking, Moss); G1 GC Documentation",
+    "sections": [
+      {
+        "heading": "核心定义",
+        "content": "GC自动回收不再使用的内存。引用计数(Reference Counting)：每个对象维护引用计数，归0回收。优势：实时性好、简单；劣势：循环引用泄漏、高频更新开销。追踪式(Tracing GC)：Mark-Sweep(标记可达对象+清扫不可达)、Mark-Compact(标记+移动活对象解决碎片)、Copying GC(From/To两个半区，活对象拷贝到To)。分代GC(Generational)：弱分代假说——大多数对象早逝，将堆分为年轻代和老年代，年轻代频繁Minor GC(scavenge)，老年代低频Major/Full GC。"
+      },
+      {
+        "heading": "关键结论",
+        "content": "1. 现代GC的结合：G1(Z Garbage First)分代+并发标记+区域化compact 2. 写屏障(Write Barrier)跟踪跨代引用 3. ZGC和Shenandoah实现sub-ms暂停时间 4. Go的GC延迟<1ms(并发标记+STW sweep)"
+      },
+      {
+        "heading": "关联页面",
+        "content": "[[内存管理]] [[运行时系统]] [[JIT编译技术]]"
+      }
+    ]
+  },
+  {
+    "dir_name": "计算机组成原理",
+    "file_stem": "乘法器Booth算法",
+    "title": "乘法器设计（Booth算法）",
+    "course": "计算机组成原理",
+    "chapter": "运算器",
+    "difficulty": "ADVANCED",
+    "tags": [
+      "计算机组成原理",
+      "乘法器",
+      "Booth",
+      "运算器",
+      "ALU"
+    ],
+    "aliases": [
+      "Booth's Algorithm"
+    ],
+    "source": "A Signed Binary Multiplication Technique (Booth 1951); Computer Organization and Design (Patterson & Hennessy)",
+    "sections": [
+      {
+        "heading": "核心定义",
+        "content": "Booth算法是有符号二进制乘法的经典算法，利用1...10...0=2^(k+1)-2^m将连续的1替换为一次加法和一次减法。操作规则（取决于乘数当前位Qi和前一位Qi-1）：01→加被乘数；10→减被乘数；00/11→无操作。每次算术右移一位。标准Booth：n次移位+平均n/2次加减。Radix-4 Booth：每次检查3位，n/2次移位。"
+      },
+      {
+        "heading": "关键结论",
+        "content": "1. 现代CPU用Wallace Tree+Booth编码的混合乘法器 2. Radix-4 Booth将部分积数量减半 3. Wallace Tree将部分积求和从O(n²)降到O(log n)"
+      },
+      {
+        "heading": "关联页面",
+        "content": "[[加法器]] [[算术逻辑单元ALU]] [[IEEE754浮点数标准]]"
+      }
+    ]
+  },
+  {
+    "dir_name": "计算机组成原理",
+    "file_stem": "超标量与乱序执行",
+    "title": "超标量与乱序执行",
+    "course": "计算机组成原理",
+    "chapter": "处理器设计",
+    "difficulty": "ADVANCED",
+    "tags": [
+      "计算机组成原理",
+      "超标量",
+      "乱序执行",
+      "Tomasulo",
+      "指令级并行"
+    ],
+    "aliases": [
+      "Superscalar",
+      "Out-of-Order Execution"
+    ],
+    "source": "Computer Architecture: A Quantitative Approach (Hennessy & Patterson) 第3章",
+    "sections": [
+      {
+        "heading": "核心定义",
+        "content": "超标量每时钟周期发射多条指令(IPC>1)。乱序执行(OoO)指令不按程序顺序执行，操作数就绪后立即执行。Tomasulo算法：保留站(Reservation Station)跟踪操作数状态，公共数据总线(CDB)广播结果，寄存器重命名消除假相关(WAR/WAW)。Reorder Buffer(ROB)确保按序提交。"
+      },
+      {
+        "heading": "关键结论",
+        "content": "1. ROB深度是核心参数：Skylake=224, Apple M1≈630 2. 寄存器重命名是乱序执行的前提(消除WAW/WAR假依赖) 3. 分支预测错误时需刷新流水线，ROB越大惩罚越大"
+      },
+      {
+        "heading": "关联页面",
+        "content": "[[指令流水线概念]] [[流水线冒险]] [[分支预测]] [[Tomasulo算法]]"
+      }
+    ]
+  },
+  {
+    "dir_name": "计算机组成原理",
+    "file_stem": "分支预测器设计",
+    "title": "分支预测器设计",
+    "course": "计算机组成原理",
+    "chapter": "处理器设计",
+    "difficulty": "ADVANCED",
+    "tags": [
+      "计算机组成原理",
+      "分支预测",
+      "BTB",
+      "TAGE",
+      "感知器"
+    ],
+    "aliases": [
+      "Branch Prediction"
+    ],
+    "source": "Computer Architecture: A Quantitative Approach (Hennessy & Patterson) 第3章",
+    "sections": [
+      {
+        "heading": "核心定义",
+        "content": "分支预测是乱序执行性能的关键。静态预测：总是预测不跳转/向后跳转向前不跳转。动态预测：1位预测器(上次结果)→2位饱和计数器(容忍一次偏差)。两级预测(PAg/GAp/GAs/Gshare)：(全局历史⊕PC)索引PHT。锦标赛预测器(Hybrid)：组合局部+全局预测器，用选择器选择更准的。TAGE：多级不同历史长度预测器，选择最长匹配的。感知器(Perceptron)：用神经网络权重预测。"
+      },
+      {
+        "heading": "关键结论",
+        "content": "1. 现代CPU分支预测准确率>95%(但错误预测惩罚10-20 cycle→总体开销仍大) 2. BTB(Branch Target Buffer)缓存跳转目标地址 3. 间接跳转(vtable/函数指针)的预测用ITTAGE 4. Spectre漏洞利用了分支预测的副作用"
+      },
+      {
+        "heading": "关联页面",
+        "content": "[[超标量与乱序执行]] [[流水线冒险]] [[指令流水线概念]]"
+      }
+    ]
+  },
+  {
+    "dir_name": "计算机组成原理",
+    "file_stem": "缓存一致性协议",
+    "title": "缓存一致性协议（MESI/MOESI）",
+    "course": "计算机组成原理",
+    "chapter": "存储器层次",
+    "difficulty": "ADVANCED",
+    "tags": [
+      "计算机组成原理",
+      "缓存一致性",
+      "MESI",
+      "MOESI",
+      "多核"
+    ],
+    "aliases": [
+      "Cache Coherence"
+    ],
+    "source": "A Primer on Memory Consistency and Cache Coherence (Sorin, Hill, Wood); Intel/AMD架构手册",
+    "sections": [
+      {
+        "heading": "核心定义",
+        "content": "缓存一致性协议维护多核系统中各核私有cache的数据一致性。MESI协议：Modified(脏且独占)、Exclusive(干净且独占)、Shared(干净且共享)、Invalid(无效)。MOESI增加Owned(脏但共享，拥有者负责写回)。操作：BusRd(读请求)→根据状态响应；BusRdX(排他读/写请求)→其他cache无效化该行；BusUpgr(升级共享为独占——优化无读的写)。Snooping总线协议(广播)vs Directory协议(点对点可扩展)。"
+      },
+      {
+        "heading": "关键结论",
+        "content": "1. 伪共享(False Sharing)导致不必要的cache line无效化→用padding/alignas隔离 2. Directory协议更适合大规模多处理器(>8核) 3. 现代CPU使用MESIF(Intel)/MOESI(AMD)协议 4. Coherence是共识(Memory Consistency)的基础层"
+      },
+      {
+        "heading": "关联页面",
+        "content": "[[缓存体系结构]] [[内存一致性与内存模型]] [[多处理器架构]]"
+      }
+    ]
+  },
+  {
+    "dir_name": "计算机组成原理",
+    "file_stem": "指令流水线与冒险",
+    "title": "指令流水线冒险与解决",
+    "course": "计算机组成原理",
+    "chapter": "处理器设计",
+    "difficulty": "INTERMEDIATE",
+    "tags": [
+      "计算机组成原理",
+      "流水线",
+      "冒险",
+      "转发",
+      "stall"
+    ],
+    "aliases": [
+      "Pipeline Hazards"
+    ],
+    "source": "Computer Organization and Design (Patterson & Hennessy) 第4章",
+    "sections": [
+      {
+        "heading": "核心定义",
+        "content": "流水线冒险分为三类：结构冒险（硬件资源冲突→增加资源如分离指令/数据cache）、数据冒险（指令依赖前一指令结果→转发forwarding减少stall，无法转发时插入stall）、控制冒险（分支/跳转→分支预测+延迟槽）。五级流水线(IF-ID-EX-MEM-WB)：转发路径——EX/MEM→EX(ALU结果直接转发给下一指令)、MEM/WB→EX(load结果转发给2周期后的指令)。load-use data hazard即使有转发也需1个stall。"
+      },
+      {
+        "heading": "关键结论",
+        "content": "1. 转发可消除大部分数据冒险(除load-use) 2. 流水线深度增加→分支惩罚增大→预测器更重要 3. VLIW处理器用编译调度解决冒险而非硬件转发"
+      },
+      {
+        "heading": "关联页面",
+        "content": "[[超标量与乱序执行]] [[分支预测器设计]] [[Tomasulo算法]]"
+      }
+    ]
+  },
+  {
+    "dir_name": "计算机组成原理",
+    "file_stem": "缓存体系结构",
+    "title": "缓存（Cache）体系结构",
+    "course": "计算机组成原理",
+    "chapter": "存储器层次",
+    "difficulty": "INTERMEDIATE",
+    "tags": [
+      "计算机组成原理",
+      "Cache",
+      "缓存",
+      "组相联",
+      "替换策略"
+    ],
+    "aliases": [
+      "Cache Architecture"
+    ],
+    "source": "Computer Organization and Design (Patterson & Hennessy) 第5章",
+    "sections": [
+      {
+        "heading": "核心定义",
+        "content": "缓存利用程序的局部性(temporal+spatial)弥合CPU与内存速度差距。结构：标记(Tag)+索引(Index)+块内偏移(Block Offset)。映射方式：直接映射(每个块只有一个位置→冲突miss多)、全相联(任意位置→硬件复杂)、组相联(折中，k-way set associative)。替换策略：LRU(2-way简单)、伪LRU(tree-PLRU)、RRIP(Re-Reference Interval Prediction)。写策略：写直达(write-through)+写缓冲→简单，写回(write-back)→性能好但需追踪dirty。"
+      },
+      {
+        "heading": "关键结论",
+        "content": "1. 3C模型：Compulsory(首次访问)+Capacity(容量不够)+Conflict(组冲突) 2. 预取(Prefetch)减少compulsory miss 3. 组相联是最常用的设计(4-16 way) 4. 多级cache(L1d/L1i→L2→L3/L4)以不同延迟和容量平衡"
+      },
+      {
+        "heading": "关联页面",
+        "content": "[[缓存一致性协议]] [[内存层次结构]] [[虚拟内存与TLB]]"
+      }
+    ]
+  },
+  {
+    "dir_name": "计算机组成原理",
+    "file_stem": "虚拟内存与TLB",
+    "title": "虚拟内存与TLB机制",
+    "course": "计算机组成原理",
+    "chapter": "存储器层次",
+    "difficulty": "INTERMEDIATE",
+    "tags": [
+      "计算机组成原理",
+      "虚拟内存",
+      "TLB",
+      "页表",
+      "缺页"
+    ],
+    "aliases": [
+      "Virtual Memory",
+      "TLB"
+    ],
+    "source": "Computer Organization and Design (Patterson & Hennessy) 第5章; Intel x86架构手册",
+    "sections": [
+      {
+        "heading": "核心定义",
+        "content": "虚拟内存为每个进程提供独立的地址空间。页表：虚拟页号→物理页框号(+权限/存在/脏/访问位)。多级页表减少内存开销(x86-64:4级→5级(PML5)页表)。TLB(快表)：缓存最近使用的虚实地址映射(内容可寻址存储器CAM+RAM)。TLB缺失：硬件填表(x86 CR3页面遍历)或软件填表(MIPS)。ASID(地址空间ID)避免上下文切换时全刷TLB。"
+      },
+      {
+        "heading": "关键结论",
+        "content": "1. L1 TLB延迟<1 cycle(全相联)、L2 TLB延迟4-8 cycles 2. 大页(2MB/1GB)用更少TLB条目覆盖更大范围 3. Meltdown漏洞利用访存指令微架构副作用绕过页保护"
+      },
+      {
+        "heading": "关联页面",
+        "content": "[[缓存体系结构]] [[大页内存与透明大页]] [[缺页中断处理流程]]"
+      }
+    ]
+  },
+  {
+    "dir_name": "计算机组成原理",
+    "file_stem": "异步FIFO与跨时钟域",
+    "title": "异步FIFO与跨时钟域设计",
+    "course": "计算机组成原理",
+    "chapter": "数字设计",
+    "difficulty": "ADVANCED",
+    "tags": [
+      "计算机组成原理",
+      "异步FIFO",
+      "跨时钟域",
+      "CDC",
+      "格雷码"
+    ],
+    "aliases": [
+      "Asynchronous FIFO"
+    ],
+    "source": "Simulation and Synthesis Techniques for Asynchronous FIFO Design (Cummings SNUG 2002); 数字集成电路设计",
+    "sections": [
+      {
+        "heading": "核心定义",
+        "content": "异步FIFO在写时钟域和读时钟域之间安全传输数据。核心挑战：多比特跨时钟域传递指针可能产生亚稳态。解决方法：格雷码指针(相邻值仅1位不同)→双触发器同步器(打两拍消亚稳态)→比较格雷码指针判空满。空条件：写指针==读指针(同值)。满条件：写指针超前读指针一圈(写/读方向相反最高2位不同，其余位相同)。"
+      },
+      {
+        "heading": "关键结论",
+        "content": "1. 格雷码指针天然编码了指针间的关系——比二进制更安全 2. 满条件的判断是异步FIFO最难的部分 3. 跨时钟域信号：单比特→双触发同步器，多比特→握手或异步FIFO 4. SoC/IP设计中CDC是芯片失败的头号原因"
+      },
+      {
+        "heading": "关联页面",
+        "content": "[[时序与时钟]] [[握手协议与总线]]"
+      }
+    ]
+  },
+  {
+    "dir_name": "计算机组成原理",
+    "file_stem": "IEEE754浮点数",
+    "title": "IEEE754浮点数标准",
+    "course": "计算机组成原理",
+    "chapter": "运算器",
+    "difficulty": "INTERMEDIATE",
+    "tags": [
+      "计算机组成原理",
+      "IEEE754",
+      "浮点数",
+      "Float",
+      "舍入"
+    ],
+    "aliases": [
+      "IEEE 754"
+    ],
+    "source": "IEEE 754-2019 Standard for Floating-Point Arithmetic; Computer Organization and Design (Patterson & Hennessy)",
+    "sections": [
+      {
+        "heading": "核心定义",
+        "content": "IEEE754定义浮点数格式：单精度(32bit=1sign+8exp+23frac，bias=127)、双精度(64bit=1+11+52，bias=1023)。值=(-1)^s×M×2^E。规格化数：exp≠0且exp≠全1，M=1+frac(隐含1)；非规格化数(denorm)：exp=0，M=0+frac(无隐含1，渐进下溢)；特殊值：exp全1且frac=0→±∞，exp全1且frac≠0→NaN(安静/信号)。舍入模式：最近偶数舍入(round to nearest even/ties to even，默认)、向0/正无穷/负无穷。"
+      },
+      {
+        "heading": "关键结论",
+        "content": "1. 0.1+0.2≠0.3(二进制无法精确表示0.1) 2. NaN≠NaN(需用isnan检测) 3. -0存在(1/±0 = ±∞) 4. 非规格化数保证下溢时精度逐步降低"
+      },
+      {
+        "heading": "关联页面",
+        "content": "[[乘法器Booth算法]] [[加法器]] [[算术逻辑单元ALU]]"
+      }
+    ]
+  },
+  {
+    "dir_name": "计算机组成原理",
+    "file_stem": "PCIe总线协议",
+    "title": "PCIe总线协议基础",
+    "course": "计算机组成原理",
+    "chapter": "IO系统",
+    "difficulty": "INTERMEDIATE",
+    "tags": [
+      "计算机组成原理",
+      "PCIe",
+      "总线",
+      "DMA",
+      "IO"
+    ],
+    "aliases": [
+      "PCI Express"
+    ],
+    "source": "PCI Express Base Specification; Computer Organization and Design (Patterson & Hennessy)",
+    "sections": [
+      {
+        "heading": "核心定义",
+        "content": "PCIe是点对点串行互连总线替代PCI并行总线。层次结构：事务层(TLP组包+QoS虚拟通道VC)、数据链路层(DLLP可靠性+ACK/NAK协议)、物理层(LTSSM链路训练+8b/10b编码Gen1-2或128b/130b编码Gen3+)。通信模型：基于地址路由(address routing)、ID路由(BDF)、隐式路由(消息only-root)。支持SR-IOV(单物理设备虚拟化为多个VF)、ATS(地址翻译服务)、PRI(页面请求接口)。"
+      },
+      {
+        "heading": "关键结论",
+        "content": "1. Lane是差分信号对(1/2/4/8/16/32 lanes) 2. 各代速率：Gen3=8GT/s, Gen4=16GT/s, Gen5=32GT/s 3. PCIe的DMA通过IOMMU(SMMU)隔离 4. CXL(Compute Express Link)基于PCIe物理层和高层协议堆叠"
+      },
+      {
+        "heading": "关联页面",
+        "content": "[[DMA直接存储器访问]] [[中断系统]] [[IO系统概述]]"
+      }
+    ]
+  },
+  {
+    "dir_name": "计算机组成原理",
+    "file_stem": "SDRAM与DDR技术",
+    "title": "SDRAM与DDR内存技术",
+    "course": "计算机组成原理",
+    "chapter": "存储器层次",
+    "difficulty": "INTERMEDIATE",
+    "tags": [
+      "计算机组成原理",
+      "DDR",
+      "SDRAM",
+      "内存控制器"
+    ],
+    "aliases": [
+      "DDR SDRAM"
+    ],
+    "source": "Computer Architecture: A Quantitative Approach (Hennessy & Patterson); JEDEC DDR标准",
+    "sections": [
+      {
+        "heading": "核心定义",
+        "content": "DRAM存储单元是1T1C(1晶体管+1电容)，需要周期性刷新(几十ms刷新一次)。SDRAM(Synchronous DRAM)同步于时钟。DDR(Double Data Rate)在时钟上升沿和下降沿都传输数据。DDR4/5：bank group并行访存、预取(prefetch n=8/16)匹配burst length、burst chop、ZQ校准。内存控制器时序：tRCD(RAS-to-CAS延迟)、tCL(CAS延迟)、tRP(预充电时间)、tRAS(行活跃最小时间)。"
+      },
+      {
+        "heading": "关键结论",
+        "content": "1. Row Buffer Locality：同行访问最快(open page policy) 2. 内存控制器重排请求以最大化row buffer命中 3. 地址映射影响性能：行/列/bank交错 4. 3D堆叠(HBM/HMC)提供更高带宽和更低延迟"
+      },
+      {
+        "heading": "关联页面",
+        "content": "[[缓存体系结构]] [[内存层次结构]] [[NUMA架构]]"
+      }
+    ]
+  },
+  {
+    "dir_name": "计算机组成原理",
+    "file_stem": "乱序执行与Tomasulo",
+    "title": "Tomasulo算法详解",
+    "course": "计算机组成原理",
+    "chapter": "处理器设计",
+    "difficulty": "ADVANCED",
+    "tags": [
+      "计算机组成原理",
+      "Tomasulo",
+      "乱序执行",
+      "保留站"
+    ],
+    "aliases": [
+      "Tomasulo Algorithm"
+    ],
+    "source": "An Efficient Algorithm for Exploiting Multiple Arithmetic Units (Tomasulo 1967); Computer Architecture (Hennessy & Patterson)",
+    "sections": [
+      {
+        "heading": "核心定义",
+        "content": "Tomasulo算法是乱序执行的经典实现（IBM 360/91）。保留站(Reservation Station)：每条指令发射时分配到对应功能单元的保留站项，记录操作数状态(就绪值或等待哪个保留站产生)。公共数据总线(CDB)：每条完成的指令在CDB上广播结果+保留站ID，所有等待该结果的保留站捕获(旁路tag匹配实现寄存器重命名)。Load/Store Buffer追踪内存操作顺序。"
+      },
+      {
+        "heading": "关键结论",
+        "content": "1. Tomasulo实现了寄存器重命名(通过保留站tag) 2. CDB是物理瓶颈——现代处理器每个功能单元有自己的旁路网络 3. ROB(Reorder Buffer)加入后形成现代乱序核心：保留站+ROB+物理寄存器堆"
+      },
+      {
+        "heading": "关联页面",
+        "content": "[[超标量与乱序执行]] [[指令流水线与冒险]] [[寄存器重命名]]"
+      }
+    ]
+  },
+  {
+    "dir_name": "计算机组成原理",
+    "file_stem": "浮点加法器设计",
+    "title": "浮点加法器设计流程",
+    "course": "计算机组成原理",
+    "chapter": "运算器",
+    "difficulty": "ADVANCED",
+    "tags": [
+      "计算机组成原理",
+      "浮点加法器",
+      "IEEE754",
+      "ALU"
+    ],
+    "aliases": [
+      "Floating-Point Adder"
+    ],
+    "source": "Computer Arithmetic: Algorithms and Hardware Designs (Parhami); Computer Organization and Design",
+    "sections": [
+      {
+        "heading": "核心定义",
+        "content": "浮点加法流程：1.对阶(Exponent Alignment)：较小指数对齐大指数，尾数右移差值位 2.尾数相加 3.结果规格化(Normalize)：移除前导零(左移)或将进位规格化(右移) 4.舍入Round(按IEEE754模式) 5.检查溢出/下溢/特殊值。关键延迟在加法器和移位器。进位传播加法器(CPA)是核心瓶颈——可用超前进位加法器(CLA)/前缀加法器(Prefix Adder)加速。"
+      },
+      {
+        "heading": "关键结论",
+        "content": "1. 浮点加法比整数加法复杂一个数量级 2. 舍入后可能需要再次规格化(舍入溢出) 3. 现代浮点单元全流水线化(1指令/周期吞吐) 4. SIMD浮点单元(SSE/AVX/NEON)一组浮点单元阵列"
+      },
+      {
+        "heading": "关联页面",
+        "content": "[[IEEE754浮点数]] [[乘法器Booth算法]] [[算术逻辑单元ALU]]"
+      }
+    ]
+  },
+  {
+    "dir_name": "计算机组成原理",
+    "file_stem": "全加器与超前进位",
+    "title": "加法器设计（CLA与Prefix）",
+    "course": "计算机组成原理",
+    "chapter": "运算器",
+    "difficulty": "INTERMEDIATE",
+    "tags": [
+      "计算机组成原理",
+      "加法器",
+      "超前进位",
+      "前缀加法器",
+      "ALU"
+    ],
+    "aliases": [
+      "Carry Lookahead Adder"
+    ],
+    "source": "Computer Arithmetic: Algorithms and Hardware Designs (Parhami); Digital Design and Computer Architecture (Harris)",
+    "sections": [
+      {
+        "heading": "核心定义",
+        "content": "行波进位加法器(RCA)：延迟O(n)Ci→Ci+1。超前进位加法器(CLA)：通过生成G_i=AiBi(产生进位)和传播P_i=Ai⊕Bi(传播进位)并行计算所有进位C_i=G_i+P_i·C_(i-1)。黑盒递推展开后C_i=G_i+P_i·G_(i-1)+P_i·P_(i-1)·G_(i-2)+...。前缀加法器(Kogge-Stone/Brent-Kung/Han-Carlson)：以树形并行计算前缀结果，O(log n)层级。"
+      },
+      {
+        "heading": "关键结论",
+        "content": "1. Kogge-Stone延迟最优但布线密集，Brent-Kung布线少但延迟高 2. 现代CPU用Sparse-tree前缀加法器: 低位用CLA树+高位用进位选择(CSelA) 3. 面积-延迟的折中是加法器设计的永恒主题"
+      },
+      {
+        "heading": "关联页面",
+        "content": "[[算术逻辑单元ALU]] [[乘法器Booth算法]] [[浮点加法器设计]]"
+      }
+    ]
+  },
+  {
+    "dir_name": "计算机组成原理",
+    "file_stem": "硬件乘法器演进",
+    "title": "硬件乘法器架构演进",
+    "course": "计算机组成原理",
+    "chapter": "运算器",
+    "difficulty": "INTERMEDIATE",
+    "tags": [
+      "计算机组成原理",
+      "乘法器",
+      "Wallace树",
+      "Dadda树",
+      "部分积"
+    ],
+    "aliases": [
+      "Hardware Multiplier Evolution"
+    ],
+    "source": "Computer Arithmetic: Algorithms and Hardware Designs (Parhami); 各代乘法器论文",
+    "sections": [
+      {
+        "heading": "核心定义",
+        "content": "硬件乘法器演进：移位加序列乘法器(n个cycle)→阵列乘法器(Array——n×n个部分积并行加法，O(n)延迟)→Booth编码减少部分积数量(Radix-4: n/2部分积, Radix-8: n/3)→Wallace Tree将部分积求和用(3,2)进位保留加法器(CSA)不断压缩(5→3→2)，O(log n)延迟。→Dadda Tree优化CSA位置减少硬件→现代混合：Booth编码+Wallace/Dadda压缩+CPA终加。"
+      },
+      {
+        "heading": "关键结论",
+        "content": "1. Wallace Tree的CSA层级=⌈log_1.5(n/2)⌉ 2. Radix-4 Booth对每个部分积的乘数位为{-2,-1,0,+1,+2}需要更复杂的部分积生成 3. 现代CPU整数乘法延迟1-3 cycles"
+      },
+      {
+        "heading": "关联页面",
+        "content": "[[乘法器Booth算法]] [[全加器与超前进位]]"
+      }
+    ]
+  },
+  {
+    "dir_name": "计算机组成原理",
+    "file_stem": "SIMD与向量处理器",
+    "title": "SIMD指令集与向量处理",
+    "course": "计算机组成原理",
+    "chapter": "处理器设计",
+    "difficulty": "INTERMEDIATE",
+    "tags": [
+      "计算机组成原理",
+      "SIMD",
+      "向量",
+      "SSE",
+      "AVX",
+      "NEON"
+    ],
+    "aliases": [
+      "SIMD",
+      "Vector Processing"
+    ],
+    "source": "Computer Architecture: A Quantitative Approach (Hennessy & Patterson) 第4章; Intel Intrinsics Guide",
+    "sections": [
+      {
+        "heading": "核心定义",
+        "content": "SIMD(Single Instruction Multiple Data)一条指令同时操作多个数据。Intel x86：MMX(64bit)→SSE(128bit)→AVX2(256bit)→AVX-512(512bit)。ARM：NEON(128bit)、SVE(可变向量长度)。操作：向量加/乘/乘加(FMA)、shuffle/permute重排、gather/scatter非连续访问、mask/predicate条件执行。数据对齐(alignment)影响性能(虽然后续架构放宽了限制)。向量化方式：编译器自动向量化、Intrinsic函数、手写汇编。"
+      },
+      {
+        "heading": "关键结论",
+        "content": "1. AVX-512 heavy指令会导致降频(license throttling)→需评估实际收益 2. 向量宽度翻倍不等于2x性能(受限于内存带宽) 3. SVE的可变向量长度(VLA)解决向前兼容 4. GPGPU本质上是超宽SIMT而非纯SIMD"
+      },
+      {
+        "heading": "关联页面",
+        "content": "[[超标量与乱序执行]] [[GPU架构基础]]"
+      }
+    ]
+  },
+  {
+    "dir_name": "离散数学",
+    "file_stem": "鸽巢原理及其推广",
+    "title": "鸽巢原理及其推广",
+    "course": "离散数学",
+    "chapter": "组合数学",
+    "difficulty": "BASIC",
+    "tags": [
+      "离散数学",
+      "鸽巢原理",
+      "组合数学",
+      "Ramsey"
+    ],
+    "aliases": [
+      "Pigeonhole Principle"
+    ],
+    "source": "Discrete Mathematics and Its Applications (Rosen) 第6章",
+    "sections": [
+      {
+        "heading": "核心定义",
+        "content": "鸽巢原理：n+1个物体放入n个容器→至少一个容器有≥2个物体。推广1：n个物体放入k个容器→至少一个容器有≥⌈n/k⌉个。推广2：∑|A_i|>k→至少一个|A_i|≥k+1。应用：任何367人至少2人生日相同；长度为n²+1的序列包含长度为n+1的单调子序列(Erdős–Szekeres定理)。"
+      },
+      {
+        "heading": "关键结论",
+        "content": "1. 鸽巢原理是Ramsey理论的基础(任何一个足够大的结构必然包含有序子结构) 2. 证明存在性而非构造性 3. 哈希冲突、Diophantine逼近中也有应用"
+      },
+      {
+        "heading": "关联页面",
+        "content": "[[集合与集合运算]] [[排列组合]] [[图论基础]]"
+      }
+    ]
+  },
+  {
+    "dir_name": "离散数学",
+    "file_stem": "容斥原理",
+    "title": "容斥原理（Inclusion-Exclusion）",
+    "course": "离散数学",
+    "chapter": "组合数学",
+    "difficulty": "INTERMEDIATE",
+    "tags": [
+      "离散数学",
+      "容斥原理",
+      "组合数学",
+      "计数"
+    ],
+    "aliases": [
+      "Inclusion-Exclusion Principle"
+    ],
+    "source": "Discrete Mathematics and Its Applications (Rosen) 第8章",
+    "sections": [
+      {
+        "heading": "核心定义",
+        "content": "容斥原理计算集合的并：|A∪B|=|A|+|B|-|A∩B|。三集合：|A∪B∪C|=|A|+|B|+|C|-|A∩B|-|A∩C|-|B∩C|+|A∩B∩C|。一般形式：|⋃A_i|=∑|A_i|-∑|A_i∩A_j|+∑|A_i∩A_j∩A_k|-...+(-1)^(n+1)|⋂A_i|。应用：欧拉函数φ(n)、错排问题、计算满足至少一个条件的对象数。"
+      },
+      {
+        "heading": "关键结论",
+        "content": "1. 符号交替——奇项加、偶项减 2. 项数2^n-1，所有非空子集都需要计算 3. 容斥是对补集的简化——求'满足至少一个条件'难时求'不满足任何条件'"
+      },
+      {
+        "heading": "关联页面",
+        "content": "[[集合与集合运算]] [[排列组合]] [[欧拉函数]]"
+      }
+    ]
+  },
+  {
+    "dir_name": "离散数学",
+    "file_stem": "图论基础概念",
+    "title": "图论基础概念与性质",
+    "course": "离散数学",
+    "chapter": "图论",
+    "difficulty": "BASIC",
+    "tags": [
+      "离散数学",
+      "图论",
+      "图",
+      "度",
+      "连通性"
+    ],
+    "aliases": [
+      "Graph Theory Fundamentals"
+    ],
+    "source": "Discrete Mathematics and Its Applications (Rosen) 第10章; 离散数学及其应用",
+    "sections": [
+      {
+        "heading": "核心定义",
+        "content": "图G=(V,E)：V为顶点集，E为边集。简单图无自环和重边。握手定理：∑deg(v)=2|E|（度之和为边数的两倍）。特殊图：完全图K_n每条边都存在、二部图顶点可分为两部分边仅连接两部分、树是没有环的连通图。图的储存：邻接矩阵(稠密图)、邻接表(稀疏图)。欧拉图：含每条边恰好一次的回路(欧拉回路)——充要条件是连通且所有顶点度数为偶。哈密顿图：含每个顶点恰好一次的回路——无已知充要条件(NP完全)。"
+      },
+      {
+        "heading": "关键结论",
+        "content": "1. 任意图必有偶数个奇度顶点(握手定理推论) 2. 欧拉vs哈密顿：欧拉Euler是边问题(易判定)，哈密顿Hamilton是顶点问题(NP完全) 3. 平面图由欧拉公式V-E+F=2约束"
+      },
+      {
+        "heading": "关联页面",
+        "content": "[[图遍历BFS与DFS]] [[最短路径Dijkstra]] [[最小生成树MST]] [[欧拉与哈密顿回路]]"
+      }
+    ]
+  },
+  {
+    "dir_name": "离散数学",
+    "file_stem": "排列组合计数",
+    "title": "排列组合与计数原理",
+    "course": "离散数学",
+    "chapter": "组合数学",
+    "difficulty": "BASIC",
+    "tags": [
+      "离散数学",
+      "排列",
+      "组合",
+      "计数",
+      "阶乘"
+    ],
+    "aliases": [
+      "Permutation and Combination"
+    ],
+    "source": "Discrete Mathematics and Its Applications (Rosen) 第6章",
+    "sections": [
+      {
+        "heading": "核心定义",
+        "content": "计数基本原理：乘法原理(独立选, 乘)、加法原理(互斥选, 加)。排列P(n,r)=n!/(n-r)!：n个元素取r个有序排列。组合C(n,r)=n!/(r!(n-r)!)：无序选择。组合恒等式：C(n,k)=C(n,n-k)、C(n,k)=C(n-1,k)+C(n-1,k-1)（Pascal恒等式）、∑C(n,k)=2^n。圆排列：(n-1)!。多重集排列：n!/(n₁!n₂!...)。允许重复的组合C(n+r-1,r)（stars-and-bars方法）。"
+      },
+      {
+        "heading": "关键结论",
+        "content": "1. 顺序是否重要决定排列vs组合 2. C(n,k)是二项式定理系数：（a+b)^n=∑C(n,k)a^k b^(n-k) 3. 球盒模型/隔板法是解决组合问题的通用方法"
+      },
+      {
+        "heading": "关联页面",
+        "content": "[[容斥原理]] [[鸽巢原理及其推广]] [[二项式定理与生成函数]]"
+      }
+    ]
+  },
+  {
+    "dir_name": "离散数学",
+    "file_stem": "命题逻辑与谓词逻辑",
+    "title": "命题逻辑与谓词逻辑基础",
+    "course": "离散数学",
+    "chapter": "逻辑",
+    "difficulty": "BASIC",
+    "tags": [
+      "离散数学",
+      "命题逻辑",
+      "谓词逻辑",
+      "逻辑联结词",
+      "量词"
+    ],
+    "aliases": [
+      "Propositional Logic",
+      "Predicate Logic"
+    ],
+    "source": "Discrete Mathematics and Its Applications (Rosen) 第1章",
+    "sections": [
+      {
+        "heading": "核心定义",
+        "content": "命题逻辑：命题是能判断真假的陈述句。联结词：¬否定、∧合取(与)、∨析取(或)、→蕴含(if-then)、↔双条件。运算符优先级：¬>∧>∨>→>↔。谓词逻辑引入谓词P(x)、全称量词∀x和存在量词∃x。∀的否定为∃¬，∃的否定为∀¬。自由变量与约束变量的区别影响代入规则。前束范式：所有量词在前方。"
+      },
+      {
+        "heading": "关键结论",
+        "content": "1. 蕴含p→q仅在p真q假时为假 2. 量词嵌套顺序有歧义：∀x∃y P(x,y) ≠ ∃y∀x P(x,y) 3. 归结原理(Resolution)是自动定理证明的基础"
+      },
+      {
+        "heading": "关联页面",
+        "content": "[[自然推理系统]] [[布尔代数]] [[一阶逻辑]]"
+      }
+    ]
+  },
+  {
+    "dir_name": "离散数学",
+    "file_stem": "关系的性质与闭包",
+    "title": "关系的性质与闭包运算",
+    "course": "离散数学",
+    "chapter": "关系",
+    "difficulty": "INTERMEDIATE",
+    "tags": [
+      "离散数学",
+      "关系",
+      "自反",
+      "传递",
+      "对称",
+      "闭包"
+    ],
+    "aliases": [
+      "Relations and Closures"
+    ],
+    "source": "Discrete Mathematics and Its Applications (Rosen) 第9章",
+    "sections": [
+      {
+        "heading": "核心定义",
+        "content": "二元关系R⊆A×A的五种性质：自反(∀a∈A,aRa)、反自反(∀a∈A,¬aRa)、对称(aRb→bRa)、反对称(aRb∧bRa→a=b)、传递(aRb∧bRc→aRc)。闭包：包含R的最小关系且满足某性质。自反闭包r(R)=R∪I_A（对角线）。对称闭包s(R)=R∪R^(-1)（逆关系）。传递闭包t(R)=R∪R²∪R³∪...（Warshall算法O(n³)求）。等价关系是自反+对称+传递（划分产生等价类）。偏序关系是自反+反对称+传递。"
+      },
+      {
+        "heading": "关键结论",
+        "content": "1. 等价关系=划分（每个元素恰在一个等价类中）2. 哈斯图(Hasse Diagram)可视化偏序 3. 传递闭包用于图的可达性查询 4. Warshall算法动态规划求t(R)"
+      },
+      {
+        "heading": "关联页面",
+        "content": "[[等价关系与划分]] [[偏序关系与哈斯图]] [[图论基础概念]]"
+      }
+    ]
+  },
+  {
+    "dir_name": "离散数学",
+    "file_stem": "函数与递归函数论",
+    "title": "函数与递归函数论",
+    "course": "离散数学",
+    "chapter": "函数",
+    "difficulty": "INTERMEDIATE",
+    "tags": [
+      "离散数学",
+      "函数",
+      "递归",
+      "原始递归",
+      "Ackermann"
+    ],
+    "aliases": [
+      "Recursive Functions"
+    ],
+    "source": "Discrete Mathematics and Its Applications (Rosen) 第5章; 计算理论导引 (Sipser)",
+    "sections": [
+      {
+        "heading": "核心定义",
+        "content": "函数f:A→B将每个a∈A唯一映射到b∈B。单射(injective)：不同a映射到不同b。满射(surjective)：每个b都有a映射到它。双射(bijective)：单射且满射(可逆)。原始递归函数：由初始函数(零、后继、投影)通过复合和原始递归定义的可计算函数。Ackermann函数是非原始递归的可计算函数——证明了原始递归不能涵盖所有可计算函数。μ算子(最小化)将原始递归推广到μ递归(等价于图灵可计算)。"
+      },
+      {
+        "heading": "关键结论",
+        "content": "1. Ackermann(3,n)≈2^(n+3)-3，增长速度远超原始递归 2. Church-Turing论题：直觉可计算=图灵机可计算=λ可计算=μ递归 3. 可计算性与复杂性理论由此出发"
+      },
+      {
+        "heading": "关联页面",
+        "content": "[[集合与集合运算]] [[图灵机与可计算性]] [[递归]]"
+      }
+    ]
+  },
+  {
+    "dir_name": "离散数学",
+    "file_stem": "群论基础",
+    "title": "群论基础与子群",
+    "course": "离散数学",
+    "chapter": "代数结构",
+    "difficulty": "INTERMEDIATE",
+    "tags": [
+      "离散数学",
+      "群",
+      "代数",
+      "子群",
+      "Lagrange定理"
+    ],
+    "aliases": [
+      "Group Theory"
+    ],
+    "source": "Discrete Mathematics and Its Applications (Rosen) 第13章; 抽象代数 (Fraleigh)",
+    "sections": [
+      {
+        "heading": "核心定义",
+        "content": "群(G,*)是满足封闭性、结合律、存在单位元e、每个元素有逆元的代数结构。阿贝尔群：额外满足交换律。子群：群G的非空子集H在G的运算下也构成群。Lagrange定理：有限群G的子群H的阶整除G的阶(|H|整除|G|)。循环群：由单个元素生成的所有幂{a^k|k∈Z}。同态与同构：保持运算结构的映射。陪集(Coset)：aH={ah|h∈H}将G划分为等大小的|H|块。"
+      },
+      {
+        "heading": "关键结论",
+        "content": "1. Zn的群表是加法模n循环群 2. Cayley定理：任何有限群同构于一个置换群 3. Lagrange定理是有限群理论的基石 4. 应用：密码学(RSA/ECC依赖群论)、编码理论"
+      },
+      {
+        "heading": "关联页面",
+        "content": "[[环与域]] [[同余与模运算]] [[RSA与非对称加密]]"
+      }
+    ]
+  },
+  {
+    "dir_name": "离散数学",
+    "file_stem": "布尔代数与逻辑电路",
+    "title": "布尔代数与逻辑电路",
+    "course": "离散数学",
+    "chapter": "代数结构",
+    "difficulty": "INTERMEDIATE",
+    "tags": [
+      "离散数学",
+      "布尔代数",
+      "逻辑电路",
+      "Karnaugh",
+      "卡诺图"
+    ],
+    "aliases": [
+      "Boolean Algebra"
+    ],
+    "source": "Discrete Mathematics and Its Applications (Rosen) 第12章",
+    "sections": [
+      {
+        "heading": "核心定义",
+        "content": "布尔代数是二元素代数系统满足交换律、分配律、同一律和互补律。基本运算：AND(·)、OR(+)、NOT(')。定律：德摩根律(x+y)'=x'y'、(xy)'=x'+y'、吸收律x+xy=x。卡诺图(K-map)是最多6变量的布尔函数可视化简化工具(合并相邻的1得到最简SOP/POS)。Quine-McCluskey算法是表格化最小化(适合多变量)。任意布尔函数可用NAND(与非门)或NOR(或非门)完全实现。"
+      },
+      {
+        "heading": "关键结论",
+        "content": "1. 布尔代数=集合论(∩/∪/补)=命题逻辑(∧/∨/¬) 2. 最小项(SOP)和最大项(POS)是规范表示 3. Don't care项用于进一步简化电路"
+      },
+      {
+        "heading": "关联页面",
+        "content": "[[命题逻辑与谓词逻辑]] [[逻辑门]] [[半加器与全加器]]"
+      }
+    ]
+  },
+  {
+    "dir_name": "离散数学",
+    "file_stem": "递归方程求解",
+    "title": "递归方程求解方法",
+    "course": "离散数学",
+    "chapter": "高级计数",
+    "difficulty": "ADVANCED",
+    "tags": [
+      "离散数学",
+      "递归",
+      "生成函数",
+      "齐次解"
+    ],
+    "aliases": [
+      "Recurrence Relations"
+    ],
+    "source": "Discrete Mathematics and Its Applications (Rosen) 第8章",
+    "sections": [
+      {
+        "heading": "核心定义",
+        "content": "线性齐次常系数递归：a_n=c₁a_(n-1)+...+c_k a_(n-k)。解法——特征方程：r^k-c₁r^(k-1)-...-c_k=0。若r是k重根则对应解项n^(i-1)r^n。非齐次：特解形式依f(n)而定(多项式选多项式、指数选指数、多重根加乘n的因子)。生成函数法将递归转为代数方程。"
+      },
+      {
+        "heading": "关键结论",
+        "content": "1. 斐波那契数列齐次解F_n=round(φ^n/√5)(通项Binet公式) 2. 主定理是分治递归的特殊解 3. 生成函数可求通项但需要寻找封闭形式 4. 工程中复杂递归可用迭代展开猜测+代入验证"
+      },
+      {
+        "heading": "关联页面",
+        "content": "[[主定理MasterTheorem]] [[生成函数]] [[斐波那契与递推]]"
+      }
+    ]
+  },
+  {
+    "dir_name": "离散数学",
+    "file_stem": "图着色与多项式",
+    "title": "图着色与色多项式",
+    "course": "离散数学",
+    "chapter": "图论",
+    "difficulty": "INTERMEDIATE",
+    "tags": [
+      "离散数学",
+      "图着色",
+      "色数",
+      "色多项式",
+      "四色定理"
+    ],
+    "aliases": [
+      "Graph Coloring"
+    ],
+    "source": "Discrete Mathematics and Its Applications (Rosen) 第10章; Introduction to Graph Theory (Wilson)",
+    "sections": [
+      {
+        "heading": "核心定义",
+        "content": "图着色为每个顶点分配颜色使相邻顶点颜色不同。色数χ(G)：所需最少颜色数。四色定理：任何平面图可用≤4色正常着色（唯一被计算机证明的大定理）。色多项式P_G(k)表示用k种颜色的着色方案数。二分图⇔χ(G)=2⇔无奇圈。贪心着色按某顺序依次分配最小可用颜色。Brooks定理：连通图若非完全图或奇圈则χ(G)≤Δ(G)。"
+      },
+      {
+        "heading": "关键结论",
+        "content": "1. 图着色是NP完全问题（一般图最优着色）2. 贪心着色策略影响颜色数(按度降序→通常较少) 3. 边着色(Vizing定理)：Δ≤χ'(G)≤Δ+1"
+      },
+      {
+        "heading": "关联页面",
+        "content": "[[图论基础概念]] [[NP完全理论]] [[回溯法与剪枝]]"
+      }
+    ]
+  },
+  {
+    "dir_name": "离散数学",
+    "file_stem": "树与生成树计数",
+    "title": "树与生成树计数",
+    "course": "离散数学",
+    "chapter": "图论",
+    "difficulty": "INTERMEDIATE",
+    "tags": [
+      "离散数学",
+      "树",
+      "生成树",
+      "Cayley公式",
+      "Kirchhoff"
+    ],
+    "aliases": [
+      "Trees and Spanning Trees"
+    ],
+    "source": "Discrete Mathematics and Its Applications (Rosen) 第11章; 图论及其应用 (Bondy & Murty)",
+    "sections": [
+      {
+        "heading": "核心定义",
+        "content": "树是连通无环图的等价定义：无环连通|V|=|E|+1、无环+加一边生唯一环、连通+去一边不连通。生成树是包含所有顶点的树的子图。Cayley定理：K_n有n^(n-2)个不同的生成树(Prüfer序列编码)。最小生成树算法见Prim/Kruskal。Kirchhoff矩阵树定理：生成树数目=删去任一行列的拉普拉斯矩阵的任意余子式。"
+      },
+      {
+        "heading": "关键结论",
+        "content": "1. n个节点的树有n^(n-2)个(完整标记树) 2. Prüfer序列给出了树和长度为n-2的[1,n]序列的一一对应 3. 拉普拉斯矩阵=D-A(D度对角矩阵，A邻接矩阵)"
+      },
+      {
+        "heading": "关联页面",
+        "content": "[[最小生成树MST]] [[图论基础概念]]"
+      }
+    ]
+  },
+  {
+    "dir_name": "离散数学",
+    "file_stem": "集合论基础",
+    "title": "集合论基础与基数",
+    "course": "离散数学",
+    "chapter": "集合论",
+    "difficulty": "BASIC",
+    "tags": [
+      "离散数学",
+      "集合",
+      "基数",
+      "可数",
+      "对角线论证"
+    ],
+    "aliases": [
+      "Set Theory",
+      "Cardinality"
+    ],
+    "source": "Discrete Mathematics and Its Applications (Rosen) 第2章; Introduction to Set Theory (Hrbacek & Jech)",
+    "sections": [
+      {
+        "heading": "核心定义",
+        "content": "集合的表示：列举法{1,2,3}、描述法{x|P(x)}。运算：∪、∩、-、⊕(对称差)、幂集P(S)={所有子集}。|P(S)|=2^(|S|)。基数(势)比较：|A|=|B|若存在A→B双射；|A|≤|B|若存在A→B单射。Cantor对角线论证：|R|>|N|(不可数)——任何从N到R的函数都会漏掉对角线构造的新实数。Cantor-Bernstein-Schröder定理：|A|≤|B|且|B|≤|A|→|A|=|B|。"
+      },
+      {
+        "heading": "关键结论",
+        "content": "1. 自然数集N、整数集Z、有理数集Q都是可数无穷(ℵ₀) 2. 实数集R是不可数(连续统ℵ₁=2^ℵ₀) 3. 连续统假设(CH)在ZFC中不可证明也不可证伪 4. 可数集的有限笛卡儿积仍可数"
+      },
+      {
+        "heading": "关联页面",
+        "content": "[[容斥原理]] [[关系的性质与闭包]] [[图灵机与可计算性]]"
+      }
+    ]
+  },
+  {
+    "dir_name": "软件工程",
+    "file_stem": "敏捷Scrum与Kanban",
+    "title": "敏捷开发方法论（Scrum与Kanban）",
+    "course": "软件工程",
+    "chapter": "软件开发过程",
+    "difficulty": "BASIC",
+    "tags": [
+      "软件工程",
+      "敏捷开发",
+      "Scrum",
+      "Kanban"
+    ],
+    "aliases": [
+      "Agile",
+      "Scrum",
+      "Kanban"
+    ],
+    "source": "Agile Manifesto (2001); Scrum Guide (Schwaber & Sutherland)",
+    "sections": [
+      {
+        "heading": "核心定义",
+        "content": "敏捷宣言四大价值观：个体互动>流程工具、可工作软件>详尽文档、客户合作>合同谈判、响应变化>遵循计划。Scrum：固定Sprint周期(1-4周)、Scrum Master+Product Owner+Dev Team三角色、Daily Standup/Sprint Planning/Review/Retrospective。Kanban：可视化看板、WIP限制、持续交付(无固定迭代)。Scrumban=Scrum迭代+Kanban流式管理。"
+      },
+      {
+        "heading": "关键结论",
+        "content": "1. Scrum适合需求变化频繁的项目，Kanban适合运维/支持类 2. 敏捷≠无计划≠无文档，而是'刚好够用' 3. 用户故事(INVEST原则)是敏捷需求的核心载体"
+      },
+      {
+        "heading": "关联页面",
+        "content": "[[测试驱动开发TDD]] [[持续集成CI-CD与DevOps]] [[版本控制与分支策略]]"
+      }
+    ]
+  },
+  {
+    "dir_name": "软件工程",
+    "file_stem": "测试驱动开发TDD",
+    "title": "测试驱动开发（TDD）",
+    "course": "软件工程",
+    "chapter": "软件测试",
+    "difficulty": "INTERMEDIATE",
+    "tags": [
+      "软件工程",
+      "TDD",
+      "测试",
+      "敏捷",
+      "重构"
+    ],
+    "aliases": [
+      "Test-Driven Development"
+    ],
+    "source": "Test-Driven Development: By Example (Beck 2002)",
+    "sections": [
+      {
+        "heading": "核心定义",
+        "content": "TDD红绿重构循环：Red→写一个失败测试(定义期望行为)→Green→写最少代码让测试通过(不必优雅)→Refactor→重构代码消除重复/改善设计(测试仍通过)。三个法则：1.不允许写任何产品代码除非它让失败的测试通过 2.不允许写超过一个失败测试 3.不允许写超过刚好让测试通过的产品代码。"
+      },
+      {
+        "heading": "关键结论",
+        "content": "1. TDD使代码天然可测试(低耦合、依赖注入) 2. 测试即文档(测试描述行为规范) 3. 回归测试套件是重构的安全网 4. TDD不适合探索性编程(UI布局/原型)"
+      },
+      {
+        "heading": "关联页面",
+        "content": "[[敏捷Scrum与Kanban]] [[软件测试-单元与集成测试]] [[重构技术]]"
+      }
+    ]
+  },
+  {
+    "dir_name": "软件工程",
+    "file_stem": "持续集成CI-CD与DevOps",
+    "title": "CI/CD持续集成与持续交付",
+    "course": "软件工程",
+    "chapter": "软件开发过程",
+    "difficulty": "INTERMEDIATE",
+    "tags": [
+      "软件工程",
+      "CI/CD",
+      "DevOps",
+      "自动化",
+      "部署"
+    ],
+    "aliases": [
+      "Continuous Integration",
+      "Continuous Delivery"
+    ],
+    "source": "Continuous Delivery (Humble & Farley); DevOps Handbook; GitHub Actions/Jenkins文档",
+    "sections": [
+      {
+        "heading": "核心定义",
+        "content": "CI/CD管道(Pipeline)：代码提交→构建→静态分析(lint/SAST)→单元测试→集成测试→构建镜像→部署到非生产环境→验收测试→生产部署(CD或手动审批)。CI(持续集成)：频繁合并代码到主干，自动化构建+测试，快速反馈。CD(持续交付)：随时可通过一键部署到生产。CD(持续部署)：每次通过流水线的变更自动部署到生产。DevOps文化：打破开发-运维壁垒，自动化一切。"
+      },
+      {
+        "heading": "关键结论",
+        "content": "1. Trunk-Based Development+Feature Flag替代长期分支 2. 蓝绿部署/金丝雀发布降低部署风险 3. IaC(基础设施即代码)是CI/CD的延伸(Terraform, Pulumi) 4. GitHub Actions/GitLab CI/Jenkins是主流CI/CD工具"
+      },
+      {
+        "heading": "关联页面",
+        "content": "[[敏捷Scrum与Kanban]] [[版本控制与分支策略]] [[Docker容器技术]]"
+      }
+    ]
+  },
+  {
+    "dir_name": "软件工程",
+    "file_stem": "设计模式六大原则",
+    "title": "SOLID设计原则",
+    "course": "软件工程",
+    "chapter": "软件设计",
+    "difficulty": "INTERMEDIATE",
+    "tags": [
+      "软件工程",
+      "SOLID",
+      "设计原则",
+      "面向对象"
+    ],
+    "aliases": [
+      "SOLID Principles"
+    ],
+    "source": "Agile Software Development: Principles, Patterns, and Practices (Martin); Clean Architecture (Martin)",
+    "sections": [
+      {
+        "heading": "核心定义",
+        "content": "SRP单一职责原则：一个类只有一个引起它变化的原因。OCP开闭原则：对扩展开放，对修改关闭(用抽象/多态/策略模式扩展)。LSP里氏替换原则：子类可以替换父类而不破坏程序正确性。ISP接口隔离原则：不应强迫客户端依赖它不需要的接口（大接口拆小）。DIP依赖反转原则：高层模块不应依赖低层模块，两者依赖抽象；抽象不依赖细节，细节依赖抽象（依赖注入）。"
+      },
+      {
+        "heading": "关键结论",
+        "content": "1. SOLID降低耦合→代码更易维护和测试 2. SRP是达成OCP的前提 3. LSP是继承/子类型安全的原则 4. DIP由DI容器(Spring/Guice)实现"
+      },
+      {
+        "heading": "关联页面",
+        "content": "[[设计模式-装饰器模式]] [[设计模式概述]] [[面向对象设计]]"
+      }
+    ]
+  },
+  {
+    "dir_name": "软件工程",
+    "file_stem": "版本控制与分支策略",
+    "title": "Git分支策略与实践",
+    "course": "软件工程",
+    "chapter": "配置管理",
+    "difficulty": "BASIC",
+    "tags": [
+      "软件工程",
+      "Git",
+      "分支",
+      "GitFlow",
+      "Trunk-based"
+    ],
+    "aliases": [
+      "Git Branching Strategies"
+    ],
+    "source": "Pro Git (Chacon & Straub); GitLab Flow/Trunk-Based Development 文档",
+    "sections": [
+      {
+        "heading": "核心定义",
+        "content": "GitFlow：master(生产)+develop(开发)+feature/*+release/*+hotfix/*分支。适合定期发布的大项目。GitHub Flow：只有main+feature分支，通过PR review合并，合并后自动部署。Trunk-Based Development：所有人直接提交到trunk/main(或短命feature分支<1天)，用feature flag控制未完成功能的发布。参考：clear commit message(Conventional Commits)、线性历史(rebase/ff-only merge)、CI流水线验证。"
+      },
+      {
+        "heading": "关键结论",
+        "content": "1. 长命分支=合并噩梦→feature flag+短分支 2. GitFlow适合有明确发布周期的产品，Trunk-Based适合CD 3. Squash merge保持历史干净，Merge commit保留分支上下文"
+      },
+      {
+        "heading": "关联页面",
+        "content": "[[持续集成CI-CD与DevOps]] [[代码审查]]"
+      }
+    ]
+  },
+  {
+    "dir_name": "软件工程",
+    "file_stem": "微服务架构设计",
+    "title": "微服务架构设计与模式",
+    "course": "软件工程",
+    "chapter": "软件架构",
+    "difficulty": "ADVANCED",
+    "tags": [
+      "软件工程",
+      "微服务",
+      "架构",
+      "服务拆分",
+      "分布式"
+    ],
+    "aliases": [
+      "Microservices Architecture"
+    ],
+    "source": "Building Microservices (Newman); Microservices Patterns (Richardson); Martin Fowler微服务文章",
+    "sections": [
+      {
+        "heading": "核心定义",
+        "content": "微服务将系统拆分为小规模、独立部署、单一职责的服务。服务拆分原则：按业务能力(DDD限界上下文)、单一职责、独立部署能力。通信：同步(REST/gRPC)→简单但耦合调用链；异步(消息队列/Kafka)→松耦合但复杂。分布式挑战：服务发现、配置中心、API网关(Kong/Spring Cloud Gateway)、负载均衡、断路器（Circuit Breaker——防止级联故障）、分布式追踪(OpenTelemetry/Jaeger)、统一日志(ELK)。"
+      },
+      {
+        "heading": "关键结论",
+        "content": "1. 不应该从微服务开始(除非你已了解单体→何时、为什么拆) 2. 服务边界是最重要的设计决策 3. 分布式事务用Saga模式替代2PC 4. K8s+Service Mesh(Istio)已成为微服务基础设施标准"
+      },
+      {
+        "heading": "关联页面",
+        "content": "[[分布式一致性协议]] [[领域驱动设计DDD]] [[RESTful API设计]]"
+      }
+    ]
+  },
+  {
+    "dir_name": "软件工程",
+    "file_stem": "领域驱动设计DDD",
+    "title": "领域驱动设计（DDD）核心",
+    "course": "软件工程",
+    "chapter": "软件设计",
+    "difficulty": "ADVANCED",
+    "tags": [
+      "软件工程",
+      "DDD",
+      "领域驱动",
+      "设计"
+    ],
+    "aliases": [
+      "Domain-Driven Design"
+    ],
+    "source": "Domain-Driven Design (Evans 2003); Implementing DDD (Vernon)",
+    "sections": [
+      {
+        "heading": "核心定义",
+        "content": "DDD将复杂业务逻辑建模为领域模型。战略设计：限界上下文(Bounded Context)——每个上下文有独立的语言和模型；上下文映射(Context Map)——各上下文间的关系。战术设计：实体(Entity)——身份标识不变(用ID比较)；值对象(Value Object)——通过属性值比较(不可变)；聚合(Aggregate)——一致性边界(根实体为入口)；领域事件(Domain Event)——已发生的重要业务事实。通用语言(Ubiquitous Language)：团队共用同一套术语。"
+      },
+      {
+        "heading": "关键结论",
+        "content": "1. DDD的核心是将复杂业务逻辑映射到合理的代码结构 2. 限界上下文是微服务拆分的天然指导 3. CQRS(命令查询职责分离)+Event Sourcing常与DDD配合"
+      },
+      {
+        "heading": "关联页面",
+        "content": "[[微服务架构设计]] [[SOLID设计原则]] [[面向对象设计]]"
+      }
+    ]
+  },
+  {
+    "dir_name": "软件工程",
+    "file_stem": "RESTful API设计",
+    "title": "RESTful API设计最佳实践",
+    "course": "软件工程",
+    "chapter": "软件设计",
+    "difficulty": "BASIC",
+    "tags": [
+      "软件工程",
+      "REST",
+      "API",
+      "设计"
+    ],
+    "aliases": [
+      "RESTful API Design"
+    ],
+    "source": "Roy Fielding博士论文 (REST, 2000); Microsoft REST API Guidelines; Google API Design Guide",
+    "sections": [
+      {
+        "heading": "核心定义",
+        "content": "REST(表述性状态转移)风格约束：1.客户-服务器分离 2.无状态(每个请求包含所需全部信息) 3.可缓存(响应声明可缓存性) 4.统一接口(资源URL标识、自描述消息、超媒体HATEOAS) 5.分层系统 6.按需代码(可选)。设计实践：URL名词复数(/users、/users/{id}/orders)、HTTP方法对应CRUD(GET/POST/PUT/PATCH/DELETE)、分页(offset/limit或cursor)、版本策略(v1/v2或Header)。"
+      },
+      {
+        "heading": "关键结论",
+        "content": "1. REST不是规范而是一种架构风格 2. HATEOAS(超媒体驱动)常被忽略但Richardson Maturity Model最高级 3. 实际中GraphQL和gRPC是REST的重要替代方案"
+      },
+      {
+        "heading": "关联页面",
+        "content": "[[HTTP状态码全览]] [[微服务架构设计]] [[API安全]]"
+      }
+    ]
+  },
+  {
+    "dir_name": "软件工程",
+    "file_stem": "软件测试分类与策略",
+    "title": "软件测试分类与策略",
+    "course": "软件工程",
+    "chapter": "软件测试",
+    "difficulty": "BASIC",
+    "tags": [
+      "软件工程",
+      "测试",
+      "单元测试",
+      "集成测试",
+      "E2E"
+    ],
+    "aliases": [
+      "Software Testing"
+    ],
+    "source": "The Art of Software Testing (Myers); ISTQB; Google Testing Blog",
+    "sections": [
+      {
+        "heading": "核心定义",
+        "content": "测试金字塔：单元测试(大量，快，验证逻辑)→集成测试(中量，验证组件交互)→端到端E2E测试(少量，慢，验证业务流程)。按方法：黑盒测试(功能/不关注内部)、白盒测试(结构/覆盖路径)、灰盒测试(部分内部知识)。按目标：功能测试、性能测试(压力/负载/耐久)、安全测试(渗透/SAST/DAST)、兼容性测试、回归测试。"
+      },
+      {
+        "heading": "关键结论",
+        "content": "1. 测试金字塔指导测试投入分配(单元>集成>E2E) 2. 代码覆盖率(行/分支/条件)不是目标而是手段 3. 不稳定测试(flaky test)会破坏对测试套件的信任 4. 契约测试(consumer-driven contracts)替代集成测试"
+      },
+      {
+        "heading": "关联页面",
+        "content": "[[测试驱动开发TDD]] [[CI/CD]] [[代码质量与重构]]"
+      }
+    ]
+  },
+  {
+    "dir_name": "软件工程",
+    "file_stem": "设计模式概述",
+    "title": "GoF 23设计模式概述",
+    "course": "软件工程",
+    "chapter": "软件设计",
+    "difficulty": "INTERMEDIATE",
+    "tags": [
+      "软件工程",
+      "设计模式",
+      "GoF",
+      "OOP"
+    ],
+    "aliases": [
+      "Design Patterns Overview"
+    ],
+    "source": "Design Patterns: Elements of Reusable OO Software (GoF, 1994)",
+    "sections": [
+      {
+        "heading": "核心定义",
+        "content": "GoF 23种设计模式分三类。创建型5种：Factory Method(子类决定实例化)、Abstract Factory(产品族)、Builder(复杂对象构建)、Prototype(克隆)、Singleton(单例)。结构型7种：Adapter(接口转换)、Bridge(抽象与实现分离)、Composite(树形结构)、Decorator(动态附加职责)、Facade(统一接口)、Flyweight(共享细粒度对象)、Proxy(代理控制访问)。行为型11种：Observer(订阅通知)、Strategy(算法族可替换)、Template Method(骨架)+Command、State、Chain of Responsibility、Iterator等。"
+      },
+      {
+        "heading": "关键结论",
+        "content": "1. 模式不是规则——在合适的场景使用而非滥用 2. Singleton和Service Locator在现代因依赖注入而少用 3. 每种模式解决一种特定的设计问题(变化点)"
+      },
+      {
+        "heading": "关联页面",
+        "content": "[[SOLID设计原则]] [[设计模式-装饰器模式]] [[面向对象设计]]"
+      }
+    ]
+  },
+  {
+    "dir_name": "软件工程",
+    "file_stem": "代码审查最佳实践",
+    "title": "代码审查（Code Review）最佳实践",
+    "course": "软件工程",
+    "chapter": "软件开发过程",
+    "difficulty": "BASIC",
+    "tags": [
+      "软件工程",
+      "代码审查",
+      "CR",
+      "团队"
+    ],
+    "aliases": [
+      "Code Review Best Practices"
+    ],
+    "source": "Google Engineering Practices; SmartBear Code Review指南; GitLab/GitHub Code Review文档",
+    "sections": [
+      {
+        "heading": "核心定义",
+        "content": "代码审查的收益远超过缺陷发现：知识分享、代码所有权分散、指导新人、一致性强制执行、改善团队文化。审查速度：每次<400行(一小时内完成最有效)。审查速度：<24小时反馈。审查焦点：正确性(逻辑/边缘情况)、可读性(清晰命名/一致风格)、可测试性、安全性(OWASP Top 10)、性能(明显的性能反模式)。PR最佳实践：小且专注、有意义的标题和描述、关联issue/设计文档。"
+      },
+      {
+        "heading": "关键结论",
+        "content": "1. PR是分享知识的最好时机(作者解释WHAT和WHY) 2. 审查者不应重写代码——提出问题而非解决方案 3. 自动化(lint/format/SAST)处理风格违规让人审查语义 4. 积极评论(+1/approve)和建设性提问无攻击"
+      },
+      {
+        "heading": "关联页面",
+        "content": "[[版本控制与分支策略]] [[CI/CD]]"
+      }
+    ]
+  },
+  {
+    "dir_name": "程序设计",
+    "file_stem": "装饰器模式Decorator",
+    "title": "设计模式-装饰器模式（Decorator）",
+    "course": "程序设计",
+    "chapter": "设计模式",
+    "difficulty": "INTERMEDIATE",
+    "tags": [
+      "设计模式",
+      "装饰器",
+      "结构型",
+      "GoF",
+      "Decorator"
+    ],
+    "aliases": [
+      "Decorator Pattern"
+    ],
+    "source": "Design Patterns: Elements of Reusable OO Software (GoF)",
+    "sections": [
+      {
+        "heading": "核心定义",
+        "content": "装饰器模式动态地给对象添加职责，比继承更灵活。角色：Component(接口)、ConcreteComponent(原始对象)、Decorator(抽象装饰器持有Component引用)、ConcreteDecorator。Java I/O流是典型应用：new BufferedReader(new InputStreamReader(new FileInputStream(path)))。Python的@装饰器是语法糖。"
+      },
+      {
+        "heading": "关联页面",
+        "content": "[[设计模式概述]] [[SOLID设计原则]]"
+      }
+    ]
+  },
+  {
+    "dir_name": "程序设计",
+    "file_stem": "线程池原理",
+    "title": "并发编程-线程池原理",
+    "course": "程序设计",
+    "chapter": "并发编程",
+    "difficulty": "ADVANCED",
+    "tags": [
+      "并发编程",
+      "线程池",
+      "ThreadPool",
+      "Executor",
+      "并发"
+    ],
+    "aliases": [
+      "Thread Pool"
+    ],
+    "source": "Java Concurrency in Practice (Goetz) 第8章; Python concurrent.futures文档",
+    "sections": [
+      {
+        "heading": "核心定义",
+        "content": "线程池维护一组预创建的工作线程，复用执行任务避免频繁创建销毁。核心参数：corePoolSize(核心常驻线程)、maxPoolSize(最大线程)、keepAliveTime(非核心空闲存活时间)、workQueue(任务队列)、RejectedExecutionHandler(拒绝策略)。CPU密集线程数≈核心数+1，IO密集≈核心数×2。"
+      },
+      {
+        "heading": "关键结论",
+        "content": "1. 无界队列导致maxPoolSize失效 2. execute()无返回值，submit()返回Future 3. ForkJoinPool使用工作窃取算法适合递归分解任务 4. Python ThreadPoolExecutor受GIL限制只适合IO密集"
+      },
+      {
+        "heading": "关联页面",
+        "content": "[[多线程模型]] [[用户级线程与内核级线程]] [[异步编程]]"
+      }
+    ]
+  },
+  {
+    "dir_name": "程序设计",
+    "file_stem": "并发编程模型对比",
+    "title": "并发编程模型对比（线程/协程/Actor）",
+    "course": "程序设计",
+    "chapter": "并发编程",
+    "difficulty": "ADVANCED",
+    "tags": [
+      "并发编程",
+      "线程",
+      "协程",
+      "Actor",
+      "CSP",
+      "对比"
+    ],
+    "aliases": [
+      "Concurrency Models"
+    ],
+    "source": "七周七并发模型; Concurrency in Go; Erlang/OTP设计原理",
+    "sections": [
+      {
+        "heading": "核心定义",
+        "content": "线程模型(Java/C++): OS线程+共享内存+锁同步——性能好但复杂(数据竞争/死锁)。协程(Coroutine)模型(Python asyncio/Kotlin/Go goroutine): 用户态轻量任务，协作式调度(await挂起)，适合IO密集。Actor模型(Erlang/Akka): 每个Actor独立状态+信箱消息——无共享状态无锁、位置透明(分布式天然)、崩溃隔离(监督树)。CSP模型(Go Clojure core.async): 通过channel通信——'不要通过共享内存通信，要通过通信共享内存'。"
+      },
+      {
+        "heading": "关键结论",
+        "content": "1. 选择模型取决于场景：CPU密集用线程、IO密集用协程、分布式用Actor 2. Go=csp(goroutine+channel)+协程 3. 混合模型(Virtual Threads/Project Loom)试图统一线程和协程"
+      },
+      {
+        "heading": "关联页面",
+        "content": "[[线程池原理]] [[异步编程]] [[用户级线程与内核级线程]]"
+      }
+    ]
+  },
+  {
+    "dir_name": "程序设计",
+    "file_stem": "异步编程async-await",
+    "title": "异步编程（async/await）原理",
+    "course": "程序设计",
+    "chapter": "并发编程",
+    "difficulty": "INTERMEDIATE",
+    "tags": [
+      "异步编程",
+      "async",
+      "await",
+      "协程",
+      "事件循环"
+    ],
+    "aliases": [
+      "async/await",
+      "Asynchronous Programming"
+    ],
+    "source": "Python asyncio文档; JavaScript Promises/A+; Rust async/await RFC",
+    "sections": [
+      {
+        "heading": "核心定义",
+        "content": "async/await是协程的语法糖，让异步代码看起来像同步。事件循环(Event Loop)：单线程轮询任务，IO操作注册回调后挂起当前协程切换到另一个。工作流程：async函数返回Future/Promise(尚未完成的计算)，await挂起当前协程直到Future完成，释放执行线程去处理其他任务。Python的asyncio用selectors(epoll)做IO多路复用；JS的Promise用microtask队列。"
+      },
+      {
+        "heading": "关键结论",
+        "content": "1. async/await ≠ 多线程(仍是单线程协作式) 2. 关键：await让渡控制权(GIL的替代路径) 3. CPU密集任务阻塞事件循环→用线程池执行器run_in_executor 4. 协程的开销远小于线程(数KB的栈vs数MB)"
+      },
+      {
+        "heading": "关联页面",
+        "content": "[[协程原理]] [[事件循环]] [[IO多路复用select-poll-epoll]]"
+      }
+    ]
+  },
+  {
+    "dir_name": "程序设计",
+    "file_stem": "协程原理与实现",
+    "title": "协程原理与底层实现",
+    "course": "程序设计",
+    "chapter": "并发编程",
+    "difficulty": "ADVANCED",
+    "tags": [
+      "并发编程",
+      "协程",
+      "上下文切换",
+      "有栈/无栈协程"
+    ],
+    "aliases": [
+      "Coroutine Implementation"
+    ],
+    "source": "Lua协程实现; Go G-M-P调度器设计; C++20协程提案; Python asyncio源码",
+    "sections": [
+      {
+        "heading": "核心定义",
+        "content": "协程(Coroutine)是用户态的可挂起恢复的子程序。分类：有栈协程(stackful)——有独立调用栈(如Go goroutine/Lua coroutine)，切换时保存/恢复完整栈帧和寄存器，类似轻量线程。无栈协程(stackless)——没有独立调用栈(如JS async/Python await/Rust async)，编译器将协程体转换为状态机(每个await点是一个状态)。Go G-M-P调度：G(goroutine)+M(OS线程)+P(逻辑处理器/运行队列)，工作窃取。"
+      },
+      {
+        "heading": "关键结论",
+        "content": "1. 有栈协程切换开销=保存寄存器+切换栈指针(~10ns) 2. 无栈协程切换开销=状态变量赋值+switch/case(~1-2ns) 3. Go的抢占式调度1.14引入(异步系统调用超时抢占) 4. C++20无栈协程零开销抽象(不分配堆除非co_await暂停)"
+      },
+      {
+        "heading": "关联页面",
+        "content": "[[异步编程async-await]] [[并发编程模型对比]] [[上下文切换开销分析]]"
+      }
+    ]
+  },
+  {
+    "dir_name": "程序设计",
+    "file_stem": "RAII与资源管理",
+    "title": "RAII与智能指针",
+    "course": "程序设计",
+    "chapter": "C++/Rust",
+    "difficulty": "INTERMEDIATE",
+    "tags": [
+      "C++",
+      "RAII",
+      "智能指针",
+      "所有权",
+      "Rust"
+    ],
+    "aliases": [
+      "Resource Acquisition Is Initialization"
+    ],
+    "source": "The C++ Programming Language (Stroustrup); Effective C++; Rust Book",
+    "sections": [
+      {
+        "heading": "核心定义",
+        "content": "RAII(资源获取即初始化)是C++/Rust的资源管理核心思想：将资源的生命周期绑定到对象的生命周期。构造函数获取资源，析构函数释放资源——绝不手动释放。C++智能指针：unique_ptr(独占所有权，move-only)、shared_ptr(共享所有权，引用计数+控制块)、weak_ptr(观察不增加计数，lock升级为shared_ptr)。Rust：所有权规则(一个值一个owner)+借用(引用不过期于owner)+生命周期标注——编译期保证无use-after-free/双free/数据竞争。"
+      },
+      {
+        "heading": "关键结论",
+        "content": "1. make_unique/make_shared比直接new更安全(异常安全+单次分配) 2. shared_ptr控制块独立于对象(weak_ptr可感知对象已销毁) 3. Rust的所有权系统是RAII+借用检查器的静态实现"
+      },
+      {
+        "heading": "关联页面",
+        "content": "[[Rust所有权与借用]] [[C++移动语义]] [[垃圾回收算法]]"
+      }
+    ]
+  },
+  {
+    "dir_name": "程序设计",
+    "file_stem": "Python元类与类机制",
+    "title": "Python元类与类机制",
+    "course": "程序设计",
+    "chapter": "Python",
+    "difficulty": "ADVANCED",
+    "tags": [
+      "Python",
+      "元类",
+      "metaclass",
+      "描述符"
+    ],
+    "aliases": [
+      "Python Metaclasses"
+    ],
+    "source": "Python Language Reference; Fluent Python (Ramalho); Python Cookbook",
+    "sections": [
+      {
+        "heading": "核心定义",
+        "content": "一切都是对象——包括类本身。类是type的实例。元类是创建类的类。class创建流程：1.解析类体得到namespace字典 2.调用metaclass(name, bases, namespace)→得到类对象。type(name, bases, dict)是默认元类。__new__(cls,...)创建实例，__init__初始化。描述符协议：实现__get__/__set__/__delete__的对象控制属性访问，property/@classmethod/@staticmethod都是描述符。"
+      },
+      {
+        "heading": "关键结论",
+        "content": "1. 元类的典型应用：ORM(Django/SQLAlchemy)、接口注册、单例 2. class decorator比metaclass更简单(先考虑decorator) 3. MRO方法解析顺序由C3线性化算法确定"
+      },
+      {
+        "heading": "关联页面",
+        "content": "[[Python垃圾回收机制]] [[Python GIL与并发]]"
+      }
+    ]
+  },
+  {
+    "dir_name": "程序设计",
+    "file_stem": "Python GIL与并发",
+    "title": "Python GIL与并发模型",
+    "course": "程序设计",
+    "chapter": "Python",
+    "difficulty": "ADVANCED",
+    "tags": [
+      "Python",
+      "GIL",
+      "并发",
+      "多线程",
+      "multiprocessing"
+    ],
+    "aliases": [
+      "Global Interpreter Lock"
+    ],
+    "source": "Python C API; Python GIL讨论 (PEP 703 Disabling GIL); David Beazley GIL讲解",
+    "sections": [
+      {
+        "heading": "核心定义",
+        "content": "GIL(Global Interpreter Lock)是CPython解释器的互斥锁，确保同一时刻只有一个线程执行Python字节码。这是CPython内存管理(引用计数非线程安全)的实现简化。影响：CPU密集任务用多线程无效甚至更慢(线程切换开销+锁竞争)→用multiprocessing(多进程)或C扩展(释放GIL)。IO密集任务：IO操作会释放GIL(如网络/文件IO)，多线程有效。PEP 703(3.12实验→3.13可选)允许禁用GIL。"
+      },
+      {
+        "heading": "关键结论",
+        "content": "1. GIL不是Python语言的问题而是CPython实现的问题(Jython/IronPython无GIL) 2. 科学计算用numpy——底层C代码释放GIL实现多核并行 3. 多进程的替代成本高(序列化开销+独立内存) 4. subinterpreters(PEP 554)是无GIL的轻量级替代"
+      },
+      {
+        "heading": "关联页面",
+        "content": "[[协程原理与实现]] [[异步编程async-await]] [[线程池原理]]"
+      }
+    ]
+  },
+  {
+    "dir_name": "程序设计",
+    "file_stem": "C++移动语义与右值",
+    "title": "C++移动语义与右值引用",
+    "course": "程序设计",
+    "chapter": "C++",
+    "difficulty": "ADVANCED",
+    "tags": [
+      "C++",
+      "移动语义",
+      "右值引用",
+      "std::move",
+      "完美转发"
+    ],
+    "aliases": [
+      "Move Semantics"
+    ],
+    "source": "The C++ Programming Language (Stroustrup) 4th Ed; Effective Modern C++ (Meyers)",
+    "sections": [
+      {
+        "heading": "核心定义",
+        "content": "右值引用(T&&)是C++11的核心语言特性，使移动语义成为可能。左值(lvalue)：有身份可寻址(如变量)；右值(rvalue)：临时对象/字面量(如x+y、42)。std::move将左值(无条件)转为右值引用(允诺'我不再使用')。std::forward<T>根据T的推导类型完美转发(左值/右值)。移动构造函数/移动赋值从源对象'窃取'资源（通常是指针赋值+源指针置null），避免深拷贝。"
+      },
+      {
+        "heading": "关键结论",
+        "content": "1. 移动操作应为noexcept(在vector增长时异常安全保证) 2. std::move后源对象处于valid-but-unspecified状态(可调用不依赖具体值的函数) 3. 返回值优化(RVO/NRVO)在回临时本地变量时自动消除拷贝/移动"
+      },
+      {
+        "heading": "关联页面",
+        "content": "[[RAII与智能指针]] [[Rust所有权与借用]] [[C++模板与泛型]]"
+      }
+    ]
+  },
+  {
+    "dir_name": "程序设计",
+    "file_stem": "Rust所有权与借用",
+    "title": "Rust所有权与借用系统",
+    "course": "程序设计",
+    "chapter": "Rust",
+    "difficulty": "ADVANCED",
+    "tags": [
+      "Rust",
+      "所有权",
+      "借用",
+      "生命周期",
+      "内存安全"
+    ],
+    "aliases": [
+      "Rust Ownership",
+      "Borrowing"
+    ],
+    "source": "The Rust Programming Language (Rust Book); Programming Rust (Blandy & Orendorff)",
+    "sections": [
+      {
+        "heading": "核心定义",
+        "content": "Rust的所有权规则：1.每个值只有一个owner 2.值离开作用域时自动释放(drop) 3.同一时刻只能有一个可变引用(&mut T)或多个不可变引用(&T)，但不能同时。生命周期(lifetime)标注：'a等标注编译器不需显式标注大部分但有前提(同生命周期参数，编译器推断)。借用检查器(Borrow Checker)在编译时确保所有引用有效——无use-after-free、无double free、无数据竞争。"
+      },
+      {
+        "heading": "关键结论",
+        "content": "1. move是默认(赋值=所有权转移)，Copy类型(如i32)例外(按位复制) 2. 生命周期标注不改变代码行为仅帮助编译器 3. 智能指针：Box(堆值)、Rc/Arc(共享所有权/引用计数)、RefCell(内部可变性-运行期检查) 4. Unsafe Rust允许绕过借用检查(需要手工保证安全性)"
+      },
+      {
+        "heading": "关联页面",
+        "content": "[[RAII与智能指针]] [[C++移动语义与右值]]"
+      }
+    ]
+  },
+  {
+    "dir_name": "程序设计",
+    "file_stem": "函数式编程概念",
+    "title": "函数式编程核心概念",
+    "course": "程序设计",
+    "chapter": "编程范式",
+    "difficulty": "INTERMEDIATE",
+    "tags": [
+      "函数式编程",
+      "FP",
+      "不可变性",
+      "高阶函数",
+      "Monad"
+    ],
+    "aliases": [
+      "Functional Programming"
+    ],
+    "source": "Structure and Interpretation of Computer Programs (SICP); Haskell; Lambda Calculus",
+    "sections": [
+      {
+        "heading": "核心定义",
+        "content": "函数式编程(FP)核心概念：纯函数(相同输入→相同输出+无副作用)、不可变数据(数据创建后不能修改——持久化数据结构)、高阶函数(函数作为参数/返回值——map/filter/reduce)、函数组合(compose/pipe串联函数)、柯里化(curry)——将多参数函数转为单参数函数链。副作用管理：IO Monad(Haskell)、Effect系统、代数效应(Algebraic Effects)。递归代替循环，模式匹配代替if-else。"
+      },
+      {
+        "heading": "关键结论",
+        "content": "1. FP使推理代码行为更简单(无共享可变状态) 2. 持久化数据结构：结构共享(修改产生新版本，旧版本仍在) 3. 主流语言都引入了FP特性：Lambda、Stream API(Java)、闭包(Python/JS)"
+      },
+      {
+        "heading": "关联页面",
+        "content": "[[Monad与范畴论]] [[并发编程模型对比]]"
+      }
+    ]
+  },
+  {
+    "dir_name": "程序设计",
+    "file_stem": "数据库ORM原理",
+    "title": "ORM框架原理与ActiveRecord",
+    "course": "程序设计",
+    "chapter": "数据库编程",
+    "difficulty": "INTERMEDIATE",
+    "tags": [
+      "ORM",
+      "ActiveRecord",
+      "数据库映射",
+      "SQLAlchemy"
+    ],
+    "aliases": [
+      "Object-Relational Mapping"
+    ],
+    "source": "Martin Fowler PoEAA; SQLAlchemy文档; Hibernate/JPA文档",
+    "sections": [
+      {
+        "heading": "核心定义",
+        "content": "ORM(对象关系映射)在面向对象模型和关系数据库之间架桥。模式：ActiveRecord——每个实体类映射一张表，自身包含CRUD操作(Rails/Django ORM)。DataMapper——实体和持久化分离，映射器负责同步(SQLAlchemy Core/Hibernate)。核心问题(对象-关系阻抗失配)：继承映射(单表继承/类表继承/具体表继承)、关联映射(一对一/一对多/多对多)、延迟加载(Lazy Loading → N+1查询问题)→用eager loading(JPA join fetch/SQLAlchemy joinedload)解决。"
+      },
+      {
+        "heading": "关键结论",
+        "content": "1. ORM让95%的查询更方便但5%复杂查询仍需要SQL 2. Unit of Work模式跟踪变更集中flush 3. Identity Map保证同一session内同一行对应同一对象 4. 数据库迁移管理(Alembic/Flyway)是ORM配套的必要组件"
+      },
+      {
+        "heading": "关联页面",
+        "content": "[[数据库索引设计]] [[SQL执行计划分析]] [[微服务架构设计]]"
+      }
+    ]
+  },
+  {
+    "dir_name": "程序设计",
+    "file_stem": "Docker容器技术基础",
+    "title": "Docker容器技术原理",
+    "course": "程序设计",
+    "chapter": "云原生",
+    "difficulty": "INTERMEDIATE",
+    "tags": [
+      "Docker",
+      "容器",
+      "镜像",
+      "Container",
+      "虚拟化"
+    ],
+    "aliases": [
+      "Docker"
+    ],
+    "source": "Docker官方文档; Understanding Docker (Nigel Poulton); Docker in Practice",
+    "sections": [
+      {
+        "heading": "核心定义",
+        "content": "Docker容器是轻量级、可移植的软件运行环境。核心概念：镜像(Image)——分层的只读文件系统(Union FS/Overlay2)，每层是Dockerfile的一个指令。容器(Container)——镜像的可运行实例+可写容器层。Dockerfile指令：FROM继承基础镜像、RUN执行命令(在构建时创建新层)、COPY/ADD复制文件、CMD/ENTRYPOINT定义启动命令、EXPOSE声明端口。多阶段构建(Multi-stage Build)分离构建环境和运行环境减小镜像体积。"
+      },
+      {
+        "heading": "关键结论",
+        "content": "1. 容器不是虚拟机(共享宿主机内核，通过namespace隔离) 2. 镜像分层→相同基础层的多个镜像共享存储 3. .dockerignore和层缓存策略加速构建 4. Distroless镜像+非root用户是最小化攻击面的实践"
+      },
+      {
+        "heading": "关联页面",
+        "content": "[[Cgroups与容器资源隔离]] [[虚拟化技术对比]] [[CI/CD]]"
+      }
+    ]
+  },
+  {
+    "dir_name": "程序设计",
+    "file_stem": "GraphQL与API演进",
+    "title": "GraphQL查询语言",
+    "course": "程序设计",
+    "chapter": "API设计",
+    "difficulty": "INTERMEDIATE",
+    "tags": [
+      "GraphQL",
+      "API",
+      "查询语言"
+    ],
+    "aliases": [
+      "GraphQL"
+    ],
+    "source": "GraphQL官方文档; GraphQL in Action; Facebook GraphQL Spec",
+    "sections": [
+      {
+        "heading": "核心定义",
+        "content": "GraphQL是API查询语言和运行时。客户端精确指定所需字段(避免over-fetching/under-fetching)。Schema定义数据类型和关系(强类型系统)。Query获取数据、Mutation修改数据、Subscription实时订阅。Resolver函数——每个字段对应一个resovler从数据源获取数据。N+1问题：GraphQL嵌套查询可能导致——用DataLoader(Facebook)批处理和缓存请求。"
+      },
+      {
+        "heading": "关键结论",
+        "content": "1. GraphQL适合多端(iOS/Android/Web)不同数据需求 2. 过度灵活+深度嵌套查询需要限制(max depth/complexity)防DDoS 3. REST适合服务间调用，GraphQL适合前端-后端交互"
+      },
+      {
+        "heading": "关联页面",
+        "content": "[[RESTful API设计]] [[HTTP缓存策略]]"
+      }
+    ]
+  },
+  {
+    "dir_name": "程序设计",
+    "file_stem": "零拷贝网络编程",
+    "title": "高性能网络编程（零拷贝）",
+    "course": "程序设计",
+    "chapter": "网络编程",
+    "difficulty": "ADVANCED",
+    "tags": [
+      "网络编程",
+      "零拷贝",
+      "netmap",
+      "DPDK",
+      "高性能"
+    ],
+    "aliases": [
+      "High-Performance Networking"
+    ],
+    "source": "DPDK/SPDK官方文档; netmap论文 (Rizzo 2012); Linux内核网络栈文档",
+    "sections": [
+      {
+        "heading": "核心定义",
+        "content": "传统网络栈瓶颈：sk_buff分配→数据拷贝(nic→kernel→user)→系统调用→中断处理。零拷贝技术绕过这些：sendfile/splice系统调用避免内核到用户拷贝、DPDK用户态驱动绕过内核网络栈(轮询+大页+无锁队列)、netmap将NIC缓冲区直接映射到用户态、XDP(eBPF在内核早期路径处理包)可在NIC驱动层就丢弃/转发/修改包。io_uring(CAP)——ring buffer提交SQ/完成CQ，批量系统调用减少开销。"
+      },
+      {
+        "heading": "关键结论",
+        "content": "1. DPDK需要独占CPU核心(polling mode)不适合通用任务 2. eBPF/XDP是更温和的加速(不用绕过内核) 3. io_uring对IO密集应用提升显著 4. 选择：中等需求用epoll+io_uring，高需求用DPDK/XDP"
+      },
+      {
+        "heading": "关联页面",
+        "content": "[[IO多路复用select-poll-epoll]] [[用户态IO与SPDK]] [[零拷贝与sendfile]]"
+      }
+    ]
+  },
+  {
+    "dir_name": "程序设计",
+    "file_stem": "Python垃圾回收机制",
+    "title": "Python GC与内存管理",
+    "course": "程序设计",
+    "chapter": "Python",
+    "difficulty": "INTERMEDIATE",
+    "tags": [
+      "Python",
+      "GC",
+      "内存管理",
+      "引用计数"
+    ],
+    "aliases": [
+      "Python Garbage Collection"
+    ],
+    "source": "CPython源码 (Objects/, Python/gcmodule.c); Fluent Python (Ramalho)",
+    "sections": [
+      {
+        "heading": "核心定义",
+        "content": "CPython GC是引用计数+分代回收的组合。引用计数：每个PyObject有ob_refcnt，增/减引用时更新，归0立即释放。分代GC：处理循环引用(引用计数无法处理)——3代(gen0/1/2)，新对象在gen0，存活越多次代越高。gc.collect()触发回收，gc.get_threshold()查看阈值。__del__的调用时机不确定(应避免依赖，用context manager或weakref)。"
+      },
+      {
+        "heading": "关键结论",
+        "content": "1. 循环引用是引用计数的阿喀琉斯之踵(用gc模块处理) 2. Python的引用计数使C API中的Py_INCREF/Py_DECREF尤为重要 3. 相比Java Go的tracing GC，Python引用计数延迟更低但原子操作开销大"
+      },
+      {
+        "heading": "关联页面",
+        "content": "[[垃圾回收算法]] [[Python GIL与并发]] [[RAII与智能指针]]"
+      }
+    ]
+  },
+  {
+    "dir_name": "程序设计",
+    "file_stem": "C++模板与泛型",
+    "title": "C++模板与泛型编程",
+    "course": "程序设计",
+    "chapter": "C++",
+    "difficulty": "ADVANCED",
+    "tags": [
+      "C++",
+      "模板",
+      "泛型",
+      "元编程",
+      "SFINAE"
+    ],
+    "aliases": [
+      "C++ Templates",
+      "Generic Programming"
+    ],
+    "source": "C++ Templates: The Complete Guide (Vandevoorde & Josuttis); Effective Modern C++ (Meyers)",
+    "sections": [
+      {
+        "heading": "核心定义",
+        "content": "函数模板：编译器根据调用实参推导模板参数(隐式实例化)。类模板：编译时生成具体类型版本。特化：全特化(为特定类型提供完全不同的实现)和偏特化(部分参数特化，仅类模板支持)。SFINAE(Substitution Failure Is Not An Error)：模板替换失败不报错而只是从候选集中排除——enable_if/void_t/if constexpr利用此实现编译期条件。Variadic template：参数包+递归展开(折叠表达式C++17简化)。Concept(C++20)：约束模板参数提供更好的错误信息。"
+      },
+      {
+        "heading": "关键结论",
+        "content": "1. 模板是图灵完备的(模板元编程) 2. 头文件包含模板定义(无法分离编译) 3. Concepts让模板的错误信息从数百行变为几行 4. CTAD(类模板实参推导)C++17起可用"
+      },
+      {
+        "heading": "关联页面",
+        "content": "[[C++移动语义与右值]] [[RAII与智能指针]] [[编译期计算]]"
+      }
+    ]
+  },
+  {
+    "dir_name": "离散数学",
+    "file_stem": "自然推理系统",
+    "title": "自然推理系统与证明策略",
+    "course": "离散数学",
+    "chapter": "逻辑",
+    "difficulty": "INTERMEDIATE",
+    "tags": [
+      "离散数学",
+      "自然演绎",
+      "推理规则",
+      "证明"
+    ],
+    "aliases": [
+      "Natural Deduction"
+    ],
+    "source": "Discrete Mathematics and Its Applications (Rosen) 第1章; Natural Deduction (Gentzen)",
+    "sections": [
+      {
+        "heading": "核心定义",
+        "content": "自然推理系统用推理规则从前提推出结论。推理规则：Modus Ponens(→消除：P→Q, P ⊢ Q)、Modus Tollens(P→Q, ¬Q ⊢ ¬P)、假言三段论(P→Q, Q→R ⊢ P→R)、析取三段论(P∨Q, ¬P ⊢ Q)。证明策略：直接证明、反证法(假设¬结论推出矛盾)、分情况证明(穷举)、数学归纳法。∀引入(全称泛化)和∃消除(存在实例化)是谓词推理中的关键规则。"
+      },
+      {
+        "heading": "关键结论",
+        "content": "1. 反证法和归谬法是最强大的证明工具之一 2. 推理规则必须正确使用量词（存在消除常量化需是新符号）3. 自然推理是定理自动证明的理论基础"
+      },
+      {
+        "heading": "关联页面",
+        "content": "[[命题逻辑与谓词逻辑]] [[数学归纳法]]"
+      }
+    ]
+  },
+  {
+    "dir_name": "离散数学",
+    "file_stem": "同余与模运算",
+    "title": "同余与模运算",
+    "course": "离散数学",
+    "chapter": "数论",
+    "difficulty": "INTERMEDIATE",
+    "tags": [
+      "离散数学",
+      "同余",
+      "模运算",
+      "数论",
+      "中国剩余定理"
+    ],
+    "aliases": [
+      "Modular Arithmetic"
+    ],
+    "source": "Discrete Mathematics and Its Applications (Rosen) 第4章; Introduction to Number Theory (Hardy & Wright)",
+    "sections": [
+      {
+        "heading": "核心定义",
+        "content": "同余：a≡b (mod m) 当m|(a-b)。运算性质：同余下加减乘封闭（除法不能直接做）。逆元：gcd(a,m)=1时存在a^(-1) mod m。扩展欧几里德算法求逆元。费马小定理：若p为质数且p∤a，则a^(p-1)≡1 (mod p)。欧拉定理推广到任意模(φ(m))。中国剩余定理(CRT)：对于互质的模数m₁,...,m_k，同余方程组x≡a_i(mod m_i)有唯一解mod M。"
+      },
+      {
+        "heading": "关键结论",
+        "content": "1. 同余算术是RSA、Diffie-Hellman等密码系统的基础 2. 线性同余ax≡b(mod m)当gcd(a,m)|b时有解 3. CRT加速大数运算(RSA用CRT加速私钥运算)"
+      },
+      {
+        "heading": "关联页面",
+        "content": "[[欧拉函数]] [[RSA与非对称加密]] [[群论基础]]"
+      }
+    ]
+  },
+  {
+    "dir_name": "离散数学",
+    "file_stem": "二分图与匹配",
+    "title": "二分图与匹配理论",
+    "course": "离散数学",
+    "chapter": "图论",
+    "difficulty": "INTERMEDIATE",
+    "tags": [
+      "离散数学",
+      "二分图",
+      "匹配",
+      "Hall定理",
+      "匈牙利算法"
+    ],
+    "aliases": [
+      "Bipartite Graph",
+      "Matching"
+    ],
+    "source": "Discrete Mathematics and Its Applications (Rosen) 第10章; 图论导引 (West)",
+    "sections": [
+      {
+        "heading": "核心定义",
+        "content": "二分图：顶点可分两部分，边仅连接不同部分。判定：无奇圈。匹配M：一组边互不共享顶点。最大匹配vs完美匹配(覆盖所有顶点)。Hall定理(婚姻定理)：二分图存在饱和左部的匹配⇔任意左部子集S满足|N(S)|≥|S|。匈牙利算法O(VE)或Hopcroft-Karp O(E√V)求最大匹配。Kőnig定理：二分图最大匹配=最小顶点覆盖。"
+      },
+      {
+        "heading": "关键结论",
+        "content": "1. 分配问题(任务→人)是二分图匹配的典型应用 2. 最大流算法也可解二分图最大匹配(添加s和t) 3. Hall定理是组合数学中一个深刻且优美的定理"
+      },
+      {
+        "heading": "关联页面",
+        "content": "[[图论基础概念]] [[网络流与最大流]]"
+      }
+    ]
+  },
+  {
+    "dir_name": "离散数学",
+    "file_stem": "环与域",
+    "title": "环与域的定义与例子",
+    "course": "离散数学",
+    "chapter": "代数结构",
+    "difficulty": "INTERMEDIATE",
+    "tags": [
+      "离散数学",
+      "环",
+      "域",
+      "理想",
+      "多项式环"
+    ],
+    "aliases": [
+      "Rings and Fields"
+    ],
+    "source": "Abstract Algebra (Fraleigh); 离散数学及其应用 (Rosen) 第13章",
+    "sections": [
+      {
+        "heading": "核心定义",
+        "content": "环(R,+,·)是加法构成阿贝尔群、乘法构成幺半群、乘法对加法分配。域F是满足乘法交换律且非零元都有乘法逆元的环。子域/扩域构筑——从Q到R到C逐步扩展。多项式环F[x]：系数来自域F的多项式。理想(Ideal)是环的加法子群且对外部乘法封闭(∀r∈R,i∈I: r·i∈I)。商环R/I由理想产生。有限域GF(pⁿ)在编码、密码学中广泛应用。"
+      },
+      {
+        "heading": "关键结论",
+        "content": "1. 整数Z是环但不是域(1/2∉Z) 2. 模p素数余数是域GF(p) 3. 多项式环的商构造了扩域(构作C=R[x]/(x²+1))"
+      },
+      {
+        "heading": "关联页面",
+        "content": "[[群论基础]] [[同余与模运算]] [[有限域]]"
+      }
+    ]
+  },
+  {
+    "dir_name": "离散数学",
+    "file_stem": "数学归纳法",
+    "title": "数学归纳法与强归纳法",
+    "course": "离散数学",
+    "chapter": "证明方法",
+    "difficulty": "BASIC",
+    "tags": [
+      "离散数学",
+      "归纳法",
+      "强归纳法",
+      "良序原理"
+    ],
+    "aliases": [
+      "Mathematical Induction"
+    ],
+    "source": "Discrete Mathematics and Its Applications (Rosen) 第5章",
+    "sections": [
+      {
+        "heading": "核心定义",
+        "content": "数学归纳法证明∀n P(n)：基始——证P(1)真；归纳步——假设P(k)真，证P(k+1)真。强归纳法：归纳步假设P(1)∧...∧P(k)真（强于仅P(k)），证P(k+1)。结构归纳：对递归定义的结构归纳(如树、公式)。良序原理：任何非空正整数集有最小元素。良序原理⇔归纳法——两者等价。"
+      },
+      {
+        "heading": "关键结论",
+        "content": "1. 归纳法可证明算法正确性（循环不变式）2. Fibonacci齐次公式用强归纳证明 3. 归纳命题设计是易错点——归纳假设还需够强以推到下一步"
+      },
+      {
+        "heading": "关联页面",
+        "content": "[[递归]] [[命题逻辑与谓词逻辑]] [[自然推理系统]]"
+      }
+    ]
+  },
+  {
+    "dir_name": "离散数学",
+    "file_stem": "欧拉函数与RSA",
+    "title": "欧拉函数与RSA密码原理",
+    "course": "离散数学",
+    "chapter": "数论",
+    "difficulty": "INTERMEDIATE",
+    "tags": [
+      "离散数学",
+      "欧拉函数",
+      "RSA",
+      "密码学"
+    ],
+    "aliases": [
+      "Euler's Totient",
+      "RSA"
+    ],
+    "source": "A Method for Obtaining Digital Signatures and Public-Key Cryptosystems (RSA 1978); Rosen 第4章",
+    "sections": [
+      {
+        "heading": "核心定义",
+        "content": "欧拉函数φ(n)：1到n中与n互素的数的个数。若n=pq(p,q素数)：φ(n)=(p-1)(q-1)。RSA密钥生成：1.选大质数p,q 2.n=pq, φ(n)=(p-1)(q-1) 3.选e(与φ(n)互素) 4.求d=e^(-1) mod φ(n)。公钥(e,n)，私钥(d)。加密c=m^e mod n，解密m=c^d mod n。安全性基于大数因式分解的困难性。"
+      },
+      {
+        "heading": "关键结论",
+        "content": "1. 欧拉定理a^φ(n)≡1 (mod n)(gcd=1)→RSA正确性基础 2. 费马小定理是欧拉定理p素数时特例(p∤a→a^(p-1)≡1 mod p) 3. RSA需填padding(OAEP)防选择密文攻击"
+      },
+      {
+        "heading": "关联页面",
+        "content": "[[同余与模运算]] [[群论基础]]"
+      }
+    ]
+  },
+  {
+    "dir_name": "软件工程",
+    "file_stem": "架构风格对比（单体到微服务）",
+    "title": "架构风格演进（单体→SOA→微服务）",
+    "course": "软件工程",
+    "chapter": "软件架构",
+    "difficulty": "INTERMEDIATE",
+    "tags": [
+      "软件工程",
+      "架构",
+      "单体",
+      "SOA",
+      "微服务",
+      "演进"
+    ],
+    "aliases": [
+      "Architecture Styles"
+    ],
+    "source": "Building Microservices (Newman); Fundamentals of Software Architecture (Richards & Ford)",
+    "sections": [
+      {
+        "heading": "核心定义",
+        "content": "软件架构风格演进：单体架构→模块化单体→SOA→微服务→Serverless。单体：简单开发部署，但扩展困难耦合高。模块化单体(Modulith)：逻辑分离模块可独立演进+物理部署为单进程(做微服务的铺路石)。SOA：ESB总线+共享数据模型，适合企业集成但在紧耦合的ESB上失败。微服务：独立部署+去中心化治理+各自数据库。Serverless：无服务器管理(函数+FaaS+BaaS)，极致粒度。"
+      },
+      {
+        "heading": "关键结论",
+        "content": "1. 不建议新项目直接上微服务(除非已知边界) 2. Monolith First→按边界抽Module→按需拆微服务 3. 架构演进的核心是模块化(模块边界比部署单元重要)"
+      },
+      {
+        "heading": "关联页面",
+        "content": "[[微服务架构设计]] [[领域驱动设计DDD]] [[Cgroups与容器资源隔离]]"
+      }
+    ]
+  },
+  {
+    "dir_name": "软件工程",
+    "file_stem": "Docker与Kubernetes部署",
+    "title": "Docker与Kubernetes部署实践",
+    "course": "软件工程",
+    "chapter": "云原生",
+    "difficulty": "INTERMEDIATE",
+    "tags": [
+      "Docker",
+      "K8s",
+      "容器编排"
+    ],
+    "aliases": [
+      "Docker",
+      "Kubernetes"
+    ],
+    "source": "Kubernetes官方文档; Docker文档; Kubernetes in Action (Luksa)",
+    "sections": [
+      {
+        "heading": "核心定义",
+        "content": "Kubernetes是容器编排平台。核心资源：Pod(最小部署单元，1+容器共享网络/存储)、Deployment(副本管理/滚动更新/回滚)、Service(稳定的IP/DNS+负载均衡)、ConfigMap/Secret(配置/敏感信息外置)、Ingress(HTTP路由外部入口)。调度：Label+Selector实现松耦合关联。存储：PVC/PV抽象底层存储。Helm：K8s包管理。Kustomize：声明式配置定制。"
+      },
+      {
+        "heading": "关联结论",
+        "content": "1. Pod是原子的——紧密耦合的容器放同一Pod 2. liveness/readiness/startup探针控制容器生命周期 3. Service Mesh(Istio/Linkerd)处理服务间通信、安全、监控"
+      },
+      {
+        "heading": "关联页面",
+        "content": "[[Docker容器技术基础]] [[微服务架构设计]] [[CI/CD]]"
+      }
+    ]
+  },
+  {
+    "dir_name": "软件工程",
+    "file_stem": "OAuth2与认证协议",
+    "title": "OAuth 2.0与OpenID Connect",
+    "course": "软件工程",
+    "chapter": "安全",
+    "difficulty": "INTERMEDIATE",
+    "tags": [
+      "OAuth2",
+      "OIDC",
+      "SSO",
+      "JWT",
+      "认证"
+    ],
+    "aliases": [
+      "OAuth 2.0",
+      "OpenID Connect"
+    ],
+    "source": "RFC 6749 (OAuth 2.0); RFC 7519 (JWT); OpenID Connect Spec",
+    "sections": [
+      {
+        "heading": "核心定义",
+        "content": "OAuth 2.0是授权框架而非认证协议：允许第三方应用获权访问用户资源而不暴露密码。四种授权模式：Authorization Code(服务器端App，最安全+PKCE防截获)、Implicit(已废弃)、Resource Owner Password(已废弃)、Client Credentials(服务间)。OpenID Connect(OIDC)在OAuth 2.0之上添加认证层(ID Token=JWT+签名)。JWT结构：Header(typ/alg)+Payload(claims: iss/sub/aud/exp/iat)+Signature(签名防篡改)。"
+      },
+      {
+        "heading": "关键结论",
+        "content": "1. OAuth 2.0用的Token不是JWT(可只是随机字符串)，OIDC的ID Token是JWT 2. refresh token轮换+检测重用防丢失 3. SSO单点登录通常用OIDC实现"
+      },
+      {
+        "heading": "关联页面",
+        "content": "[[SSL与PKI体系]] [[TLS握手与HTTPS]] [[RESTful API设计]]"
+      }
+    ]
+  },
+  {
+    "dir_name": "软件工程",
+    "file_stem": "软件需求工程",
+    "title": "软件需求工程与需求规格",
+    "course": "软件工程",
+    "chapter": "需求分析",
+    "difficulty": "BASIC",
+    "tags": [
+      "软件工程",
+      "需求分析",
+      "SRS",
+      "用例"
+    ],
+    "aliases": [
+      "Software Requirements Engineering"
+    ],
+    "source": "Software Requirements (Wiegers); IEEE 830 (SRS); BABOK (IIBA)",
+    "sections": [
+      {
+        "heading": "核心定义",
+        "content": "需求工程包括：需求获取(访谈/workshop/观察/原型)、需求分析(建模)、需求规格(SRS文档)、需求验证。功能性需求(系统做什么)vs非功能性需求(性能/安全/可用性/可维护性/可扩展性——质量属性)。用户故事格式：As a <role>, I want <feature>, so that <value>。验收标准(Acceptance Criteria)定义故事完成的标准。用例图(Use Case Diagram)、活动图描述业务流程。"
+      },
+      {
+        "heading": "关键结论",
+        "content": "1. 需求错误越晚发现成本越高(1:10:100规则) 2. NFR(非功能需求)常常被忽略但往往是项目失败的原因 3. 原型快速验证需求但需管理期望(非成品)"
+      },
+      {
+        "heading": "关联页面",
+        "content": "[[敏捷Scrum与Kanban]] [[测试驱动开发TDD]]"
+      }
+    ]
+  },
+  {
+    "dir_name": "软件工程",
+    "file_stem": "代码坏味道与重构",
+    "title": "代码坏味道与重构技术",
+    "course": "软件工程",
+    "chapter": "软件设计",
+    "difficulty": "INTERMEDIATE",
+    "tags": [
+      "软件工程",
+      "重构",
+      "坏味道",
+      "Clean Code"
+    ],
+    "aliases": [
+      "Code Smells",
+      "Refactoring"
+    ],
+    "source": "Refactoring: Improving the Design of Existing Code (Fowler 2nd Ed); Clean Code (Martin)",
+    "sections": [
+      {
+        "heading": "核心定义",
+        "content": "代码坏味道(Smell)是可能存在问题(不必然是bug)的代码特征：长方法(Extract Method)、大类(Extract Class)、长参数列表(Introduce Parameter Object/保持对象完整)、发散式变化(一个类因不同原因修改→Extract Class)、霰弹式修改(一个变更修改多个类→Move Method)、重复代码(Extract Method/Pull Up Method)、数据泥团(数据项总在一起→Extract Class)、特性依恋(方法使用别类数据多于自身→Move Method)、switch语句(多态替代)。重构前必须有测试保护网。"
+      },
+      {
+        "heading": "关键结论",
+        "content": "1. 每次重构后运行全量测试 2. IDE的自动重构(rename/extract)比手工更安全 3. PR中混入重构+功能修改=审查噩梦——分开PR 4. Boy Scout Rule：离开时保持代码比来时干净"
+      },
+      {
+        "heading": "关联页面",
+        "content": "[[SOLID设计原则]] [[设计模式概述]] [[代码审查最佳实践]]"
+      }
+    ]
+  },
+  {
+    "dir_name": "数据库原理",
+    "file_stem": "查询优化器原理",
+    "title": "查询优化器（Query Optimizer）",
+    "course": "数据库原理",
+    "chapter": "查询优化",
+    "difficulty": "ADVANCED",
+    "tags": [
+      "数据库",
+      "查询优化",
+      "查询计划",
+      "代价估计",
+      "Join Order"
+    ],
+    "aliases": [
+      "Query Optimizer"
+    ],
+    "source": "Database System Concepts (Silberschatz) 第13-14章; PostgreSQL/MySQL Optimizer文档",
+    "sections": [
+      {
+        "heading": "核心定义",
+        "content": "查询优化器选择最优执行计划。流程：1.解析SQL→语法树 2.重写(视图展开、子查询消除、常量折叠)→关系代数 3.代价估计(统计信息——页数/行数/NDV直方图) 4.计划枚举(Join顺序、Join算法选择：Nested Loop/Hash Join/Sort-Merge Join) 5.选择最优计划。动态规划(DPccp)是join ordering的主流算法。谓词下推(Predicate Pushing)、投影早做、无用的Join消除。"
+      },
+      {
+        "heading": "关键结论",
+        "content": "1. 统计信息过期是优化器选错计划的主因(ANALYZE更新) 2. Join Order对性能影响巨大(n表有Catalan数种可能) 3. 优化器hint(/*+ USE_INDEX */)应是最后手段"
+      },
+      {
+        "heading": "关联页面",
+        "content": "[[SQL执行计划分析]] [[索引设计方法论]] [[B+树与InnoDB索引]]"
+      }
+    ]
+  },
+  {
+    "dir_name": "数据库原理",
+    "file_stem": "分布式一致性协议",
+    "title": "Raft/Paxos一致性协议",
+    "course": "数据库原理",
+    "chapter": "分布式数据库",
+    "difficulty": "ADVANCED",
+    "tags": [
+      "数据库",
+      "Paxos",
+      "Raft",
+      "共识",
+      "分布式"
+    ],
+    "aliases": [
+      "Raft",
+      "Paxos"
+    ],
+    "source": "In Search of an Understandable Consensus Algorithm (Raft, Ongaro 2014); Paxos Made Simple (Lamport 2001)",
+    "sections": [
+      {
+        "heading": "核心定义",
+        "content": "共识问题：多个节点就某个值达成一致。Paxos(Lamport)：角色——proposer(提议)、acceptor(投票)、learner(学习结果)。两阶段：Prepare(Promise)+Accept(Accepted)。难以理解和实现。Raft(2014)：为可理解性设计。Leader Election(心跳+随机超时→请求投票)、Log Replication(Leader append→followers ack→commit majority)、Safety(选举限制——最新日志的节点可成为Leader)、Membership Change(联合共识)。"
+      },
+      {
+        "heading": "关键结论",
+        "content": "1. Quorum=多数派(N/2+1)保证安全性和容错(N-1)/2 2. Raft vs Multi-Paxos：Raft有更强的leader保证(日志只从leader流向follower) 3. etcd/TiKV/Consul都用Raft实现 4. 共识协议是分布式事务/复制状态机的基础"
+      },
+      {
+        "heading": "关联页面",
+        "content": "[[分布式事务与2PC]] [[CAP与BASE理论]] [[NoSQL数据库对比]]"
+      }
+    ]
+  },
+  {
+    "dir_name": "编译原理",
+    "file_stem": "DFA最小化算法",
+    "title": "DFA最小化（Hopcroft算法）",
+    "course": "编译原理",
+    "chapter": "词法分析",
+    "difficulty": "ADVANCED",
+    "tags": [
+      "编译原理",
+      "DFA",
+      "最小化",
+      "Hopcroft",
+      "等价类"
+    ],
+    "aliases": [
+      "DFA Minimization"
+    ],
+    "source": "Compilers: Principles, Techniques, and Tools (Dragon Book) 第3章",
+    "sections": [
+      {
+        "heading": "核心定义",
+        "content": "DFA最小化将状态划分为等价类(equivalent states)——两个状态不等价若存在某输入使转移结果在不同等价类。Hopcroft算法O(n log n)：维护当前划分，迭代选择最小组分裂——对每个输入字符检查某等价类内的状态是否一致转出到相同等价类。Myhill-Nerode定理：最小DFA的状态数=L的等价类数。最小化保证得到唯一最小的DFA。"
+      },
+      {
+        "heading": "关键结论",
+        "content": "1. 最小DFA大小=语言在Myhill-Nerode等价关系下的指数 2. Hopcroft算法迭代式优化，Moore算法更直观但O(n²) 3. DFA最小化后正则表达式引擎的词法token生成效率更高"
+      },
+      {
+        "heading": "关联页面",
+        "content": "[[词法分析与DFA]] [[正则语言与泵引理]]"
+      }
+    ]
+  },
+  {
+    "dir_name": "编译原理",
+    "file_stem": "链接与装载过程",
+    "title": "链接与装载（Linker & Loader）",
+    "course": "编译原理",
+    "chapter": "代码生成",
+    "difficulty": "INTERMEDIATE",
+    "tags": [
+      "编译原理",
+      "链接",
+      "装载",
+      "ELF",
+      "符号解析"
+    ],
+    "aliases": [
+      "Linker and Loader"
+    ],
+    "source": "Linkers and Loaders (Levine); System V ABI (ELF标准)",
+    "sections": [
+      {
+        "heading": "核心定义",
+        "content": "链接(Linking)：将多个目标文件和库合并为可执行文件。符号解析（symbol resolution）：将每个引用关联到唯一定义。重定位（relocation）：调整地址引用（基于重定位项）。静态链接vs动态链接（PLT+GOT惰性绑定）。GOT(Global Offset Table)和PLT(Procedure Linkage Table)实现位置无关代码(PIC)和惰性符号绑定。Loader将可执行文件映射到进程地址空间。ELF(Executable and Linkable Format)是Linux标准格式。"
+      },
+      {
+        "heading": "关键结论",
+        "content": "1. 链接时与加载时的递推过程(第一遍标记目标地址+第二遍写入最终地址) 2. PLT桩实现惰性绑定(第一次调时才解析→后续直接调) 3. LD_PRELOAD注入(用于mock/LD_AUDIT) 4. 静态链接体积大但无依赖，动态链接体积小但版本冲突(dll hell)"
+      },
+      {
+        "heading": "关联页面",
+        "content": "[[字节码与虚拟机]] [[代码生成]] [[运行时系统]]"
+      }
+    ]
+  },
+  {
+    "dir_name": "计算机组成原理",
+    "file_stem": "多处理器与并行编程",
+    "title": "多处理器架构与并行编程模型",
+    "course": "计算机组成原理",
+    "chapter": "多处理器",
+    "difficulty": "ADVANCED",
+    "tags": [
+      "计算机组成原理",
+      "多处理器",
+      "SMP",
+      "并行编程",
+      "OpenMP"
+    ],
+    "aliases": [
+      "Multiprocessor Architecture"
+    ],
+    "source": "Computer Architecture: A Quantitative Approach (Hennessy & Patterson) 第5章",
+    "sections": [
+      {
+        "heading": "核心定义",
+        "content": "多处理器架构分类(SISD/SIMD/MISD/MIMD)。MIMD：共享内存多处理器(SMP/NUMA)vs分布式内存(MPP/Cluster/每个节点独立内存，通过网络通信)。共享内存通信通过共享变量(需同步指令——原子操作CAS/FAA/LL-SC、内存屏障/栅栏Memory Barrier/Fence)。缓存一致性(见MESI)。并行编程模型：OpenMP(指令级并行+线程池)、MPI(消息传递接口，用于HPC)、CUDA/OpenCL(GPU加速)。"
+      },
+      {
+        "heading": "关键结论",
+        "content": "1. 阿姆达尔定律(Amdahl's Law)：加速比上限=1/(S+(1-S)/N)，S是串行部分比例 2. 虚假共享(False Sharing)——核修改不同变量但在同一缓存行 3. 内存一致性模型(SC/TSO/Relaxed)定义哪些顺序保证"
+      },
+      {
+        "heading": "关联页面",
+        "content": "[[缓存一致性协议]] [[NUMA架构]] [[SIMD与向量处理器]]"
+      }
+    ]
+  },
+  {
+    "dir_name": "计算机组成原理",
+    "file_stem": "GPU与CUDA基础",
+    "title": "GPU架构与CUDA编程模型",
+    "course": "计算机组成原理",
+    "chapter": "并行计算",
+    "difficulty": "INTERMEDIATE",
+    "tags": [
+      "GPU",
+      "CUDA",
+      "并行",
+      "SIMT"
+    ],
+    "aliases": [
+      "GPU Architecture",
+      "CUDA"
+    ],
+    "source": "CUDA C Programming Guide; Computer Architecture: A Quantitative Approach (Hennessy & Patterson)",
+    "sections": [
+      {
+        "heading": "核心定义",
+        "content": "GPU是大规模并行处理器——数千个简单核心(SIMT模型)。NVIDIA GPU架构：SM(流多处理器)=多个CUDA Core+共享内存+寄存器文件。Warp(32线程束)以锁步执行——分支(warp divergence)导致利用率降低。内存层次：Global Memory(大，慢，如HBM/GDDR)→L2 Cache→Shared Memory(SM内，用户管理，快的软件控制缓存)→寄存器。CUDA编程模型：Grid→Blocks→Threads。线程索引：blockIdx+blockDim+threadIdx。"
+      },
+      {
+        "heading": "关键结论",
+        "content": "1. 内存合并(coalescing)：相邻线程访问相邻地址——warp级内存请求合并为一次 2. Bank conflict——共享内存的32 banks中多线程访问同一bank 3. GEMM(矩阵乘)tiling是GPU优化的经典案例"
+      },
+      {
+        "heading": "关联页面",
+        "content": "[[SIMD与向量处理器]] [[多处理器与并行编程]]"
+      }
+    ]
+  },
+  {
+    "dir_name": "计算机组成原理",
+    "file_stem": "中断系统与APIC",
+    "title": "中断系统（APIC与中断处理）",
+    "course": "计算机组成原理",
+    "chapter": "IO系统",
+    "difficulty": "INTERMEDIATE",
+    "tags": [
+      "计算机组成原理",
+      "中断",
+      "APIC",
+      "MSI",
+      "中断处理"
+    ],
+    "aliases": [
+      "Interrupt System"
+    ],
+    "source": "Intel x86架构手册第三卷; Linux内核中断处理文档",
+    "sections": [
+      {
+        "heading": "核心定义",
+        "content": "中断是外设异步通知CPU的方式。x86中断系统：I/O APIC汇聚外设中断→LAPIC(本地APIC，每核一个)分发到各CPU核心。中断向量号(0-255)映射到IDT(中断描述符表)的处理程序。MSI(Message Signaled Interrupts)：外设直接往LAPIC地址写中断向量(绕过I/O APIC，更灵活)。MSI-X支持每个中断独立的向量和地址。Linux中断处理：顶半部(top half/硬中断，ISR)快速响应+底半部(tasklet/workqueue/threaded_irq)处理耗时工作。"
+      },
+      {
+        "heading": "关键结论",
+        "content": "1. 中断亲和性(affinity)绑定中断到特定CPU(减少缓存miss) 2. 软中断(SWI)在中断返回前在软中断上下文中执行 3. NMI(不可屏蔽中断)用于最紧急事件(硬件错误/看门狗) 4. 中断风暴(interrupt storm)可由中断共享或设备故障引发"
+      },
+      {
+        "heading": "关联页面",
+        "content": "[[DMA直接存储器访问]] [[设备驱动程序模型]]"
+      }
+    ]
+  },
+  {
+    "dir_name": "计算机组成原理",
+    "file_stem": "内存一致性与内存屏障",
+    "title": "内存一致性与内存屏障",
+    "course": "计算机组成原理",
+    "chapter": "多处理器",
+    "difficulty": "ADVANCED",
+    "tags": [
+      "计算机组成原理",
+      "内存模型",
+      "内存屏障",
+      "SC",
+      "TSO"
+    ],
+    "aliases": [
+      "Memory Consistency",
+      "Memory Barrier"
+    ],
+    "source": "A Primer on Memory Consistency and Cache Coherence (Sorin, Hill, Wood); Linux内核memory-barriers.txt",
+    "sections": [
+      {
+        "heading": "核心定义",
+        "content": "内存一致性模型定义了共享内存系统允许的Load/Store执行顺序。顺序一致性(SC)：所有核对内存的访问按程序顺序交叉(如同只有一份内存副本，每次一个操作)。TSO(Total Store Order/x86)：Store先进入写缓冲区后异步刷到缓存(Store-Load可重排)。宽松一致性(Relaxed/ARM/RISC-V)：Load-Load/Store-Store/Load-Store/Store-Load都可能重排。内存屏障/栅栏强迫某些顺序：acquire(后操作不过前)、release(前操作不过后)、full fence(两者都不越过)。"
+      },
+      {
+        "heading": "关键结论",
+        "content": "1. x86是强内存模型(TSO，仅Store-Load可重排), ARM/RISC-V是弱模型(几乎所有对都可重排) 2. volatile在Java/C#提供内存屏障保证，但在C/C++不保证顺序 3. Linux内核的smp_rmb/wmb/mb对应不同强度的屏障"
+      },
+      {
+        "heading": "关联页面",
+        "content": "[[缓存一致性协议]] [[多处理器与并行编程]]"
+      }
+    ]
+  }
+]

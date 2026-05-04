@@ -1,0 +1,1094 @@
+﻿﻿﻿﻿﻿﻿﻿﻿﻿-- =========================================================
+-- 智学系统数据库初始化脚本（优化版）
+-- PostgreSQL: 关系型 + 向量
+-- MongoDB: 对话正文与流式事件
+-- RustFS: 资源文件本体（本脚本仅保留其对象元数据）
+-- =========================================================
+
+CREATE EXTENSION IF NOT EXISTS vector;
+CREATE EXTENSION IF NOT EXISTS pgcrypto;
+
+CREATE SCHEMA IF NOT EXISTS app;
+CREATE SCHEMA IF NOT EXISTS rag;
+CREATE SCHEMA IF NOT EXISTS storage;
+
+-- =========================================================
+-- 枚举
+-- =========================================================
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_type t JOIN pg_namespace n ON n.oid=t.typnamespace
+    WHERE t.typname='access_scope' AND n.nspname='app'
+  ) THEN
+    CREATE TYPE app.access_scope AS ENUM ('GLOBAL', 'COURSE', 'USER');
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_type t JOIN pg_namespace n ON n.oid=t.typnamespace
+    WHERE t.typname='conversation_mode' AND n.nspname='app'
+  ) THEN
+    CREATE TYPE app.conversation_mode AS ENUM ('QNA', 'SMART_ENGINE');
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_type t JOIN pg_namespace n ON n.oid=t.typnamespace
+    WHERE t.typname='engine_status' AND n.nspname='app'
+  ) THEN
+    CREATE TYPE app.engine_status AS ENUM ('IDLE', 'RUNNING', 'COMPLETED', 'FAILED');
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_type t JOIN pg_namespace n ON n.oid=t.typnamespace
+    WHERE t.typname='difficulty_level' AND n.nspname='app'
+  ) THEN
+    CREATE TYPE app.difficulty_level AS ENUM ('BASIC', 'INTERMEDIATE', 'ADVANCED', 'MIXED');
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_type t JOIN pg_namespace n ON n.oid=t.typnamespace
+    WHERE t.typname='resource_type' AND n.nspname='app'
+  ) THEN
+    CREATE TYPE app.resource_type AS ENUM (
+      'DOCUMENT',
+      'PPT',
+      'QUIZ',
+      'VIDEO',
+      'AUDIO',
+      'IMAGE',
+      'CODE',
+      'MINDMAP',
+      'READING',
+      'PRACTICE'
+    );
+  END IF;
+
+  -- 说明：GENERATED 仅保留为扩展来源枚举，不用于多智能体实时生成文件落库
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_type t JOIN pg_namespace n ON n.oid=t.typnamespace
+    WHERE t.typname='source_kind' AND n.nspname='app'
+  ) THEN
+    CREATE TYPE app.source_kind AS ENUM ('UPLOAD', 'GENERATED', 'IMPORTED', 'MANUAL', 'WEB');
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_type t JOIN pg_namespace n ON n.oid=t.typnamespace
+    WHERE t.typname='task_status' AND n.nspname='app'
+  ) THEN
+    CREATE TYPE app.task_status AS ENUM ('PENDING', 'RUNNING', 'COMPLETED', 'FAILED', 'CANCELLED', 'TIMEOUT');
+  END IF;
+END$$;
+
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1
+    FROM pg_enum e
+    JOIN pg_type t ON t.oid = e.enumtypid
+    JOIN pg_namespace n ON n.oid = t.typnamespace
+    WHERE n.nspname = 'app' AND t.typname = 'resource_type' AND e.enumlabel = 'SLIDES'
+  ) THEN
+    ALTER TYPE app.resource_type ADD VALUE 'SLIDES';
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1
+    FROM pg_enum e
+    JOIN pg_type t ON t.oid = e.enumtypid
+    JOIN pg_namespace n ON n.oid = t.typnamespace
+    WHERE n.nspname = 'app' AND t.typname = 'resource_type' AND e.enumlabel = 'VIDEO_SCRIPT'
+  ) THEN
+    ALTER TYPE app.resource_type ADD VALUE 'VIDEO_SCRIPT';
+  END IF;
+END$$;
+
+-- =========================================================
+-- 用户/课程
+-- =========================================================
+CREATE TABLE IF NOT EXISTS app.users (
+  id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  login_id          TEXT UNIQUE NOT NULL,
+  password_hash     TEXT NOT NULL,
+  full_name         TEXT NOT NULL,
+  major_code        TEXT,
+  created_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at        TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS app.courses (
+  id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  course_code       TEXT UNIQUE NOT NULL,
+  course_name       TEXT NOT NULL,
+  created_at        TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS app.user_course_enrollments (
+  user_id           UUID NOT NULL REFERENCES app.users(id) ON DELETE CASCADE,
+  course_id         UUID NOT NULL REFERENCES app.courses(id) ON DELETE CASCADE,
+  role_in_course    TEXT NOT NULL CHECK (role_in_course IN ('student', 'ta', 'teacher')),
+  PRIMARY KEY (user_id, course_id)
+);
+
+-- =========================================================
+-- RustFS 对象元数据
+-- =========================================================
+CREATE TABLE IF NOT EXISTS storage.resource_object (
+  id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  provider          TEXT NOT NULL DEFAULT 'RUSTFS' CHECK (provider='RUSTFS'),
+  bucket_name       TEXT,
+  object_key        TEXT NOT NULL UNIQUE,
+  file_name         TEXT NOT NULL,
+  mime_type         TEXT,
+  size_bytes        BIGINT CHECK (size_bytes IS NULL OR size_bytes >= 0),
+  checksum_sha256   TEXT,
+  access_mode       TEXT NOT NULL DEFAULT 'PRIVATE' CHECK (access_mode IN ('PRIVATE', 'DIRECT', 'PRESIGNED')),
+  storage_url       TEXT,
+  uploaded_by       UUID REFERENCES app.users(id) ON DELETE SET NULL,
+  created_at        TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- =========================================================
+-- 学习资源主表
+-- =========================================================
+CREATE TABLE IF NOT EXISTS app.learning_resource (
+  id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  title             TEXT NOT NULL,
+  domain            TEXT NOT NULL,
+  resource_type     app.resource_type NOT NULL,
+  difficulty_level  app.difficulty_level NOT NULL DEFAULT 'MIXED',
+  source_kind       app.source_kind NOT NULL,
+  access_scope      app.access_scope NOT NULL DEFAULT 'GLOBAL',
+  owner_user_id     UUID REFERENCES app.users(id) ON DELETE SET NULL,
+  course_id         UUID REFERENCES app.courses(id) ON DELETE SET NULL,
+  storage_object_id UUID REFERENCES storage.resource_object(id) ON DELETE SET NULL,
+  summary_text      TEXT,
+  tags              JSONB NOT NULL DEFAULT '[]'::jsonb,
+  metadata_json     JSONB NOT NULL DEFAULT '{}'::jsonb,
+  status            TEXT NOT NULL DEFAULT 'ACTIVE' CHECK (status IN ('PROCESSING', 'ACTIVE', 'DISABLED', 'FAILED')),
+  created_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
+  CHECK ((access_scope <> 'USER') OR (owner_user_id IS NOT NULL)),
+  CHECK ((access_scope <> 'COURSE') OR (course_id IS NOT NULL))
+);
+
+CREATE INDEX IF NOT EXISTS idx_learning_resource_scope_domain
+ON app.learning_resource(access_scope, domain, resource_type, difficulty_level);
+
+CREATE INDEX IF NOT EXISTS idx_learning_resource_owner_course
+ON app.learning_resource(owner_user_id, course_id);
+
+-- =========================================================
+-- 对话元数据
+-- =========================================================
+CREATE TABLE IF NOT EXISTS app.qna_session (
+  id                  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id             UUID NOT NULL REFERENCES app.users(id) ON DELETE CASCADE,
+  title               TEXT NOT NULL DEFAULT '新对话',
+  mongo_thread_id     TEXT NOT NULL UNIQUE,
+  entry_source        TEXT NOT NULL DEFAULT 'NEW_CONVERSATION' CHECK (entry_source IN ('NEW_CONVERSATION', 'HISTORY_REOPEN')),
+  current_mode        app.conversation_mode NOT NULL DEFAULT 'QNA',
+  last_message_at     TIMESTAMPTZ,
+  last_message_preview TEXT,
+  message_count       INT NOT NULL DEFAULT 0 CHECK (message_count >= 0),
+  active_profile_version INT NOT NULL DEFAULT 0,
+  created_at          TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at          TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_qna_session_user_created
+ON app.qna_session(user_id, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS app.qna_message_ref (
+  id                BIGSERIAL PRIMARY KEY,
+  session_id        UUID NOT NULL REFERENCES app.qna_session(id) ON DELETE CASCADE,
+  user_id           UUID NOT NULL REFERENCES app.users(id) ON DELETE CASCADE,
+  message_seq       INT NOT NULL,
+  role              TEXT NOT NULL CHECK (role IN ('user', 'assistant', 'system', 'agent')),
+  message_type      TEXT NOT NULL CHECK (message_type IN ('QUESTION', 'ANSWER', 'SYSTEM', 'AGENT_PROGRESS')),
+  mongo_message_id  TEXT NOT NULL,
+  content_preview   TEXT,
+  payload_json      JSONB NOT NULL DEFAULT '{}'::jsonb,
+  created_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (session_id, message_seq),
+  UNIQUE (session_id, mongo_message_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_qna_message_ref_session_created
+ON app.qna_message_ref(session_id, created_at ASC);
+
+CREATE INDEX IF NOT EXISTS idx_qna_message_ref_user_created
+ON app.qna_message_ref(user_id, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS app.smart_engine_session (
+  id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  qna_session_id    UUID NOT NULL UNIQUE REFERENCES app.qna_session(id) ON DELETE CASCADE,
+  user_id           UUID NOT NULL REFERENCES app.users(id) ON DELETE CASCADE,
+  status            app.engine_status NOT NULL DEFAULT 'IDLE',
+  selected_action   TEXT,
+  engine_state      JSONB NOT NULL DEFAULT '{}'::jsonb,
+  created_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at        TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- =========================================================
+-- 用户画像（当前态 + 历史 + 画像向量）
+-- =========================================================
+CREATE TABLE IF NOT EXISTS app.user_profile_snapshot (
+  id                    UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id               UUID NOT NULL REFERENCES app.users(id) ON DELETE CASCADE,
+  source_session_id     UUID REFERENCES app.qna_session(id) ON DELETE SET NULL,
+  source_message_ref_id BIGINT REFERENCES app.qna_message_ref(id) ON DELETE SET NULL,
+  version               INT NOT NULL,
+  profile_json          JSONB NOT NULL DEFAULT '{}'::jsonb,
+  summary_text          TEXT NOT NULL DEFAULT '',
+  confidence            NUMERIC(4,3) NOT NULL DEFAULT 0.700 CHECK (confidence >= 0 AND confidence <= 1),
+  created_at            TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (user_id, version)
+);
+
+CREATE TABLE IF NOT EXISTS app.user_profile_current (
+  user_id             UUID PRIMARY KEY REFERENCES app.users(id) ON DELETE CASCADE,
+  active_snapshot_id  UUID REFERENCES app.user_profile_snapshot(id) ON DELETE SET NULL,
+  profile_json        JSONB NOT NULL DEFAULT '{}'::jsonb,
+  summary_text        TEXT NOT NULL DEFAULT '',
+  updated_at          TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS rag.user_profile_vector (
+  id                  BIGSERIAL PRIMARY KEY,
+  profile_snapshot_id UUID NOT NULL UNIQUE REFERENCES app.user_profile_snapshot(id) ON DELETE CASCADE,
+  user_id             UUID NOT NULL REFERENCES app.users(id) ON DELETE CASCADE,
+  version             INT NOT NULL,
+  embedding           VECTOR(1024) NOT NULL,
+  is_active           BOOLEAN NOT NULL DEFAULT TRUE,
+  created_at          TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (user_id, version)
+);
+
+CREATE INDEX IF NOT EXISTS idx_user_profile_vector_user_active
+ON rag.user_profile_vector(user_id, is_active, created_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_user_profile_vector_embedding_ivfflat
+ON rag.user_profile_vector USING ivfflat (embedding vector_cosine_ops)
+WITH (lists = 100);
+
+-- =========================================================
+-- LLM Wiki / 结构化知识层
+-- =========================================================
+CREATE TABLE IF NOT EXISTS rag.wiki_page (
+  id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  slug              TEXT NOT NULL,
+  title             TEXT NOT NULL,
+  domain            TEXT NOT NULL,
+  course_id         UUID REFERENCES app.courses(id) ON DELETE SET NULL,
+  access_scope      app.access_scope NOT NULL DEFAULT 'GLOBAL',
+  owner_user_id     UUID REFERENCES app.users(id) ON DELETE SET NULL,
+  difficulty_level  app.difficulty_level NOT NULL DEFAULT 'MIXED',
+  aliases           JSONB NOT NULL DEFAULT '[]'::jsonb,
+  tags              JSONB NOT NULL DEFAULT '[]'::jsonb,
+  source_refs       JSONB NOT NULL DEFAULT '[]'::jsonb,
+  frontmatter_json  JSONB NOT NULL DEFAULT '{}'::jsonb,
+  summary_text      TEXT,
+  markdown_content  TEXT NOT NULL,
+  version           INT NOT NULL DEFAULT 1,
+  is_active         BOOLEAN NOT NULL DEFAULT TRUE,
+  created_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (slug, version),
+  CHECK ((access_scope <> 'USER') OR (owner_user_id IS NOT NULL)),
+  CHECK ((access_scope <> 'COURSE') OR (course_id IS NOT NULL))
+);
+
+CREATE INDEX IF NOT EXISTS idx_wiki_page_scope_domain
+ON rag.wiki_page(access_scope, domain, difficulty_level, is_active);
+
+CREATE TABLE IF NOT EXISTS rag.wiki_link (
+  id                BIGSERIAL PRIMARY KEY,
+  from_page_id      UUID NOT NULL REFERENCES rag.wiki_page(id) ON DELETE CASCADE,
+  to_page_id        UUID NOT NULL REFERENCES rag.wiki_page(id) ON DELETE CASCADE,
+  relation_type     TEXT NOT NULL CHECK (relation_type IN ('WIKILINK', 'SHARED_TAG', 'SHARED_SOURCE', 'COMMUNITY')),
+  weight            NUMERIC(6,3) NOT NULL DEFAULT 1.000 CHECK (weight > 0),
+  created_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (from_page_id, to_page_id, relation_type)
+);
+
+CREATE INDEX IF NOT EXISTS idx_wiki_link_from_type
+ON rag.wiki_link(from_page_id, relation_type, weight DESC);
+
+CREATE INDEX IF NOT EXISTS idx_wiki_link_to_type
+ON rag.wiki_link(to_page_id, relation_type, weight DESC);
+
+CREATE TABLE IF NOT EXISTS rag.term_lexicon (
+  id                BIGSERIAL PRIMARY KEY,
+  domain            TEXT NOT NULL,
+  course_id         UUID REFERENCES app.courses(id) ON DELETE SET NULL,
+  canonical_term    TEXT NOT NULL,
+  normalized_term   TEXT NOT NULL,
+  aliases           JSONB NOT NULL DEFAULT '[]'::jsonb,
+  term_type         TEXT NOT NULL DEFAULT 'TERM' CHECK (term_type IN ('TERM', 'ALIAS', 'COURSE', 'ABBR')),
+  idf_score         NUMERIC(8,4) NOT NULL DEFAULT 1.000 CHECK (idf_score >= 0),
+  is_active         BOOLEAN NOT NULL DEFAULT TRUE,
+  updated_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (domain, course_id, normalized_term)
+);
+
+CREATE INDEX IF NOT EXISTS idx_term_lexicon_lookup
+ON rag.term_lexicon(domain, course_id, is_active, normalized_term);
+
+CREATE TABLE IF NOT EXISTS rag.synonym_group (
+  id                BIGSERIAL PRIMARY KEY,
+  domain            TEXT NOT NULL,
+  course_id         UUID REFERENCES app.courses(id) ON DELETE SET NULL,
+  canonical_term    TEXT NOT NULL,
+  variants          JSONB NOT NULL DEFAULT '[]'::jsonb,
+  source_kind       TEXT NOT NULL DEFAULT 'MANUAL' CHECK (source_kind IN ('MANUAL', 'WIKI_FILTERED', 'IMPORTED')),
+  is_active         BOOLEAN NOT NULL DEFAULT TRUE,
+  updated_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (domain, course_id, canonical_term)
+);
+
+CREATE INDEX IF NOT EXISTS idx_synonym_group_lookup
+ON rag.synonym_group(domain, course_id, is_active, canonical_term);
+
+-- =========================================================
+-- 公共课程知识向量集合
+-- =========================================================
+CREATE TABLE IF NOT EXISTS rag.knowledge_document (
+  id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  title             TEXT NOT NULL,
+  domain            TEXT NOT NULL,
+  source_type       TEXT NOT NULL CHECK (source_type IN ('pdf', 'docx', 'ppt', 'md', 'web', 'manual', 'generated', 'image', 'audio', 'video')),
+  source_ref        TEXT,
+  external_doc_id   TEXT,
+  content_hash      TEXT,
+  difficulty_level  app.difficulty_level NOT NULL DEFAULT 'MIXED',
+  access_scope      app.access_scope NOT NULL DEFAULT 'GLOBAL',
+  owner_user_id     UUID REFERENCES app.users(id) ON DELETE SET NULL,
+  course_id         UUID REFERENCES app.courses(id) ON DELETE SET NULL,
+  tags              JSONB NOT NULL DEFAULT '[]'::jsonb,
+  metadata_json     JSONB NOT NULL DEFAULT '{}'::jsonb,
+  version           INT NOT NULL DEFAULT 1,
+  is_active         BOOLEAN NOT NULL DEFAULT TRUE,
+  created_by        TEXT NOT NULL DEFAULT 'offline_ingestor',
+  created_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
+  CHECK ((access_scope <> 'USER') OR (owner_user_id IS NOT NULL)),
+  CHECK ((access_scope <> 'COURSE') OR (course_id IS NOT NULL))
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS uq_knowledge_document_external_version
+ON rag.knowledge_document(course_id, domain, external_doc_id, version);
+
+CREATE TABLE IF NOT EXISTS rag.knowledge_chunk (
+  id                BIGSERIAL PRIMARY KEY,
+  document_id       UUID NOT NULL REFERENCES rag.knowledge_document(id) ON DELETE CASCADE,
+  chunk_no          INT NOT NULL,
+  content           TEXT NOT NULL,
+  embedding         VECTOR(1024) NOT NULL,
+  token_count       INT,
+  domain            TEXT NOT NULL,
+  difficulty_level  app.difficulty_level NOT NULL DEFAULT 'MIXED',
+  access_scope      app.access_scope NOT NULL,
+  owner_user_id     UUID REFERENCES app.users(id) ON DELETE SET NULL,
+  course_id         UUID REFERENCES app.courses(id) ON DELETE SET NULL,
+  quality_score     REAL NOT NULL DEFAULT 0.5 CHECK (quality_score >= 0 AND quality_score <= 1),
+  metadata_json     JSONB NOT NULL DEFAULT '{}'::jsonb,
+  created_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
+  CHECK ((access_scope <> 'USER') OR (owner_user_id IS NOT NULL)),
+  CHECK ((access_scope <> 'COURSE') OR (course_id IS NOT NULL)),
+  UNIQUE (document_id, chunk_no)
+);
+
+CREATE INDEX IF NOT EXISTS idx_knowledge_chunk_scope_domain
+ON rag.knowledge_chunk(access_scope, domain, difficulty_level);
+
+CREATE INDEX IF NOT EXISTS idx_knowledge_chunk_embedding_ivfflat
+ON rag.knowledge_chunk USING ivfflat (embedding vector_cosine_ops)
+WITH (lists = 100);
+
+-- =========================================================
+-- 资源路径向量集合
+-- =========================================================
+CREATE TABLE IF NOT EXISTS rag.resource_document (
+  id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  resource_id       UUID NOT NULL UNIQUE REFERENCES app.learning_resource(id) ON DELETE CASCADE,
+  title             TEXT NOT NULL,
+  domain            TEXT NOT NULL,
+  resource_type     app.resource_type NOT NULL,
+  difficulty_level  app.difficulty_level NOT NULL DEFAULT 'MIXED',
+  source_kind       app.source_kind NOT NULL,
+  source_ref        TEXT,
+  summary_text      TEXT,
+  transcript_text   TEXT,
+  access_scope      app.access_scope NOT NULL,
+  owner_user_id     UUID REFERENCES app.users(id) ON DELETE SET NULL,
+  course_id         UUID REFERENCES app.courses(id) ON DELETE SET NULL,
+  metadata_json     JSONB NOT NULL DEFAULT '{}'::jsonb,
+  created_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
+  CHECK ((access_scope <> 'USER') OR (owner_user_id IS NOT NULL)),
+  CHECK ((access_scope <> 'COURSE') OR (course_id IS NOT NULL))
+);
+
+CREATE TABLE IF NOT EXISTS rag.resource_chunk (
+  id                BIGSERIAL PRIMARY KEY,
+  document_id       UUID NOT NULL REFERENCES rag.resource_document(id) ON DELETE CASCADE,
+  resource_id       UUID NOT NULL REFERENCES app.learning_resource(id) ON DELETE CASCADE,
+  chunk_no          INT NOT NULL,
+  content           TEXT NOT NULL,
+  embedding         VECTOR(1024) NOT NULL,
+  token_count       INT,
+  domain            TEXT NOT NULL,
+  resource_type     app.resource_type NOT NULL,
+  difficulty_level  app.difficulty_level NOT NULL DEFAULT 'MIXED',
+  access_scope      app.access_scope NOT NULL,
+  owner_user_id     UUID REFERENCES app.users(id) ON DELETE SET NULL,
+  course_id         UUID REFERENCES app.courses(id) ON DELETE SET NULL,
+  quality_score     REAL NOT NULL DEFAULT 0.5 CHECK (quality_score >= 0 AND quality_score <= 1),
+  metadata_json     JSONB NOT NULL DEFAULT '{}'::jsonb,
+  created_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
+  CHECK ((access_scope <> 'USER') OR (owner_user_id IS NOT NULL)),
+  CHECK ((access_scope <> 'COURSE') OR (course_id IS NOT NULL)),
+  UNIQUE (document_id, chunk_no)
+);
+
+CREATE INDEX IF NOT EXISTS idx_resource_chunk_scope_domain
+ON rag.resource_chunk(access_scope, domain, resource_type, difficulty_level);
+
+CREATE INDEX IF NOT EXISTS idx_resource_chunk_embedding_ivfflat
+ON rag.resource_chunk USING ivfflat (embedding vector_cosine_ops)
+WITH (lists = 100);
+
+-- =========================================================
+-- 学习运行态 / 任务链路
+-- =========================================================
+CREATE TABLE IF NOT EXISTS app.smart_engine_task (
+  id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  smart_session_id  UUID REFERENCES app.smart_engine_session(id) ON DELETE SET NULL,
+  qna_session_id    UUID REFERENCES app.qna_session(id) ON DELETE SET NULL,
+  user_id           UUID NOT NULL REFERENCES app.users(id) ON DELETE CASCADE,
+  course_id         UUID REFERENCES app.courses(id) ON DELETE SET NULL,
+  trace_id          TEXT NOT NULL UNIQUE,
+  service_type      TEXT NOT NULL,
+  task_status       app.task_status NOT NULL DEFAULT 'PENDING',
+  current_stage     TEXT,
+  progress_percent  NUMERIC(5,2) NOT NULL DEFAULT 0 CHECK (progress_percent >= 0 AND progress_percent <= 100),
+  request_payload   JSONB NOT NULL DEFAULT '{}'::jsonb,
+  response_summary  JSONB NOT NULL DEFAULT '{}'::jsonb,
+  error_code        TEXT,
+  error_message     TEXT,
+  started_at        TIMESTAMPTZ,
+  completed_at      TIMESTAMPTZ,
+  created_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at        TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_smart_engine_task_user_created
+ON app.smart_engine_task(user_id, created_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_smart_engine_task_status
+ON app.smart_engine_task(task_status, service_type, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS app.smart_engine_task_event (
+  id                BIGSERIAL PRIMARY KEY,
+  task_id           UUID NOT NULL REFERENCES app.smart_engine_task(id) ON DELETE CASCADE,
+  event_seq         INT NOT NULL,
+  event_type        TEXT NOT NULL CHECK (
+    event_type IN (
+      'progress',
+      'result_chunk',
+      'resource_file',
+      'question_batch',
+      'judge_result',
+      'video_gen:start',
+      'video_gen:script',
+      'video_gen:speech',
+      'video_gen:avatar',
+      'video_gen:complete',
+      'done',
+      'error'
+    )
+  ),
+  stage_name        TEXT,
+  event_payload     JSONB NOT NULL DEFAULT '{}'::jsonb,
+  created_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (task_id, event_seq)
+);
+
+CREATE INDEX IF NOT EXISTS idx_smart_engine_task_event_task_created
+ON app.smart_engine_task_event(task_id, created_at ASC);
+
+CREATE TABLE IF NOT EXISTS app.generated_artifact (
+  id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  task_id           UUID NOT NULL REFERENCES app.smart_engine_task(id) ON DELETE CASCADE,
+  user_id           UUID NOT NULL REFERENCES app.users(id) ON DELETE CASCADE,
+  resource_type     app.resource_type NOT NULL,
+  title             TEXT NOT NULL,
+  file_name         TEXT NOT NULL,
+  mime_type         TEXT,
+  sandbox_path      TEXT NOT NULL,
+  size_bytes        BIGINT CHECK (size_bytes IS NULL OR size_bytes >= 0),
+  checksum_sha256   TEXT,
+  download_token    TEXT NOT NULL UNIQUE,
+  expires_at        TIMESTAMPTZ NOT NULL,
+  download_count    INT NOT NULL DEFAULT 0 CHECK (download_count >= 0),
+  artifact_status   TEXT NOT NULL DEFAULT 'READY' CHECK (artifact_status IN ('READY', 'DOWNLOADED', 'EXPIRED', 'DELETED')),
+  metadata_json     JSONB NOT NULL DEFAULT '{}'::jsonb,
+  created_at        TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_generated_artifact_task
+ON app.generated_artifact(task_id, resource_type, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS rag.video_generation_task (
+  id                   UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  task_id              UUID UNIQUE REFERENCES app.smart_engine_task(id) ON DELETE CASCADE,
+  resource_document_id UUID REFERENCES rag.resource_document(id) ON DELETE SET NULL,
+  student_id           UUID NOT NULL REFERENCES app.users(id) ON DELETE CASCADE,
+  trace_id             TEXT UNIQUE,
+  title                TEXT NOT NULL,
+  topic                TEXT NOT NULL,
+  script_json          JSONB NOT NULL DEFAULT '{}'::jsonb,
+  script_text          TEXT NOT NULL DEFAULT '',
+  status               TEXT NOT NULL DEFAULT 'pending' CHECK (
+    status IN (
+      'pending',
+      'script_generated',
+      'speech_synthesized',
+      'video_rendering',
+      'completed',
+      'failed'
+    )
+  ),
+  audio_path           TEXT,
+  avatar_video_path    TEXT,
+  animation_video_path TEXT,
+  final_video_path     TEXT,
+  thumbnail_path       TEXT,
+  active_provider      TEXT,
+  fallback_provider    TEXT,
+  tts_provider         TEXT,
+  avatar_provider      TEXT,
+  duration_seconds     INT CHECK (duration_seconds IS NULL OR duration_seconds > 0),
+  video_style          TEXT CHECK (
+    video_style IS NULL OR video_style IN ('talking_head', 'animation', 'hybrid')
+  ),
+  generation_params    JSONB NOT NULL DEFAULT '{}'::jsonb,
+  critic_score         NUMERIC(3,2) CHECK (
+    critic_score IS NULL OR (critic_score >= 0 AND critic_score <= 1)
+  ),
+  safety_passed        BOOLEAN NOT NULL DEFAULT FALSE,
+  error_message        TEXT,
+  created_at           TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at           TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_video_generation_task_status
+ON rag.video_generation_task(status, created_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_video_generation_task_student
+ON rag.video_generation_task(student_id, created_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_video_generation_task_provider
+ON rag.video_generation_task(active_provider, tts_provider, avatar_provider);
+
+CREATE TABLE IF NOT EXISTS app.learning_plan (
+  id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id           UUID NOT NULL REFERENCES app.users(id) ON DELETE CASCADE,
+  course_id         UUID REFERENCES app.courses(id) ON DELETE SET NULL,
+  plan_json         JSONB NOT NULL,
+  status            TEXT NOT NULL DEFAULT 'ACTIVE' CHECK (status IN ('ACTIVE', 'COMPLETED', 'ARCHIVED')),
+  created_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at        TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS app.learning_plan_snapshot (
+  id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  plan_id           UUID NOT NULL REFERENCES app.learning_plan(id) ON DELETE CASCADE,
+  user_id           UUID NOT NULL REFERENCES app.users(id) ON DELETE CASCADE,
+  course_id         UUID REFERENCES app.courses(id) ON DELETE SET NULL,
+  version           INT NOT NULL,
+  trigger_source    TEXT NOT NULL DEFAULT 'INITIAL' CHECK (trigger_source IN ('INITIAL', 'PROFILE_UPDATE', 'PRACTICE_RESULT', 'EVALUATION', 'MANUAL_REFRESH')),
+  plan_json         JSONB NOT NULL,
+  summary_text      TEXT,
+  created_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (plan_id, version)
+);
+
+CREATE INDEX IF NOT EXISTS idx_learning_plan_snapshot_user
+ON app.learning_plan_snapshot(user_id, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS app.tutoring_session (
+  id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id           UUID NOT NULL REFERENCES app.users(id) ON DELETE CASCADE,
+  course_id         UUID REFERENCES app.courses(id) ON DELETE SET NULL,
+  session_state     JSONB NOT NULL DEFAULT '{}'::jsonb,
+  created_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at        TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS app.assessment_result (
+  id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id           UUID NOT NULL REFERENCES app.users(id) ON DELETE CASCADE,
+  course_id         UUID REFERENCES app.courses(id) ON DELETE SET NULL,
+  score             NUMERIC(5,2),
+  result_json       JSONB NOT NULL DEFAULT '{}'::jsonb,
+  created_at        TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS app.practice_set (
+  id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  task_id           UUID REFERENCES app.smart_engine_task(id) ON DELETE SET NULL,
+  user_id           UUID NOT NULL REFERENCES app.users(id) ON DELETE CASCADE,
+  course_id         UUID REFERENCES app.courses(id) ON DELETE SET NULL,
+  source_resource_id UUID REFERENCES app.learning_resource(id) ON DELETE SET NULL,
+  difficulty_level  app.difficulty_level NOT NULL DEFAULT 'MIXED',
+  question_count    INT NOT NULL DEFAULT 0 CHECK (question_count >= 0),
+  set_status        TEXT NOT NULL DEFAULT 'OPEN' CHECK (set_status IN ('OPEN', 'SUBMITTED', 'JUDGED', 'ARCHIVED')),
+  metadata_json     JSONB NOT NULL DEFAULT '{}'::jsonb,
+  created_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at        TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_practice_set_user_created
+ON app.practice_set(user_id, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS app.practice_item (
+  id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  practice_set_id   UUID NOT NULL REFERENCES app.practice_set(id) ON DELETE CASCADE,
+  item_no           INT NOT NULL,
+  question_type     TEXT NOT NULL CHECK (question_type IN ('SINGLE_CHOICE', 'MULTIPLE_CHOICE', 'FILL_BLANK', 'SHORT_ANSWER', 'CODING')),
+  stem              TEXT NOT NULL,
+  options_json      JSONB NOT NULL DEFAULT '[]'::jsonb,
+  standard_answer   JSONB NOT NULL DEFAULT '{}'::jsonb,
+  rubric_json       JSONB NOT NULL DEFAULT '{}'::jsonb,
+  knowledge_tags    JSONB NOT NULL DEFAULT '[]'::jsonb,
+  difficulty_level  app.difficulty_level NOT NULL DEFAULT 'MIXED',
+  created_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (practice_set_id, item_no)
+);
+
+CREATE INDEX IF NOT EXISTS idx_practice_item_set
+ON app.practice_item(practice_set_id, item_no);
+
+CREATE TABLE IF NOT EXISTS app.practice_submission (
+  id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  practice_set_id   UUID NOT NULL REFERENCES app.practice_set(id) ON DELETE CASCADE,
+  practice_item_id  UUID NOT NULL REFERENCES app.practice_item(id) ON DELETE CASCADE,
+  user_id           UUID NOT NULL REFERENCES app.users(id) ON DELETE CASCADE,
+  answer_json       JSONB NOT NULL DEFAULT '{}'::jsonb,
+  score             NUMERIC(6,2),
+  is_correct        BOOLEAN,
+  judge_mode        TEXT NOT NULL DEFAULT 'RULE_FIRST' CHECK (judge_mode IN ('RULE_FIRST', 'LLM_RUBRIC', 'HYBRID')),
+  judge_result_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+  profile_delta_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+  submitted_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (practice_item_id, user_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_practice_submission_user
+ON app.practice_submission(user_id, submitted_at DESC);
+
+CREATE TABLE IF NOT EXISTS app.audit_log (
+  id                BIGSERIAL PRIMARY KEY,
+  user_id           UUID REFERENCES app.users(id) ON DELETE SET NULL,
+  task_id           UUID REFERENCES app.smart_engine_task(id) ON DELETE SET NULL,
+  event_category    TEXT NOT NULL CHECK (
+    event_category IN ('AUTH', 'TASK', 'DOWNLOAD', 'SAFETY', 'ADMIN', 'PROVIDER')
+  ),
+  risk_level        TEXT NOT NULL DEFAULT 'INFO' CHECK (risk_level IN ('INFO', 'LOW', 'MEDIUM', 'HIGH')),
+  message           TEXT NOT NULL,
+  payload_json      JSONB NOT NULL DEFAULT '{}'::jsonb,
+  created_at        TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_audit_log_user_created
+ON app.audit_log(user_id, created_at DESC);
+
+-- =========================================================
+-- RLS
+-- 应用层每次请求前设置：SET app.user_id = '<uuid>';
+-- =========================================================
+CREATE OR REPLACE FUNCTION app.current_user_uuid()
+RETURNS UUID
+LANGUAGE sql
+STABLE
+AS $$
+  SELECT NULLIF(current_setting('app.user_id', true), '')::uuid
+$$;
+
+CREATE OR REPLACE FUNCTION app.touch_updated_at()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+AS $$
+BEGIN
+  NEW.updated_at := now();
+  RETURN NEW;
+END;
+$$;
+
+ALTER TABLE app.learning_resource ENABLE ROW LEVEL SECURITY;
+ALTER TABLE app.qna_session ENABLE ROW LEVEL SECURITY;
+ALTER TABLE app.qna_message_ref ENABLE ROW LEVEL SECURITY;
+ALTER TABLE app.smart_engine_session ENABLE ROW LEVEL SECURITY;
+ALTER TABLE app.smart_engine_task ENABLE ROW LEVEL SECURITY;
+ALTER TABLE app.smart_engine_task_event ENABLE ROW LEVEL SECURITY;
+ALTER TABLE app.generated_artifact ENABLE ROW LEVEL SECURITY;
+ALTER TABLE app.user_profile_snapshot ENABLE ROW LEVEL SECURITY;
+ALTER TABLE app.user_profile_current ENABLE ROW LEVEL SECURITY;
+ALTER TABLE app.learning_plan ENABLE ROW LEVEL SECURITY;
+ALTER TABLE app.learning_plan_snapshot ENABLE ROW LEVEL SECURITY;
+ALTER TABLE app.tutoring_session ENABLE ROW LEVEL SECURITY;
+ALTER TABLE app.assessment_result ENABLE ROW LEVEL SECURITY;
+ALTER TABLE app.practice_set ENABLE ROW LEVEL SECURITY;
+ALTER TABLE app.practice_item ENABLE ROW LEVEL SECURITY;
+ALTER TABLE app.practice_submission ENABLE ROW LEVEL SECURITY;
+ALTER TABLE app.audit_log ENABLE ROW LEVEL SECURITY;
+ALTER TABLE rag.user_profile_vector ENABLE ROW LEVEL SECURITY;
+ALTER TABLE rag.wiki_page ENABLE ROW LEVEL SECURITY;
+ALTER TABLE rag.wiki_link ENABLE ROW LEVEL SECURITY;
+ALTER TABLE rag.term_lexicon ENABLE ROW LEVEL SECURITY;
+ALTER TABLE rag.synonym_group ENABLE ROW LEVEL SECURITY;
+ALTER TABLE rag.knowledge_document ENABLE ROW LEVEL SECURITY;
+ALTER TABLE rag.knowledge_chunk ENABLE ROW LEVEL SECURITY;
+ALTER TABLE rag.resource_document ENABLE ROW LEVEL SECURITY;
+ALTER TABLE rag.resource_chunk ENABLE ROW LEVEL SECURITY;
+ALTER TABLE rag.video_generation_task ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS p_learning_resource_rw ON app.learning_resource;
+CREATE POLICY p_learning_resource_rw ON app.learning_resource
+FOR ALL USING (
+  access_scope = 'GLOBAL'
+  OR (access_scope = 'USER' AND owner_user_id = app.current_user_uuid())
+  OR (access_scope = 'COURSE' AND EXISTS (
+    SELECT 1 FROM app.user_course_enrollments e
+    WHERE e.user_id = app.current_user_uuid() AND e.course_id = app.learning_resource.course_id
+  ))
+)
+WITH CHECK (
+  access_scope = 'GLOBAL'
+  OR (access_scope = 'USER' AND owner_user_id = app.current_user_uuid())
+  OR (access_scope = 'COURSE' AND EXISTS (
+    SELECT 1 FROM app.user_course_enrollments e
+    WHERE e.user_id = app.current_user_uuid() AND e.course_id = app.learning_resource.course_id
+  ))
+);
+
+DROP POLICY IF EXISTS p_qna_session_rw ON app.qna_session;
+CREATE POLICY p_qna_session_rw ON app.qna_session
+FOR ALL USING (user_id = app.current_user_uuid())
+WITH CHECK (user_id = app.current_user_uuid());
+
+DROP POLICY IF EXISTS p_qna_message_ref_rw ON app.qna_message_ref;
+CREATE POLICY p_qna_message_ref_rw ON app.qna_message_ref
+FOR ALL USING (user_id = app.current_user_uuid())
+WITH CHECK (user_id = app.current_user_uuid());
+
+DROP POLICY IF EXISTS p_smart_engine_session_rw ON app.smart_engine_session;
+CREATE POLICY p_smart_engine_session_rw ON app.smart_engine_session
+FOR ALL USING (user_id = app.current_user_uuid())
+WITH CHECK (user_id = app.current_user_uuid());
+
+DROP POLICY IF EXISTS p_smart_engine_task_rw ON app.smart_engine_task;
+CREATE POLICY p_smart_engine_task_rw ON app.smart_engine_task
+FOR ALL USING (user_id = app.current_user_uuid())
+WITH CHECK (user_id = app.current_user_uuid());
+
+DROP POLICY IF EXISTS p_smart_engine_task_event_rw ON app.smart_engine_task_event;
+CREATE POLICY p_smart_engine_task_event_rw ON app.smart_engine_task_event
+FOR ALL USING (
+  EXISTS (
+    SELECT 1
+    FROM app.smart_engine_task t
+    WHERE t.id = app.smart_engine_task_event.task_id
+      AND t.user_id = app.current_user_uuid()
+  )
+)
+WITH CHECK (
+  EXISTS (
+    SELECT 1
+    FROM app.smart_engine_task t
+    WHERE t.id = app.smart_engine_task_event.task_id
+      AND t.user_id = app.current_user_uuid()
+  )
+);
+
+DROP POLICY IF EXISTS p_generated_artifact_rw ON app.generated_artifact;
+CREATE POLICY p_generated_artifact_rw ON app.generated_artifact
+FOR ALL USING (user_id = app.current_user_uuid())
+WITH CHECK (user_id = app.current_user_uuid());
+
+DROP POLICY IF EXISTS p_user_profile_snapshot_rw ON app.user_profile_snapshot;
+CREATE POLICY p_user_profile_snapshot_rw ON app.user_profile_snapshot
+FOR ALL USING (user_id = app.current_user_uuid())
+WITH CHECK (user_id = app.current_user_uuid());
+
+DROP POLICY IF EXISTS p_user_profile_current_rw ON app.user_profile_current;
+CREATE POLICY p_user_profile_current_rw ON app.user_profile_current
+FOR ALL USING (user_id = app.current_user_uuid())
+WITH CHECK (user_id = app.current_user_uuid());
+
+DROP POLICY IF EXISTS p_learning_plan_rw ON app.learning_plan;
+CREATE POLICY p_learning_plan_rw ON app.learning_plan
+FOR ALL USING (user_id = app.current_user_uuid())
+WITH CHECK (user_id = app.current_user_uuid());
+
+DROP POLICY IF EXISTS p_learning_plan_snapshot_rw ON app.learning_plan_snapshot;
+CREATE POLICY p_learning_plan_snapshot_rw ON app.learning_plan_snapshot
+FOR ALL USING (user_id = app.current_user_uuid())
+WITH CHECK (user_id = app.current_user_uuid());
+
+DROP POLICY IF EXISTS p_tutoring_session_rw ON app.tutoring_session;
+CREATE POLICY p_tutoring_session_rw ON app.tutoring_session
+FOR ALL USING (user_id = app.current_user_uuid())
+WITH CHECK (user_id = app.current_user_uuid());
+
+DROP POLICY IF EXISTS p_assessment_result_rw ON app.assessment_result;
+CREATE POLICY p_assessment_result_rw ON app.assessment_result
+FOR ALL USING (user_id = app.current_user_uuid())
+WITH CHECK (user_id = app.current_user_uuid());
+
+DROP POLICY IF EXISTS p_practice_set_rw ON app.practice_set;
+CREATE POLICY p_practice_set_rw ON app.practice_set
+FOR ALL USING (user_id = app.current_user_uuid())
+WITH CHECK (user_id = app.current_user_uuid());
+
+DROP POLICY IF EXISTS p_practice_item_read ON app.practice_item;
+CREATE POLICY p_practice_item_read ON app.practice_item
+FOR ALL USING (
+  EXISTS (
+    SELECT 1
+    FROM app.practice_set s
+    WHERE s.id = app.practice_item.practice_set_id
+      AND s.user_id = app.current_user_uuid()
+  )
+)
+WITH CHECK (
+  EXISTS (
+    SELECT 1
+    FROM app.practice_set s
+    WHERE s.id = app.practice_item.practice_set_id
+      AND s.user_id = app.current_user_uuid()
+  )
+);
+
+DROP POLICY IF EXISTS p_practice_submission_rw ON app.practice_submission;
+CREATE POLICY p_practice_submission_rw ON app.practice_submission
+FOR ALL USING (user_id = app.current_user_uuid())
+WITH CHECK (user_id = app.current_user_uuid());
+
+DROP POLICY IF EXISTS p_audit_log_read ON app.audit_log;
+CREATE POLICY p_audit_log_read ON app.audit_log
+FOR ALL USING (
+  user_id = app.current_user_uuid()
+  OR user_id IS NULL
+)
+WITH CHECK (
+  user_id = app.current_user_uuid()
+  OR user_id IS NULL
+);
+
+DROP POLICY IF EXISTS p_user_profile_vector_rw ON rag.user_profile_vector;
+CREATE POLICY p_user_profile_vector_rw ON rag.user_profile_vector
+FOR ALL USING (user_id = app.current_user_uuid())
+WITH CHECK (user_id = app.current_user_uuid());
+
+DROP POLICY IF EXISTS p_wiki_page_read ON rag.wiki_page;
+CREATE POLICY p_wiki_page_read ON rag.wiki_page
+FOR SELECT USING (
+  access_scope = 'GLOBAL'
+  OR (access_scope = 'USER' AND owner_user_id = app.current_user_uuid())
+  OR (access_scope = 'COURSE' AND EXISTS (
+    SELECT 1 FROM app.user_course_enrollments e
+    WHERE e.user_id = app.current_user_uuid() AND e.course_id = rag.wiki_page.course_id
+  ))
+);
+
+DROP POLICY IF EXISTS p_wiki_link_read ON rag.wiki_link;
+CREATE POLICY p_wiki_link_read ON rag.wiki_link
+FOR SELECT USING (
+  EXISTS (
+    SELECT 1
+    FROM rag.wiki_page p
+    WHERE p.id = rag.wiki_link.from_page_id
+      AND (
+        p.access_scope = 'GLOBAL'
+        OR (p.access_scope = 'USER' AND p.owner_user_id = app.current_user_uuid())
+        OR (p.access_scope = 'COURSE' AND EXISTS (
+          SELECT 1 FROM app.user_course_enrollments e
+          WHERE e.user_id = app.current_user_uuid() AND e.course_id = p.course_id
+        ))
+      )
+  )
+);
+
+DROP POLICY IF EXISTS p_term_lexicon_read ON rag.term_lexicon;
+CREATE POLICY p_term_lexicon_read ON rag.term_lexicon
+FOR SELECT USING (
+  course_id IS NULL
+  OR EXISTS (
+    SELECT 1 FROM app.user_course_enrollments e
+    WHERE e.user_id = app.current_user_uuid() AND e.course_id = rag.term_lexicon.course_id
+  )
+);
+
+DROP POLICY IF EXISTS p_synonym_group_read ON rag.synonym_group;
+CREATE POLICY p_synonym_group_read ON rag.synonym_group
+FOR SELECT USING (
+  course_id IS NULL
+  OR EXISTS (
+    SELECT 1 FROM app.user_course_enrollments e
+    WHERE e.user_id = app.current_user_uuid() AND e.course_id = rag.synonym_group.course_id
+  )
+);
+
+DROP POLICY IF EXISTS p_knowledge_document_read ON rag.knowledge_document;
+CREATE POLICY p_knowledge_document_read ON rag.knowledge_document
+FOR SELECT USING (
+  access_scope = 'GLOBAL'
+  OR (access_scope = 'USER' AND owner_user_id = app.current_user_uuid())
+  OR (access_scope = 'COURSE' AND EXISTS (
+    SELECT 1 FROM app.user_course_enrollments e
+    WHERE e.user_id = app.current_user_uuid() AND e.course_id = rag.knowledge_document.course_id
+  ))
+);
+
+DROP POLICY IF EXISTS p_knowledge_chunk_read ON rag.knowledge_chunk;
+CREATE POLICY p_knowledge_chunk_read ON rag.knowledge_chunk
+FOR SELECT USING (
+  access_scope = 'GLOBAL'
+  OR (access_scope = 'USER' AND owner_user_id = app.current_user_uuid())
+  OR (access_scope = 'COURSE' AND EXISTS (
+    SELECT 1 FROM app.user_course_enrollments e
+    WHERE e.user_id = app.current_user_uuid() AND e.course_id = rag.knowledge_chunk.course_id
+  ))
+);
+
+DROP POLICY IF EXISTS p_resource_document_read ON rag.resource_document;
+CREATE POLICY p_resource_document_read ON rag.resource_document
+FOR ALL USING (
+  access_scope = 'GLOBAL'
+  OR (access_scope = 'USER' AND owner_user_id = app.current_user_uuid())
+  OR (access_scope = 'COURSE' AND EXISTS (
+    SELECT 1 FROM app.user_course_enrollments e
+    WHERE e.user_id = app.current_user_uuid() AND e.course_id = rag.resource_document.course_id
+  ))
+)
+WITH CHECK (
+  access_scope = 'GLOBAL'
+  OR (access_scope = 'USER' AND owner_user_id = app.current_user_uuid())
+  OR (access_scope = 'COURSE' AND EXISTS (
+    SELECT 1 FROM app.user_course_enrollments e
+    WHERE e.user_id = app.current_user_uuid() AND e.course_id = rag.resource_document.course_id
+  ))
+);
+
+DROP POLICY IF EXISTS p_resource_chunk_read ON rag.resource_chunk;
+CREATE POLICY p_resource_chunk_read ON rag.resource_chunk
+FOR ALL USING (
+  access_scope = 'GLOBAL'
+  OR (access_scope = 'USER' AND owner_user_id = app.current_user_uuid())
+  OR (access_scope = 'COURSE' AND EXISTS (
+    SELECT 1 FROM app.user_course_enrollments e
+    WHERE e.user_id = app.current_user_uuid() AND e.course_id = rag.resource_chunk.course_id
+  ))
+)
+WITH CHECK (
+  access_scope = 'GLOBAL'
+  OR (access_scope = 'USER' AND owner_user_id = app.current_user_uuid())
+  OR (access_scope = 'COURSE' AND EXISTS (
+    SELECT 1 FROM app.user_course_enrollments e
+    WHERE e.user_id = app.current_user_uuid() AND e.course_id = rag.resource_chunk.course_id
+  ))
+);
+
+DROP POLICY IF EXISTS p_video_generation_task_rw ON rag.video_generation_task;
+CREATE POLICY p_video_generation_task_rw ON rag.video_generation_task
+FOR ALL USING (student_id = app.current_user_uuid())
+WITH CHECK (student_id = app.current_user_uuid());
+
+DROP TRIGGER IF EXISTS trg_learning_resource_touch_updated_at ON app.learning_resource;
+CREATE TRIGGER trg_learning_resource_touch_updated_at
+BEFORE UPDATE ON app.learning_resource
+FOR EACH ROW EXECUTE FUNCTION app.touch_updated_at();
+
+DROP TRIGGER IF EXISTS trg_qna_session_touch_updated_at ON app.qna_session;
+CREATE TRIGGER trg_qna_session_touch_updated_at
+BEFORE UPDATE ON app.qna_session
+FOR EACH ROW EXECUTE FUNCTION app.touch_updated_at();
+
+DROP TRIGGER IF EXISTS trg_smart_engine_session_touch_updated_at ON app.smart_engine_session;
+CREATE TRIGGER trg_smart_engine_session_touch_updated_at
+BEFORE UPDATE ON app.smart_engine_session
+FOR EACH ROW EXECUTE FUNCTION app.touch_updated_at();
+
+DROP TRIGGER IF EXISTS trg_smart_engine_task_touch_updated_at ON app.smart_engine_task;
+CREATE TRIGGER trg_smart_engine_task_touch_updated_at
+BEFORE UPDATE ON app.smart_engine_task
+FOR EACH ROW EXECUTE FUNCTION app.touch_updated_at();
+
+DROP TRIGGER IF EXISTS trg_user_profile_current_touch_updated_at ON app.user_profile_current;
+CREATE TRIGGER trg_user_profile_current_touch_updated_at
+BEFORE UPDATE ON app.user_profile_current
+FOR EACH ROW EXECUTE FUNCTION app.touch_updated_at();
+
+DROP TRIGGER IF EXISTS trg_learning_plan_touch_updated_at ON app.learning_plan;
+CREATE TRIGGER trg_learning_plan_touch_updated_at
+BEFORE UPDATE ON app.learning_plan
+FOR EACH ROW EXECUTE FUNCTION app.touch_updated_at();
+
+DROP TRIGGER IF EXISTS trg_tutoring_session_touch_updated_at ON app.tutoring_session;
+CREATE TRIGGER trg_tutoring_session_touch_updated_at
+BEFORE UPDATE ON app.tutoring_session
+FOR EACH ROW EXECUTE FUNCTION app.touch_updated_at();
+
+DROP TRIGGER IF EXISTS trg_practice_set_touch_updated_at ON app.practice_set;
+CREATE TRIGGER trg_practice_set_touch_updated_at
+BEFORE UPDATE ON app.practice_set
+FOR EACH ROW EXECUTE FUNCTION app.touch_updated_at();
+
+DROP TRIGGER IF EXISTS trg_wiki_page_touch_updated_at ON rag.wiki_page;
+CREATE TRIGGER trg_wiki_page_touch_updated_at
+BEFORE UPDATE ON rag.wiki_page
+FOR EACH ROW EXECUTE FUNCTION app.touch_updated_at();
+
+DROP TRIGGER IF EXISTS trg_knowledge_document_touch_updated_at ON rag.knowledge_document;
+CREATE TRIGGER trg_knowledge_document_touch_updated_at
+BEFORE UPDATE ON rag.knowledge_document
+FOR EACH ROW EXECUTE FUNCTION app.touch_updated_at();
+
+DROP TRIGGER IF EXISTS trg_resource_document_touch_updated_at ON rag.resource_document;
+CREATE TRIGGER trg_resource_document_touch_updated_at
+BEFORE UPDATE ON rag.resource_document
+FOR EACH ROW EXECUTE FUNCTION app.touch_updated_at();
+
+DROP TRIGGER IF EXISTS trg_video_generation_task_touch_updated_at ON rag.video_generation_task;
+CREATE TRIGGER trg_video_generation_task_touch_updated_at
+BEFORE UPDATE ON rag.video_generation_task
+FOR EACH ROW EXECUTE FUNCTION app.touch_updated_at();
+
+ANALYZE app.learning_resource;
+ANALYZE app.qna_session;
+ANALYZE app.qna_message_ref;
+ANALYZE app.smart_engine_session;
+ANALYZE app.smart_engine_task;
+ANALYZE app.smart_engine_task_event;
+ANALYZE app.generated_artifact;
+ANALYZE app.user_profile_snapshot;
+ANALYZE app.user_profile_current;
+ANALYZE app.learning_plan;
+ANALYZE app.learning_plan_snapshot;
+ANALYZE app.practice_set;
+ANALYZE app.practice_item;
+ANALYZE app.practice_submission;
+ANALYZE app.audit_log;
+ANALYZE rag.user_profile_vector;
+ANALYZE rag.wiki_page;
+ANALYZE rag.wiki_link;
+ANALYZE rag.term_lexicon;
+ANALYZE rag.synonym_group;
+ANALYZE rag.knowledge_document;
+ANALYZE rag.knowledge_chunk;
+ANALYZE rag.resource_document;
+ANALYZE rag.resource_chunk;
+ANALYZE rag.video_generation_task;

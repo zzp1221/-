@@ -1,0 +1,10 @@
+.git
+.pytest_cache
+__pycache__
+.venv
+venv
+tests
+sandbox-temp
+*.pyc
+*.pyo
+*.pyd

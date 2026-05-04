@@ -1,0 +1,257 @@
+package com.project.application.smartengine;
+
+import com.project.api.smartengine.dto.TaskStatusResponse;
+import com.project.application.artifact.ArtifactDownloadDescriptor;
+import com.project.application.artifact.ArtifactDownloadService;
+import com.project.application.common.ApplicationException;
+import com.project.domain.artifact.ResourceType;
+import com.project.domain.task.SmartEngineTask;
+import com.project.domain.task.SmartEngineTaskEvent;
+import com.project.domain.task.SmartEngineTaskEventRepository;
+import com.project.domain.task.SmartEngineTaskRepository;
+import com.project.domain.task.ServiceType;
+import com.project.domain.task.TaskStatus;
+import org.springframework.http.HttpStatus;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+import java.math.BigDecimal;
+import java.nio.file.Path;
+import java.time.OffsetDateTime;
+import java.util.LinkedHashMap;
+import java.util.Map;
+import java.util.UUID;
+
+/**
+ * Owns task state transitions and event persistence.
+ */
+@Service
+public class TaskStateMachineService {
+
+    private final SmartEngineTaskRepository taskRepository;
+    private final SmartEngineTaskEventRepository taskEventRepository;
+    private final ArtifactDownloadService artifactDownloadService;
+    private final VideoGenerationTaskService videoGenerationTaskService;
+
+    public TaskStateMachineService(
+        SmartEngineTaskRepository taskRepository,
+        SmartEngineTaskEventRepository taskEventRepository,
+        ArtifactDownloadService artifactDownloadService,
+        VideoGenerationTaskService videoGenerationTaskService
+    ) {
+        this.taskRepository = taskRepository;
+        this.taskEventRepository = taskEventRepository;
+        this.artifactDownloadService = artifactDownloadService;
+        this.videoGenerationTaskService = videoGenerationTaskService;
+    }
+
+    @Transactional
+    public SmartEngineTask createTask(UUID taskId, UUID userId, String traceId, ServiceType serviceType, Map<String, Object> requestPayload) {
+        SmartEngineTask task = new SmartEngineTask();
+        task.setId(taskId);
+        task.setUserId(userId);
+        task.setTraceId(traceId);
+        task.setServiceType(serviceType);
+        task.setTaskStatus(TaskStatus.PENDING);
+        task.setRequestPayload(requestPayload);
+        task.setResponseSummary(new LinkedHashMap<>());
+        return taskRepository.save(task);
+    }
+
+    @Transactional
+    public SmartEngineTask markRunning(UUID taskId) {
+        SmartEngineTask task = getTaskInternal(taskId);
+        task.setTaskStatus(TaskStatus.RUNNING);
+        task.setStartedAt(task.getStartedAt() == null ? OffsetDateTime.now() : task.getStartedAt());
+        if (task.getCurrentStage() == null) {
+            task.setCurrentStage("dispatching");
+        }
+        return task;
+    }
+
+    @Transactional
+    public TaskStreamEventPayload recordPythonEvent(UUID taskId, PythonStreamEvent pythonEvent) {
+        SmartEngineTask task = getTaskInternalForUpdate(taskId);
+        int nextSequence = taskEventRepository.countByTaskId(taskId) + 1;
+        Map<String, Object> payload = pythonEvent.safePayload();
+
+        if (task.getStartedAt() == null) {
+            task.setStartedAt(OffsetDateTime.now());
+        }
+
+        StreamEventType eventType = pythonEvent.resolvedEventType();
+        switch (eventType) {
+            case PROGRESS -> applyProgressEvent(task, pythonEvent, payload);
+            case RESOURCE_FILE -> payload = applyResourceFileEvent(task, payload);
+            case DONE -> applyDoneEvent(task, payload);
+            case ERROR -> applyErrorEvent(task, payload);
+            default -> applyIntermediateEvent(task, pythonEvent);
+        }
+        if (eventType != StreamEventType.RESOURCE_FILE) {
+            videoGenerationTaskService.syncFromPythonEvent(task, pythonEvent, payload);
+        }
+
+        SmartEngineTaskEvent event = new SmartEngineTaskEvent();
+        event.setTask(task);
+        event.setEventSeq(nextSequence);
+        event.setEventType(pythonEvent.eventType());
+        event.setStageName(pythonEvent.stage());
+        event.setEventPayload(payload);
+        SmartEngineTaskEvent savedEvent = taskEventRepository.save(event);
+
+        return new TaskStreamEventPayload(
+            pythonEvent.eventType(),
+            task.getId(),
+            task.getTraceId(),
+            nextSequence,
+            savedEvent.getCreatedAt(),
+            payload
+        );
+    }
+
+    @Transactional
+    public TaskStreamEventPayload failTask(UUID taskId, String errorCode, String message) {
+        SmartEngineTask task = getTaskInternalForUpdate(taskId);
+        task.setTaskStatus(TaskStatus.FAILED);
+        task.setErrorCode(errorCode);
+        task.setErrorMessage(message);
+        task.setCompletedAt(OffsetDateTime.now());
+        videoGenerationTaskService.markFailed(task, message);
+
+        int nextSequence = taskEventRepository.countByTaskId(taskId) + 1;
+        Map<String, Object> payload = Map.of(
+            "code", errorCode,
+            "message", message
+        );
+
+        SmartEngineTaskEvent event = new SmartEngineTaskEvent();
+        event.setTask(task);
+        event.setEventSeq(nextSequence);
+        event.setEventType(StreamEventType.ERROR.wireValue());
+        event.setStageName(task.getCurrentStage());
+        event.setEventPayload(payload);
+        SmartEngineTaskEvent savedEvent = taskEventRepository.save(event);
+
+        return new TaskStreamEventPayload(StreamEventType.ERROR.wireValue(), task.getId(), task.getTraceId(), nextSequence, savedEvent.getCreatedAt(), payload);
+    }
+
+    @Transactional(readOnly = true)
+    public SmartEngineTask getOwnedTask(UUID taskId, UUID userId) {
+        return taskRepository.findByIdAndUserId(taskId, userId)
+            .orElseThrow(() -> new ApplicationException("TASK_NOT_FOUND", "任务不存在", HttpStatus.NOT_FOUND));
+    }
+
+    @Transactional(readOnly = true)
+    public TaskStatusResponse getOwnedTaskStatus(UUID taskId, UUID userId) {
+        SmartEngineTask task = getOwnedTask(taskId, userId);
+        return new TaskStatusResponse(
+            task.getId(),
+            task.getTraceId(),
+            task.getServiceType(),
+            task.getTaskStatus(),
+            task.getCurrentStage(),
+            task.getProgressPercent(),
+            task.getErrorCode(),
+            task.getErrorMessage(),
+            task.getResponseSummary()
+        );
+    }
+
+    @Transactional(readOnly = true)
+    public boolean isTerminal(UUID taskId) {
+        return getTaskInternal(taskId).isTerminal();
+    }
+
+    private SmartEngineTask getTaskInternal(UUID taskId) {
+        return taskRepository.findById(taskId)
+            .orElseThrow(() -> new ApplicationException("TASK_NOT_FOUND", "任务不存在", HttpStatus.NOT_FOUND));
+    }
+
+    private SmartEngineTask getTaskInternalForUpdate(UUID taskId) {
+        return taskRepository.findByIdForUpdate(taskId)
+            .orElseThrow(() -> new ApplicationException("TASK_NOT_FOUND", "任务不存在", HttpStatus.NOT_FOUND));
+    }
+
+    private void applyProgressEvent(SmartEngineTask task, PythonStreamEvent pythonEvent, Map<String, Object> payload) {
+        task.setTaskStatus(TaskStatus.RUNNING);
+        task.setCurrentStage(pythonEvent.stage());
+        Object percentValue = payload.get("percent");
+        if (percentValue instanceof Number number) {
+            task.setProgressPercent(BigDecimal.valueOf(number.doubleValue()));
+        }
+    }
+
+    private void applyIntermediateEvent(SmartEngineTask task, PythonStreamEvent pythonEvent) {
+        task.setTaskStatus(TaskStatus.RUNNING);
+        if (pythonEvent.stage() != null && !pythonEvent.stage().isBlank()) {
+            task.setCurrentStage(pythonEvent.stage());
+        }
+    }
+
+    private void applyDoneEvent(SmartEngineTask task, Map<String, Object> payload) {
+        task.setTaskStatus(TaskStatus.COMPLETED);
+        task.setCurrentStage("completed");
+        task.setProgressPercent(BigDecimal.valueOf(100));
+        task.setCompletedAt(OffsetDateTime.now());
+        task.setResponseSummary(payload);
+    }
+
+    private void applyErrorEvent(SmartEngineTask task, Map<String, Object> payload) {
+        task.setTaskStatus(TaskStatus.FAILED);
+        task.setCompletedAt(OffsetDateTime.now());
+        task.setErrorCode((String) payload.getOrDefault("code", "PYTHON_AGENT_ERROR"));
+        task.setErrorMessage((String) payload.getOrDefault("message", "Python Agent 执行失败"));
+    }
+
+    private Map<String, Object> applyResourceFileEvent(SmartEngineTask task, Map<String, Object> payload) {
+        String sandboxPath = (String) payload.getOrDefault("sandboxPath", payload.get("localPath"));
+        String fileName = (String) payload.get("fileName");
+        if (sandboxPath == null || fileName == null) {
+            return payload;
+        }
+        videoGenerationTaskService.syncFromResourceFile(task, payload);
+
+        ResourceType resourceType = resolveResourceType(payload.get("assetType"));
+
+        ArtifactDownloadDescriptor descriptor = artifactDownloadService.issueDownload(
+            task,
+            resourceType,
+            (String) payload.getOrDefault("title", fileName),
+            fileName,
+            sandboxPath,
+            (String) payload.get("mimeType")
+        );
+
+        Map<String, Object> signedPayload = new LinkedHashMap<>(payload);
+        signedPayload.remove("sandboxPath");
+        signedPayload.remove("localPath");
+        signedPayload.put("downloadUrl", descriptor.downloadUrl());
+        signedPayload.put("expiresInSec", descriptor.expiresInSec());
+        signedPayload.put("expiresAt", descriptor.expiresAt());
+        String thumbnailPath = (String) payload.get("thumbnailPath");
+        if (thumbnailPath != null && !thumbnailPath.isBlank()) {
+            String thumbnailFileName = (String) payload.getOrDefault("thumbnailFileName", Path.of(thumbnailPath).getFileName().toString());
+            ArtifactDownloadDescriptor thumbnailDescriptor = artifactDownloadService.issueDownload(
+                task,
+                resourceType,
+                (String) payload.getOrDefault("title", thumbnailFileName),
+                thumbnailFileName,
+                thumbnailPath,
+                (String) payload.get("thumbnailMimeType")
+            );
+            signedPayload.remove("thumbnailPath");
+            signedPayload.put("thumbnailUrl", thumbnailDescriptor.downloadUrl());
+        }
+        return signedPayload;
+    }
+
+    private ResourceType resolveResourceType(Object rawValue) {
+        if (rawValue instanceof ResourceType resourceType) {
+            return resourceType;
+        }
+        if (rawValue instanceof String text && !text.isBlank()) {
+            return ResourceType.fromValue(text);
+        }
+        return ResourceType.DOCUMENT;
+    }
+}

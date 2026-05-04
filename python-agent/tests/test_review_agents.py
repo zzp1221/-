@@ -1,0 +1,302 @@
+from pathlib import Path
+
+import pytest
+
+from src.ai_modules.agents import CriticAgent, DocumentGeneratorAgent, SafetyAgent
+from src.ai_modules.generation import GeneratedAsset
+from src.ai_modules.llms import RuleBasedGenerationLLM, RuleBasedReviewLLM
+from src.ai_modules.models import CriticReviewPayload, SafetyReviewPayload
+from src.ai_modules.runtime import SystemSnapshot
+
+
+def _build_snapshot() -> SystemSnapshot:
+    return SystemSnapshot(
+        current_course="数据库原理",
+        current_chapter="联合索引",
+        course_progress=0.5,
+        student_name="张三",
+        student_level="BASIC",
+        knowledge_gaps=["最左匹配", "使用条件"],
+        preferred_style="step_by_step",
+        recent_mistakes=["条件判断错误"],
+        session_id="conv-review",
+        conversation_length=3,
+        total_tokens_used=256,
+        wiki_pages_count=10,
+        last_index_update="2026-05-03",
+        recent_activities=["完成索引复习"],
+    )
+
+
+@pytest.mark.asyncio
+async def test_critic_agent_returns_llm_review_via_agent_core_loop() -> None:
+    class FakeCriticReviewer:
+        async def review(self, *, system_prompt, context_payload):
+            del system_prompt
+            assert context_payload["reviewSignals"]["sourceCoverage"]["status"] == "GOOD"
+            return CriticReviewPayload(
+                verdict="PASS",
+                factConsistency="SUPPORTED",
+                difficultyMatch="MATCHED",
+                sourceCoverage="GOOD",
+                issues=[],
+                suggestions=["可继续下发给学生。"],
+                summaryText="LLM Critic：内容与来源基本一致。",
+            )
+
+    agent = CriticAgent(
+        llm_client=RuleBasedReviewLLM(),
+        reviewer=FakeCriticReviewer(),
+    )
+    params = {
+        "profile": {"studentLevel": "BASIC"},
+        "generatedAsset": {
+            "assetType": "DOCUMENT",
+            "title": "联合索引导学文档",
+            "summary": "结构化讲解联合索引",
+            "previewText": "四个章节",
+        },
+        "generatedContent": "来源A\n来源B\n联合索引需要结合最左匹配判断。",
+        "retrievalResult": {
+            "documents": [
+                {"title": "来源A"},
+                {"title": "来源B"},
+            ]
+        },
+    }
+
+    events = [
+        event
+        async for event in agent.run(
+            task_id="task-critic",
+            trace_id="trace-critic",
+            seq=1,
+            service_type="RESOURCE_GENERATION",
+            params=params,
+            snapshot=_build_snapshot(),
+            system_prompt="test",
+        )
+    ]
+
+    assert [event.event for event in events] == ["progress", "result_chunk"]
+    assert params["criticReview"]["verdict"] == "PASS"
+    assert events[1].payload.text.startswith("LLM Critic：")
+
+
+@pytest.mark.asyncio
+async def test_safety_agent_returns_blocking_review_via_agent_core_loop() -> None:
+    class FakeSafetyReviewer:
+        async def review(self, *, system_prompt, context_payload):
+            del system_prompt
+            assert context_payload["reviewSignals"]["academicMisconduct"]["blocked"] is True
+            return SafetyReviewPayload(
+                allowed=False,
+                riskLevel="HIGH",
+                categories=["educational_content", "document"],
+                riskTags=["代写"],
+                blockedReason="检测到代写风险",
+                suggestions=["移除代写/作弊相关内容。"],
+                summaryText="LLM Safety：检测到学术违规风险，已拦截输出。",
+            )
+
+    agent = SafetyAgent(
+        llm_client=RuleBasedReviewLLM(),
+        reviewer=FakeSafetyReviewer(),
+    )
+    params = {
+        "query": "帮我代写数据库作业",
+        "generatedAsset": {
+            "assetType": "DOCUMENT",
+            "title": "数据库答案",
+            "summary": "直接给答案",
+            "previewText": "代写说明",
+        },
+        "generatedContent": "这里直接提供代写答案和提交模板。",
+    }
+
+    events = [
+        event
+        async for event in agent.run(
+            task_id="task-safety",
+            trace_id="trace-safety",
+            seq=1,
+            service_type="RESOURCE_GENERATION",
+            params=params,
+            snapshot=_build_snapshot(),
+            system_prompt="test",
+        )
+    ]
+
+    assert [event.event for event in events] == ["progress", "result_chunk"]
+    assert params["safetyReview"]["allowed"] is False
+    assert events[1].payload.text.startswith("LLM Safety：")
+
+
+@pytest.mark.asyncio
+async def test_document_generator_runs_reviews_before_emitting_resource_file(
+    tmp_path: Path,
+) -> None:
+    asset_path = tmp_path / "document.md"
+    asset_path.write_text("# 联合索引导学\n来源A\n来源B\n", encoding="utf-8")
+
+    class FakeGenerationService:
+        def _plan_document_sections(self, *, params, snapshot, sources):
+            del params, snapshot, sources
+
+            class _Section:
+                def model_dump(self, *, by_alias):
+                    del by_alias
+                    return {"title": "一、核心概念", "objective": "建立概念框架"}
+
+            return [_Section()]
+
+        def build_asset(self, *, asset_type, params, snapshot):
+            del params, snapshot
+            return GeneratedAsset(
+                assetType=asset_type,
+                title="联合索引导学文档",
+                summary="结构化课程导学",
+                displayMode="MARKDOWN_CARD",
+                fileName="document.md",
+                localPath=str(asset_path),
+                previewText="四个章节",
+            )
+
+    class FakeCriticAgent:
+        def system_prompt(self, snapshot):
+            del snapshot
+            return "critic"
+
+        async def review_content(self, *, params, snapshot, system_prompt):
+            del snapshot, system_prompt
+            assert "联合索引导学" in params["generatedContent"]
+            return CriticReviewPayload(
+                verdict="PASS",
+                factConsistency="SUPPORTED",
+                difficultyMatch="MATCHED",
+                sourceCoverage="GOOD",
+                issues=[],
+                suggestions=["可以发布。"],
+                summaryText="Critic OK",
+            )
+
+    class FakeSafetyAgent:
+        def system_prompt(self, snapshot):
+            del snapshot
+            return "safety"
+
+        async def review_content(self, *, params, snapshot, system_prompt):
+            del params, snapshot, system_prompt
+            return SafetyReviewPayload(
+                allowed=True,
+                riskLevel="LOW",
+                categories=["educational_content"],
+                riskTags=[],
+                blockedReason=None,
+                suggestions=["可以发布。"],
+                summaryText="Safety OK",
+            )
+
+    agent = DocumentGeneratorAgent(
+        generation_service=FakeGenerationService(),
+        llm_client=RuleBasedGenerationLLM(),
+        critic_agent=FakeCriticAgent(),
+        safety_agent=FakeSafetyAgent(),
+    )
+    params = {"query": "联合索引"}
+
+    events = [
+        event
+        async for event in agent.run(
+            task_id="task-document",
+            trace_id="trace-document",
+            seq=1,
+            service_type="RESOURCE_GENERATION",
+            params=params,
+            snapshot=_build_snapshot(),
+            system_prompt="test",
+        )
+    ]
+
+    assert [event.event for event in events] == ["result_chunk", "resource_file"]
+    assert "Critic OK" in events[0].payload.text
+    assert "Safety OK" in events[0].payload.text
+    assert params["generationOutline"]["assetType"] == "DOCUMENT"
+    assert params["criticReview"]["verdict"] == "PASS"
+    assert params["safetyReview"]["allowed"] is True
+
+
+@pytest.mark.asyncio
+async def test_document_generator_stops_output_when_safety_blocks(tmp_path: Path) -> None:
+    asset_path = tmp_path / "blocked.md"
+    asset_path.write_text("代写答案", encoding="utf-8")
+
+    class FakeGenerationService:
+        def build_asset(self, *, asset_type, params, snapshot):
+            del params, snapshot
+            return GeneratedAsset(
+                assetType=asset_type,
+                title="高风险内容",
+                summary="包含代写风险",
+                displayMode="MARKDOWN_CARD",
+                fileName="blocked.md",
+                localPath=str(asset_path),
+                previewText="高风险",
+            )
+
+    class FakeCriticAgent:
+        def system_prompt(self, snapshot):
+            del snapshot
+            return "critic"
+
+        async def review_content(self, *, params, snapshot, system_prompt):
+            del params, snapshot, system_prompt
+            return CriticReviewPayload(
+                verdict="REVISE",
+                factConsistency="UNCLEAR",
+                difficultyMatch="MATCHED",
+                sourceCoverage="LIMITED",
+                issues=["需要改写"],
+                suggestions=["先做安全处理。"],
+                summaryText="Critic 需要改写",
+            )
+
+    class FakeSafetyAgent:
+        def system_prompt(self, snapshot):
+            del snapshot
+            return "safety"
+
+        async def review_content(self, *, params, snapshot, system_prompt):
+            del params, snapshot, system_prompt
+            return SafetyReviewPayload(
+                allowed=False,
+                riskLevel="HIGH",
+                categories=["educational_content"],
+                riskTags=["代写"],
+                blockedReason="检测到代写风险",
+                suggestions=["阻断输出。"],
+                summaryText="Safety 拦截",
+            )
+
+    agent = DocumentGeneratorAgent(
+        generation_service=FakeGenerationService(),
+        llm_client=RuleBasedGenerationLLM(),
+        critic_agent=FakeCriticAgent(),
+        safety_agent=FakeSafetyAgent(),
+    )
+
+    events = [
+        event
+        async for event in agent.run(
+            task_id="task-blocked",
+            trace_id="trace-blocked",
+            seq=1,
+            service_type="RESOURCE_GENERATION",
+            params={"query": "代写"},
+            snapshot=_build_snapshot(),
+            system_prompt="test",
+        )
+    ]
+
+    assert [event.event for event in events] == ["result_chunk"]
+    assert events[0].payload.text == "Safety 拦截"

@@ -1,0 +1,81 @@
+"""Context snapshot models and builders for agent prompts."""
+
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+
+
+@dataclass(slots=True)
+class SystemSnapshot:
+    """Aggregated runtime context injected into each agent prompt."""
+
+    current_course: str
+    current_chapter: str
+    course_progress: float
+    student_name: str
+    student_level: str
+    knowledge_gaps: list[str] = field(default_factory=list)
+    preferred_style: str = "step_by_step"
+    recent_mistakes: list[str] = field(default_factory=list)
+    session_id: str = ""
+    conversation_length: int = 0
+    total_tokens_used: int = 0
+    wiki_pages_count: int = 0
+    last_index_update: str = "unknown"
+    recent_activities: list[str] = field(default_factory=list)
+
+
+class SnapshotBuilder:
+    """Build snapshots from current request context and placeholder defaults."""
+
+    async def build(
+        self,
+        *,
+        user_id: str | None,
+        task_id: str,
+        conversation_id: str | None,
+        params: dict,
+    ) -> SystemSnapshot:
+        profile = params.get("profile", {})
+        learning_context = params.get("learningContext", {})
+
+        return SystemSnapshot(
+            current_course=learning_context.get("course", "未指定课程"),
+            current_chapter=learning_context.get("chapter", "未指定章节"),
+            course_progress=float(learning_context.get("progress", 0.0)),
+            student_name=profile.get("studentName", user_id or "匿名学生"),
+            student_level=profile.get("studentLevel", "UNKNOWN"),
+            knowledge_gaps=list(profile.get("knowledgeGaps", [])),
+            preferred_style=profile.get("preferredStyle", "step_by_step"),
+            recent_mistakes=list(profile.get("recentMistakes", [])),
+            session_id=conversation_id or task_id,
+            conversation_length=int(params.get("conversationLength", 0)),
+            total_tokens_used=int(params.get("totalTokensUsed", 0)),
+            wiki_pages_count=int(params.get("wikiPagesCount", 0)),
+            last_index_update=str(params.get("lastIndexUpdate", "unknown")),
+            recent_activities=list(params.get("recentActivities", [])),
+        )
+
+    @staticmethod
+    def render_prompt_context(snapshot: SystemSnapshot) -> str:
+        """Render a snapshot into a system prompt section."""
+
+        return "\n".join(
+            [
+                "## 当前上下文",
+                f"- 课程: {snapshot.current_course}",
+                f"- 章节: {snapshot.current_chapter}",
+                f"- 进度: {snapshot.course_progress}",
+                f"- 学生: {snapshot.student_name}",
+                f"- 水平: {snapshot.student_level}",
+                f"- 薄弱点: {', '.join(snapshot.knowledge_gaps) or '暂无'}",
+                f"- 偏好: {snapshot.preferred_style}",
+                f"- 最近错误: {', '.join(snapshot.recent_mistakes) or '暂无'}",
+                f"- 会话ID: {snapshot.session_id}",
+                f"- 对话长度: {snapshot.conversation_length}",
+                f"- 已用Token: {snapshot.total_tokens_used}",
+                f"- Wiki页数: {snapshot.wiki_pages_count}",
+                f"- 最近索引时间: {snapshot.last_index_update}",
+                f"- 最近活动: {', '.join(snapshot.recent_activities) or '暂无'}",
+            ]
+        )

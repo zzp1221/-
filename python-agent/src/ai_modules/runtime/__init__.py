@@ -1,0 +1,56 @@
+"""Runtime primitives for the zhixue Agent loop."""
+
+from src.ai_modules.runtime.agent_core_loop import (
+    AgentCoreLoop,
+    AgentLoopResult,
+    AssistantTurn,
+    MaxIterationsExceededError,
+    ToolCall,
+    ToolExecutionResult,
+)
+from src.ai_modules.runtime.conversation_compactor import (
+    CompactionResult,
+    ConversationCompactor,
+    StructuredConversationSummary,
+)
+from src.ai_modules.runtime.context_snapshot import SnapshotBuilder, SystemSnapshot
+from src.ai_modules.runtime.hook_chain import HookChain, HookResult
+from src.ai_modules.runtime.hooks import KnowledgeGuardHook
+from src.ai_modules.runtime.permission_policy import (
+    PermissionDecision,
+    PermissionLevel,
+    PermissionPolicy,
+    PermissionRule,
+)
+from src.ai_modules.runtime.recovery_engine import (
+    LLMRateLimitError,
+    RecoveryEngine,
+    RecoveryFailureType,
+)
+from src.ai_modules.runtime.tool_registry import ToolDefinition, ToolRegistry
+
+__all__ = [
+    "AgentCoreLoop",
+    "AgentLoopResult",
+    "AssistantTurn",
+    "CompactionResult",
+    "ConversationCompactor",
+    "StructuredConversationSummary",
+    "HookChain",
+    "HookResult",
+    "KnowledgeGuardHook",
+    "MaxIterationsExceededError",
+    "SnapshotBuilder",
+    "SystemSnapshot",
+    "PermissionDecision",
+    "PermissionLevel",
+    "PermissionPolicy",
+    "PermissionRule",
+    "LLMRateLimitError",
+    "RecoveryEngine",
+    "RecoveryFailureType",
+    "ToolCall",
+    "ToolDefinition",
+    "ToolExecutionResult",
+    "ToolRegistry",
+]
