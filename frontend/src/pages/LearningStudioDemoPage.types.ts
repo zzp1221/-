@@ -26,6 +26,7 @@ export interface ChatMessage {
 export interface TempDownloadLink {
   title: string;
   url: string;
+  fileName?: string;
   expiresHint: string;
   resourceType?: string;
   thumbnailUrl?: string;

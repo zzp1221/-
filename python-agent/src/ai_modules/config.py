@@ -4,7 +4,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import AliasChoices, BaseModel, ConfigDict, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from src.ai_modules.models import ModelRoutingConfig, ProviderEndpointConfig
@@ -40,7 +40,7 @@ class Settings(BaseSettings):
     app_host: str = Field(default="0.0.0.0", alias="APP_HOST")
     app_port: int = Field(default=8000, alias="APP_PORT")
 
-    model_provider: str = Field(default="bailian", alias="MODEL_PROVIDER")
+    model_provider: str = Field(default="openai_compatible", alias="MODEL_PROVIDER")
     active_provider: str = Field(default="", alias="ACTIVE_PROVIDER")
     fallback_provider: str = Field(default="", alias="FALLBACK_PROVIDER")
     model_routing_config_path: str = Field(default="", alias="MODEL_ROUTING_CONFIG_PATH")
@@ -57,10 +57,13 @@ class Settings(BaseSettings):
     embedding_model_name: str = Field(default="text-embedding-v4", alias="EMBEDDING_MODEL_NAME")
     rerank_model_name: str = Field(default="qwen3-rerank", alias="RERANK_MODEL_NAME")
     safety_model_name: str = Field(default="qwen3.6-flash", alias="SAFETY_MODEL_NAME")
-    bailian_api_key: str = Field(default="", alias="BAILIAN_API_KEY")
-    bailian_base_url: str = Field(
+    openai_compatible_api_key: str = Field(
+        default="",
+        validation_alias=AliasChoices("OPENAI_COMPATIBLE_API_KEY", "BAILIAN_API_KEY"),
+    )
+    openai_compatible_base_url: str = Field(
         default="https://dashscope.aliyuncs.com/compatible-mode/v1",
-        alias="BAILIAN_BASE_URL",
+        validation_alias=AliasChoices("OPENAI_COMPATIBLE_BASE_URL", "BAILIAN_BASE_URL"),
     )
     spark_api_key: str = Field(default="", alias="SPARK_API_KEY")
     spark_app_id: str = Field(default="", alias="SPARK_APP_ID")
@@ -176,6 +179,7 @@ class Settings(BaseSettings):
         alias="KNOWLEDGE_EMBEDDING_DIMENSION",
     )
     minio_endpoint: str = Field(default="localhost:9000", alias="MINIO_ENDPOINT")
+    minio_public_endpoint: str = Field(default="localhost:9000", alias="MINIO_PUBLIC_ENDPOINT")
     minio_access_key: str = Field(default="minioadmin", alias="MINIO_ACCESS_KEY")
     minio_secret_key: str = Field(default="minioadmin123", alias="MINIO_SECRET_KEY")
     minio_secure: bool = Field(default=False, alias="MINIO_SECURE")
@@ -191,13 +195,28 @@ class Settings(BaseSettings):
         alias="OTEL_SERVICE_NAME",
     )
 
+    @staticmethod
+    def normalize_provider_name(provider_name: str | None) -> str:
+        normalized = (provider_name or "").strip().lower()
+        if normalized == "bailian":
+            return "openai_compatible"
+        return normalized
+
+    @property
+    def bailian_api_key(self) -> str:
+        return self.openai_compatible_api_key
+
+    @property
+    def bailian_base_url(self) -> str:
+        return self.openai_compatible_base_url
+
     def selected_provider_name(self) -> str:
         """Return the active provider with compatibility fallback to MODEL_PROVIDER."""
 
-        return (self.active_provider or self.model_provider or "bailian").strip().lower()
+        return self.normalize_provider_name(self.active_provider or self.model_provider or "openai_compatible")
 
     def selected_fallback_provider_name(self) -> str | None:
-        fallback = self.fallback_provider.strip().lower()
+        fallback = self.normalize_provider_name(self.fallback_provider)
         return fallback or None
 
     def any_provider_ready(self) -> bool:
@@ -233,11 +252,11 @@ class Settings(BaseSettings):
             ttsProvider=self.tts_provider,
             avatarProvider=self.avatar_provider,
             providers={
-                "bailian": ProviderEndpointConfig(
-                    name="bailian",
+                "openai_compatible": ProviderEndpointConfig(
+                    name="openai_compatible",
                     protocol="openai_compatible",
-                    baseUrl=self.bailian_base_url,
-                    apiKeyEnv="BAILIAN_API_KEY",
+                    baseUrl=self.openai_compatible_base_url,
+                    apiKeyEnv="OPENAI_COMPATIBLE_API_KEY",
                     timeoutMs=60000,
                     models={
                         "main_chat_model": self.model_name,
@@ -293,7 +312,28 @@ class Settings(BaseSettings):
             return self.build_default_model_routing_config()
 
         raw_payload = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
-        return ModelRoutingConfig.model_validate(raw_payload)
+        return ModelRoutingConfig.model_validate(self._normalize_model_routing_payload(raw_payload))
+
+    def _normalize_model_routing_payload(self, payload: dict[str, Any]) -> dict[str, Any]:
+        normalized_payload = dict(payload)
+        normalized_payload["activeProvider"] = self.normalize_provider_name(normalized_payload.get("activeProvider"))
+        normalized_payload["fallbackProvider"] = self.normalize_provider_name(normalized_payload.get("fallbackProvider"))
+
+        raw_providers = normalized_payload.get("providers", {})
+        if not isinstance(raw_providers, dict):
+            return normalized_payload
+
+        providers: dict[str, Any] = {}
+        for raw_name, raw_config in raw_providers.items():
+            normalized_name = self.normalize_provider_name(str(raw_name))
+            provider_config = dict(raw_config) if isinstance(raw_config, dict) else raw_config
+            if isinstance(provider_config, dict):
+                provider_config["name"] = normalized_name
+                if normalized_name == "openai_compatible":
+                    provider_config["apiKeyEnv"] = "OPENAI_COMPATIBLE_API_KEY"
+            providers[normalized_name] = provider_config
+        normalized_payload["providers"] = providers
+        return normalized_payload
 
     def resolve_logical_model(
         self,
@@ -303,29 +343,32 @@ class Settings(BaseSettings):
         """Resolve a logical model name for the selected provider."""
 
         routing = self.model_routing_config()
-        return routing.resolve_model(logical_model_name, provider_name or self.runtime_provider_name())
+        return routing.resolve_model(
+            logical_model_name,
+            self.normalize_provider_name(provider_name or self.runtime_provider_name()),
+        )
 
     def provider_endpoint_config(self, provider_name: str | None = None) -> ProviderEndpointConfig:
         """Return endpoint config for the selected or specified provider."""
 
         routing = self.model_routing_config()
-        return routing.providers[provider_name or self.runtime_provider_name()]
+        return routing.providers[self.normalize_provider_name(provider_name or self.runtime_provider_name())]
 
     def provider_api_key(self, provider_name: str | None = None) -> str:
         """Return the configured API key string for a provider."""
 
-        provider = (provider_name or self.runtime_provider_name()).strip().lower()
+        provider = self.normalize_provider_name(provider_name or self.runtime_provider_name())
         if provider == "spark":
             return self.spark_api_key
-        return self.bailian_api_key
+        return self.openai_compatible_api_key
 
     def provider_ready(self, provider_name: str | None = None) -> bool:
         """Check whether required credentials for a provider are present."""
 
-        provider = (provider_name or self.runtime_provider_name()).strip().lower()
+        provider = self.normalize_provider_name(provider_name or self.runtime_provider_name())
         if provider == "spark":
             return bool(self.spark_api_key)
-        return bool(self.bailian_api_key)
+        return bool(self.openai_compatible_api_key)
 
     def llm_component_override(self, component_name: str) -> LLMComponentOverride:
         """Return the override block for a named LLM component."""
@@ -339,7 +382,7 @@ class Settings(BaseSettings):
         """Resolve the provider to use for a specific LLM component."""
 
         override = self.llm_component_override(component_name)
-        requested_provider = override.provider.strip().lower()
+        requested_provider = self.normalize_provider_name(override.provider)
         if requested_provider and self.provider_ready(requested_provider):
             return requested_provider
         return self.runtime_provider_name()
@@ -354,7 +397,7 @@ class Settings(BaseSettings):
         """Resolve a component model override, accepting logical or literal names."""
 
         override = self.llm_component_override(component_name)
-        resolved_provider = (provider_name or self.resolve_component_provider(component_name)).strip().lower()
+        resolved_provider = self.normalize_provider_name(provider_name or self.resolve_component_provider(component_name))
         configured_model = override.model.strip()
         if not configured_model:
             return self.resolve_logical_model(default_logical_model, resolved_provider)
@@ -380,6 +423,16 @@ class Settings(BaseSettings):
 
         return {
             "endpoint": self.minio_endpoint,
+            "access_key": self.minio_access_key,
+            "secret_key": self.minio_secret_key,
+            "secure": self.minio_secure,
+        }
+
+    def minio_presign_kwargs(self) -> dict[str, Any]:
+        """Return MinIO kwargs for presigned URL generation (uses public endpoint)."""
+
+        return {
+            "endpoint": self.minio_public_endpoint,
             "access_key": self.minio_access_key,
             "secret_key": self.minio_secret_key,
             "secure": self.minio_secure,

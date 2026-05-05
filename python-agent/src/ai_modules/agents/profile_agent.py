@@ -20,12 +20,9 @@ from src.ai_modules.models import (
 from src.ai_modules.models.profile import LearnerProfileDimensions
 from src.ai_modules.prompts import build_profile_system_prompt
 from src.ai_modules.runtime import (
-    AgentCoreLoop,
-    PermissionLevel,
     RecoveryEngine,
     RecoveryFailureType,
     SystemSnapshot,
-    ToolRegistry,
 )
 
 
@@ -122,58 +119,14 @@ class ProfileAgent(PlaceholderAgent):
         params: dict[str, Any],
         system_prompt: str,
     ) -> dict[str, Any]:
-        tool_registry = ToolRegistry()
-        tool_registry.register(
-            name="read_profile",
-            fn=lambda tool_input: self._tool_read_profile(tool_input=tool_input, user_id=user_id),
-            permission_level=PermissionLevel.SYSTEM_WRITE,
-            description="Read current learner profile snapshot.",
-            parameters={"type": "object", "properties": {}, "additionalProperties": False},
-        )
-        tool_registry.register(
-            name="analyze_dialogue",
-            fn=lambda tool_input: self._tool_analyze_dialogue(tool_input=tool_input, params=params),
-            permission_level=PermissionLevel.SYSTEM_WRITE,
-            description="Analyze dialogue and extract learner profile dimensions. Returns dimensions dict.",
-            parameters={"type": "object", "properties": {}, "additionalProperties": False},
-        )
-        tool_registry.register(
-            name="update_profile",
-            fn=lambda tool_input: self._tool_update_profile(tool_input=tool_input, user_id=user_id, params=params),
-            permission_level=PermissionLevel.SYSTEM_WRITE,
-            description="Persist learner profile dimensions into storage. Pass the output of analyze_dialogue directly as input.",
-            parameters={
-                "type": "object",
-                "properties": {
-                    "knowledgeFoundation": {"type": "string"},
-                    "learningGoal": {"type": "string"},
-                    "weakPoints": {"type": "array", "items": {"type": "string"}},
-                    "confidenceLevel": {"type": "string"},
-                    "summaryText": {"type": "string"},
-                },
-                "additionalProperties": True,
-            },
-        )
+        # Step 1: Read profile (DB read, deterministic)
+        await self._tool_read_profile(tool_input={}, user_id=user_id)
 
-        result = await AgentCoreLoop(
-            llm_client=self.llm_client,
-            tool_registry=tool_registry,
-            recovery_engine=RecoveryEngine(),
-            max_iterations=5,
-            agent_level=PermissionLevel.SYSTEM_WRITE,
-        ).run(
-            system_prompt=system_prompt,
-            messages=[
-                {
-                    "role": "user",
-                    "content": f"请基于当前对话为用户 {user_id} 更新画像。",
-                }
-            ],
-        )
-        if not result.tool_results:
-            return {"summaryText": result.final_text}
-        update_output = result.tool_results[-1].output
-        return update_output if isinstance(update_output, dict) else {"summaryText": result.final_text}
+        # Step 2: Analyze dialogue (1 LLM call)
+        await self._tool_analyze_dialogue(tool_input={}, params=params)
+
+        # Step 3: Update profile (DB write, deterministic)
+        return await self._tool_update_profile(tool_input={}, user_id=user_id, params=params)
 
     async def _tool_read_profile(
         self,

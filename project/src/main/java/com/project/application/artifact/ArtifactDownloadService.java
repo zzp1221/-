@@ -100,6 +100,7 @@ public class ArtifactDownloadService {
 
         if (artifact.getExpiresAt().isBefore(OffsetDateTime.now())) {
             artifact.setArtifactStatus(ArtifactStatus.EXPIRED);
+            generatedArtifactRepository.save(artifact);
             throw new ApplicationException("ARTIFACT_EXPIRED", "下载链接已过期", HttpStatus.FORBIDDEN);
         }
 

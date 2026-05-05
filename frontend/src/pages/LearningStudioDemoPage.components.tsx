@@ -280,7 +280,7 @@ export function TaskResultPanel(props: {
     const blobUrl = window.URL.createObjectURL(response.data as Blob);
     const anchor = document.createElement('a');
     anchor.href = blobUrl;
-    anchor.download = extractFileName(item.url, item.title);
+    anchor.download = item.fileName || extractFileName(item.url, item.title);
     anchor.target = '_blank';
     document.body.appendChild(anchor);
     anchor.click();

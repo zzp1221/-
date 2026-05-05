@@ -6,8 +6,7 @@ import json
 from typing import Any
 
 from src.ai_modules.config import get_settings
-from src.ai_modules.llms.agent_models import BailianJSONGenerator, create_tool_calling_llm
-from src.ai_modules.llms.bailian_compatible import BailianCompatibleToolCallingLLM
+from src.ai_modules.llms.agent_models import OpenAICompatibleJSONGenerator, create_tool_calling_llm
 from src.ai_modules.models import CriticReviewPayload, SafetyReviewPayload
 from src.ai_modules.runtime import AssistantTurn, ToolCall
 
@@ -80,7 +79,7 @@ class RuleBasedReviewLLM:
         return {}
 
 
-class BailianCriticReviewer:
+class OpenAICompatibleCriticReviewer:
     """Generate the final structured critic review with the active provider."""
 
     def __init__(self) -> None:
@@ -91,7 +90,7 @@ class BailianCriticReviewer:
             default_logical_model="main_chat_model",
             provider_name=provider_name,
         )
-        self.generator = BailianJSONGenerator(
+        self.generator = OpenAICompatibleJSONGenerator(
             model_name=model_name,
             provider_name=provider_name,
             temperature=0.1,
@@ -114,7 +113,7 @@ class BailianCriticReviewer:
         return CriticReviewPayload.model_validate(payload)
 
 
-class BailianSafetyReviewer:
+class OpenAICompatibleSafetyReviewer:
     """Generate the final structured safety review with the active provider."""
 
     def __init__(self) -> None:
@@ -125,7 +124,7 @@ class BailianSafetyReviewer:
             default_logical_model="safety_model",
             provider_name=provider_name,
         )
-        self.generator = BailianJSONGenerator(
+        self.generator = OpenAICompatibleJSONGenerator(
             model_name=model_name,
             provider_name=provider_name,
             temperature=0.1,
@@ -149,7 +148,7 @@ class BailianSafetyReviewer:
 
 
 class ReviewLLMClientFactory:
-    """Create the review LLM client with Bailian primary and rule fallback."""
+    """Create the review LLM client with OpenAI-compatible primary and rule fallback."""
 
     @staticmethod
     def create() -> Any:
@@ -165,5 +164,8 @@ class ReviewLLMClientFactory:
         return RuleBasedReviewLLM()
 
 
-CriticReviewer = BailianCriticReviewer
-SafetyReviewer = BailianSafetyReviewer
+CriticReviewer = OpenAICompatibleCriticReviewer
+SafetyReviewer = OpenAICompatibleSafetyReviewer
+
+BailianCriticReviewer = OpenAICompatibleCriticReviewer
+BailianSafetyReviewer = OpenAICompatibleSafetyReviewer

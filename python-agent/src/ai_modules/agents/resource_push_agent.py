@@ -239,7 +239,7 @@ class ResourcePushAgent(PlaceholderAgent):
         return bool(file_name or object_key or storage_url)
 
     def _resolve_download_url(self, item: PushResourceCandidate) -> str | None:
-        if item.storage_url and item.access_mode in {"DIRECT", "PRESIGNED"}:
+        if item.storage_url and item.access_mode == "DIRECT":
             return item.storage_url
         if not item.object_key:
             return item.storage_url
@@ -247,8 +247,16 @@ class ResourcePushAgent(PlaceholderAgent):
         try:
             from minio import Minio
 
-            client = Minio(**self.settings.minio_connect_kwargs())
-            return client.presigned_get_object(
+            # Get region from internal client (can connect to MinIO)
+            internal_client = Minio(**self.settings.minio_connect_kwargs())
+            region = internal_client._get_region(bucket_name)
+
+            # Create public client with region pre-set (avoids lookup to unreachable endpoint)
+            public_client = Minio(
+                **self.settings.minio_presign_kwargs(),
+                region=region,
+            )
+            return public_client.presigned_get_object(
                 bucket_name,
                 item.object_key,
                 expires=timedelta(hours=2),

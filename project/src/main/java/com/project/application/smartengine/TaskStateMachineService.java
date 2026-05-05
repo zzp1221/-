@@ -157,9 +157,44 @@ public class TaskStateMachineService {
         );
     }
 
+    @Transactional
+    public TaskStreamEventPayload markCancelled(UUID taskId) {
+        SmartEngineTask task = getTaskInternalForUpdate(taskId);
+        task.setTaskStatus(TaskStatus.CANCELLED);
+        task.setCompletedAt(OffsetDateTime.now());
+
+        int nextSequence = taskEventRepository.countByTaskId(taskId) + 1;
+        Map<String, Object> payload = Map.of(
+            "code", "TASK_CANCELLED",
+            "message", "任务已被取消"
+        );
+
+        SmartEngineTaskEvent event = new SmartEngineTaskEvent();
+        event.setTask(task);
+        event.setEventSeq(nextSequence);
+        event.setEventType(StreamEventType.DONE.wireValue());
+        event.setStageName(task.getCurrentStage());
+        event.setEventPayload(payload);
+        SmartEngineTaskEvent savedEvent = taskEventRepository.save(event);
+
+        return new TaskStreamEventPayload(
+            StreamEventType.DONE.wireValue(),
+            task.getId(),
+            task.getTraceId(),
+            nextSequence,
+            savedEvent.getCreatedAt(),
+            payload
+        );
+    }
+
     @Transactional(readOnly = true)
     public boolean isTerminal(UUID taskId) {
         return getTaskInternal(taskId).isTerminal();
+    }
+
+    @Transactional(readOnly = true)
+    public boolean isCancelled(UUID taskId) {
+        return getTaskInternal(taskId).getTaskStatus() == TaskStatus.CANCELLED;
     }
 
     private SmartEngineTask getTaskInternal(UUID taskId) {
@@ -168,7 +203,7 @@ public class TaskStateMachineService {
     }
 
     private SmartEngineTask getTaskInternalForUpdate(UUID taskId) {
-        return taskRepository.findByIdForUpdate(taskId)
+        return taskRepository.findWithLockById(taskId)
             .orElseThrow(() -> new ApplicationException("TASK_NOT_FOUND", "任务不存在", HttpStatus.NOT_FOUND));
     }
 
@@ -199,8 +234,10 @@ public class TaskStateMachineService {
     private void applyErrorEvent(SmartEngineTask task, Map<String, Object> payload) {
         task.setTaskStatus(TaskStatus.FAILED);
         task.setCompletedAt(OffsetDateTime.now());
-        task.setErrorCode((String) payload.getOrDefault("code", "PYTHON_AGENT_ERROR"));
-        task.setErrorMessage((String) payload.getOrDefault("message", "Python Agent 执行失败"));
+        Object codeValue = payload.getOrDefault("code", "PYTHON_AGENT_ERROR");
+        Object messageValue = payload.getOrDefault("message", "Python Agent 执行失败");
+        task.setErrorCode(codeValue == null ? "PYTHON_AGENT_ERROR" : String.valueOf(codeValue));
+        task.setErrorMessage(messageValue == null ? "Python Agent 执行失败" : String.valueOf(messageValue));
     }
 
     private Map<String, Object> applyResourceFileEvent(SmartEngineTask task, Map<String, Object> payload) {

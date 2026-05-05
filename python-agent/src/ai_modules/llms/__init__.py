@@ -13,6 +13,15 @@ from src.ai_modules.llms.agent_models import (
     JudgeLLMClientFactory,
     JudgeFeedbackGenerator,
     LearningPathGenerator,
+    OpenAICompatibleEvaluationGenerator,
+    OpenAICompatibleJSONGenerator,
+    OpenAICompatibleJudgeFeedbackGenerator,
+    OpenAICompatibleLearningPathGenerator,
+    OpenAICompatibleObjectiveJudgeGenerator,
+    OpenAICompatiblePracticeQuestionGenerator,
+    OpenAICompatibleProfileAnalyzer,
+    OpenAICompatibleQueryRewriteGenerator,
+    OpenAICompatibleRetrievalSummaryGenerator,
     ObjectiveJudgeGenerator,
     PracticeLLMClientFactory,
     PracticeQuestionGenerator,
@@ -23,13 +32,16 @@ from src.ai_modules.llms.agent_models import (
     StructuredJSONGenerator,
     TutorToolLLMClientFactory,
 )
-from src.ai_modules.llms.bailian_compatible import (
+from src.ai_modules.llms.openai_compatible import (
     BailianCompatibleClient,
     BailianCompatibleToolCallingLLM,
+    OpenAICompatibleClient,
+    OpenAICompatibleToolCallingLLM,
 )
 from src.ai_modules.llms.judge_subjective_evaluator import (
     BailianSubjectiveJudgeEvaluator,
     HeuristicSubjectiveJudgeEvaluator,
+    OpenAICompatibleSubjectiveJudgeEvaluator,
     SubjectiveJudgeEvaluatorFactory,
 )
 from src.ai_modules.llms.spark_compatible import (
@@ -43,12 +55,15 @@ from src.ai_modules.llms.review_llm import (
     BailianCriticReviewer,
     BailianSafetyReviewer,
     CriticReviewer,
+    OpenAICompatibleCriticReviewer,
+    OpenAICompatibleSafetyReviewer,
     ReviewLLMClientFactory,
     RuleBasedReviewLLM,
     SafetyReviewer,
 )
 from src.ai_modules.llms.tutor_llm import (
     BailianToolCallingLLM,
+    OpenAICompatibleTutorLLM,
     RuleBasedTutorLLM,
     TutorLLMClientFactory,
 )
@@ -83,6 +98,21 @@ __all__ = [
     "JudgeLLMClientFactory",
     "JudgeFeedbackGenerator",
     "LearningPathGenerator",
+    "OpenAICompatibleClient",
+    "OpenAICompatibleCriticReviewer",
+    "OpenAICompatibleEvaluationGenerator",
+    "OpenAICompatibleJSONGenerator",
+    "OpenAICompatibleJudgeFeedbackGenerator",
+    "OpenAICompatibleLearningPathGenerator",
+    "OpenAICompatibleObjectiveJudgeGenerator",
+    "OpenAICompatiblePracticeQuestionGenerator",
+    "OpenAICompatibleProfileAnalyzer",
+    "OpenAICompatibleQueryRewriteGenerator",
+    "OpenAICompatibleRetrievalSummaryGenerator",
+    "OpenAICompatibleSafetyReviewer",
+    "OpenAICompatibleSubjectiveJudgeEvaluator",
+    "OpenAICompatibleToolCallingLLM",
+    "OpenAICompatibleTutorLLM",
     "ObjectiveJudgeGenerator",
     "PracticeLLMClientFactory",
     "PracticeQuestionGenerator",

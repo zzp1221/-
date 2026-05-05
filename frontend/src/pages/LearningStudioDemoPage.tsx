@@ -743,6 +743,15 @@ export default function LearningStudioDemoPage({ mode }: { mode: 'qna' | 'engine
         return;
       }
 
+      if (outcome === 'aborted') {
+        updateServiceSnapshot(service, (current) => ({
+          ...current,
+          engineState: 'ENGINE_FAILED',
+          taskStatus: '连接中断，请重试',
+        }));
+        return;
+      }
+
       if (outcome === 'running') {
         updateServiceSnapshot(service, (current) => ({
           ...current,
@@ -825,7 +834,7 @@ export default function LearningStudioDemoPage({ mode }: { mode: 'qna' | 'engine
             }
             setQnaMessages((prev) =>
               prev.map((item) =>
-                item.id === assistantMessageId ? { ...item, content: item.content ? `${item.content}\n${chunk}` : chunk } : item,
+                item.id === assistantMessageId ? { ...item, content: (item.content ?? '') + chunk } : item,
               ),
             );
           },

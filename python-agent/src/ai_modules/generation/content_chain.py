@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import re
@@ -81,12 +82,11 @@ class GeneratedMindMapNode(BaseModel):
 
 
 class GeneratedMindMap(BaseModel):
-    """Structured output for a mind map."""
+    """Mermaid mindmap markdown output."""
 
     title: str
     summary: str
-    root: str
-    children: list[GeneratedMindMapNode]
+    mermaid: str
 
 
 GeneratedMindMapNode.model_rebuild()
@@ -151,10 +151,10 @@ class SupportsStructuredGenerator(Protocol):
     ) -> GeneratedCodeAsset: ...
 
 
-class BailianStructuredGenerator:
-    """OpenAI-compatible structured generator for Bailian and Spark."""
+class OpenAICompatibleStructuredGenerator:
+    """OpenAI-compatible structured generator for the configured providers."""
 
-    _shared_clients: ClassVar[dict[str, httpx.Client]] = {}
+    _shared_clients: ClassVar[dict[str, httpx.AsyncClient]] = {}
 
     def __init__(
         self,
@@ -165,31 +165,31 @@ class BailianStructuredGenerator:
         backoff_seconds: float = 0.5,
     ) -> None:
         settings = get_settings()
-        self.provider_name = settings.model_provider.strip().lower()
+        self.provider_name = settings.normalize_provider_name(settings.model_provider)
         if self.provider_name == "spark":
             self.api_key = api_key or settings.spark_api_key
             self.base_url = settings.spark_base_url.rstrip("/")
             self.model_name = model_name or settings.spark_model_name
         else:
-            self.provider_name = "bailian"
-            self.api_key = api_key or settings.bailian_api_key
-            self.base_url = settings.bailian_base_url.rstrip("/")
+            self.provider_name = "openai_compatible"
+            self.api_key = api_key or settings.openai_compatible_api_key
+            self.base_url = settings.openai_compatible_base_url.rstrip("/")
             self.model_name = model_name or settings.model_name
         self.max_retries = max_retries
         self.backoff_seconds = backoff_seconds
 
-    def _get_client(self) -> httpx.Client:
+    def _get_client(self) -> httpx.AsyncClient:
         client_key = f"{self.provider_name}:{self.base_url}"
         client = self._shared_clients.get(client_key)
         if client is None or client.is_closed:
-            client = httpx.Client(
+            client = httpx.AsyncClient(
                 timeout=60.0,
                 limits=httpx.Limits(max_connections=20, max_keepalive_connections=10),
             )
             self._shared_clients[client_key] = client
         return client
 
-    def _post_chat_completion(
+    async def _post_chat_completion(
         self,
         *,
         messages: list[dict[str, Any]],
@@ -207,7 +207,7 @@ class BailianStructuredGenerator:
         }
         if max_tokens is not None:
             payload["max_tokens"] = max_tokens
-        response = client.post(
+        response = await client.post(
             f"{self.base_url}/chat/completions",
             headers={
                 "Authorization": f"Bearer {self.api_key}",
@@ -245,7 +245,7 @@ class BailianStructuredGenerator:
                 prompt_tokens,
             )
 
-    def generate_document_sections(
+    async def generate_document_sections(
         self,
         *,
         title: str,
@@ -255,7 +255,7 @@ class BailianStructuredGenerator:
         sources: list[dict[str, Any]],
     ) -> GeneratedSectionBundle:
         return GeneratedSectionBundle.model_validate(
-            self._call_and_parse_json(
+            await self._call_and_parse_json(
                 span_name=f"{self.provider_name}.generate_document_sections",
                 system_prompt=build_document_system_prompt(),
                 user_prompt=build_document_user_prompt(
@@ -269,7 +269,7 @@ class BailianStructuredGenerator:
             )
         )
 
-    def generate_reading_asset(
+    async def generate_reading_asset(
         self,
         *,
         title: str,
@@ -278,7 +278,7 @@ class BailianStructuredGenerator:
         sources: list[dict[str, Any]],
     ) -> GeneratedTextAsset:
         return GeneratedTextAsset.model_validate(
-            self._call_and_parse_json(
+            await self._call_and_parse_json(
                 span_name=f"{self.provider_name}.generate_reading_asset",
                 system_prompt=build_reading_system_prompt(),
                 user_prompt=build_reading_user_prompt(
@@ -291,7 +291,7 @@ class BailianStructuredGenerator:
             )
         )
 
-    def generate_slides_asset(
+    async def generate_slides_asset(
         self,
         *,
         title: str,
@@ -300,7 +300,7 @@ class BailianStructuredGenerator:
         sources: list[dict[str, Any]],
     ) -> GeneratedSlideDeck:
         return GeneratedSlideDeck.model_validate(
-            self._call_and_parse_json(
+            await self._call_and_parse_json(
                 span_name=f"{self.provider_name}.generate_slides_asset",
                 system_prompt=build_slides_system_prompt(),
                 user_prompt=build_slides_user_prompt(
@@ -313,7 +313,7 @@ class BailianStructuredGenerator:
             )
         )
 
-    def generate_mindmap_asset(
+    async def generate_mindmap_asset(
         self,
         *,
         title: str,
@@ -321,21 +321,56 @@ class BailianStructuredGenerator:
         snapshot: dict[str, Any],
         sources: list[dict[str, Any]],
     ) -> GeneratedMindMap:
-        return GeneratedMindMap.model_validate(
-            self._call_and_parse_json(
-                span_name=f"{self.provider_name}.generate_mindmap_asset",
-                system_prompt=build_mindmap_system_prompt(),
-                user_prompt=build_mindmap_user_prompt(
+        last_error: Exception | None = None
+        for attempt in range(self.max_retries + 1):
+            try:
+                with TRACER.start_as_current_span(f"{self.provider_name}.generate_mindmap_asset"):
+                    response = await self._post_chat_completion(
+                        messages=[
+                            {"role": "system", "content": build_mindmap_system_prompt()},
+                            {"role": "user", "content": build_mindmap_user_prompt(
+                                title=title,
+                                topic=topic,
+                                snapshot=snapshot,
+                                sources=sources,
+                            )},
+                        ],
+                        temperature=0.3,
+                        max_tokens=1600,
+                    )
+                raw_text = self._extract_message_content(response)
+                mermaid = self._extract_mermaid_block(raw_text)
+                return GeneratedMindMap(
                     title=title,
-                    topic=topic,
-                    snapshot=snapshot,
-                    sources=sources,
-                ),
-                max_tokens=1600,
-            )
-        )
+                    summary=f"{topic} 思维导图",
+                    mermaid=mermaid,
+                )
+            except (RuntimeError, KeyError, TypeError, httpx.HTTPError) as exc:
+                last_error = exc
+                LOGGER.warning(
+                    "%s mindmap generation attempt %s failed: %s",
+                    self.provider_name,
+                    attempt + 1,
+                    exc,
+                )
+                if attempt >= self.max_retries:
+                    break
+                await asyncio.sleep(self.backoff_seconds * (2**attempt))
 
-    def generate_code_asset(
+        raise RuntimeError(f"{self.provider_name} mindmap generation failed: {last_error}")
+
+    def _extract_mermaid_block(self, raw_text: str) -> str:
+        """Extract mermaid code block from LLM output, or return raw text as fallback."""
+        import re
+        match = re.search(r'```mermaid\s*\n(.*?)```', raw_text, re.DOTALL)
+        if match:
+            return match.group(1).strip()
+        match = re.search(r'```\s*\n?(mindmap\s.*?)```', raw_text, re.DOTALL)
+        if match:
+            return match.group(1).strip()
+        return raw_text.strip()
+
+    async def generate_code_asset(
         self,
         *,
         title: str,
@@ -344,7 +379,7 @@ class BailianStructuredGenerator:
         sources: list[dict[str, Any]],
     ) -> GeneratedCodeAsset:
         return GeneratedCodeAsset.model_validate(
-            self._call_and_parse_json(
+            await self._call_and_parse_json(
                 span_name=f"{self.provider_name}.generate_code_asset",
                 system_prompt=build_code_system_prompt(),
                 user_prompt=build_code_user_prompt(
@@ -357,7 +392,7 @@ class BailianStructuredGenerator:
             )
         )
 
-    def _call_and_parse_json(
+    async def _call_and_parse_json(
         self,
         *,
         span_name: str,
@@ -369,7 +404,7 @@ class BailianStructuredGenerator:
         for attempt in range(self.max_retries + 1):
             try:
                 with TRACER.start_as_current_span(span_name):
-                    response = self._post_chat_completion(
+                    response = await self._post_chat_completion(
                         messages=[
                             {"role": "system", "content": system_prompt},
                             {"role": "user", "content": user_prompt},
@@ -389,7 +424,7 @@ class BailianStructuredGenerator:
                 )
                 if attempt >= self.max_retries:
                     break
-                time.sleep(self.backoff_seconds * (2**attempt))
+                await asyncio.sleep(self.backoff_seconds * (2**attempt))
 
         raise RuntimeError(f"{self.provider_name} structured generation failed: {last_error}")
 
@@ -425,16 +460,19 @@ class BailianStructuredGenerator:
         return json.loads(raw_json[start : end + 1])
 
 
+BailianStructuredGenerator = OpenAICompatibleStructuredGenerator
+
+
 class ContentGenerationChain:
-    """Structured document-content chain with Bailian primary and fallback output."""
+    """Structured document-content chain with an OpenAI-compatible primary and fallback output."""
 
     def __init__(
         self,
         primary_generator: SupportsStructuredGenerator | None = None,
     ) -> None:
-        self.primary_generator = primary_generator or BailianStructuredGenerator()
+        self.primary_generator = primary_generator or OpenAICompatibleStructuredGenerator()
 
-    def generate_document_sections(
+    async def generate_document_sections(
         self,
         *,
         title: str,
@@ -446,7 +484,7 @@ class ContentGenerationChain:
     ) -> GeneratedSectionBundle:
         with TRACER.start_as_current_span("content_chain.generate_document_sections"):
             try:
-                return self.primary_generator.generate_document_sections(
+                return await self.primary_generator.generate_document_sections(
                     title=title,
                     topic=topic,
                     snapshot=snapshot,
@@ -491,7 +529,7 @@ class ContentGenerationChain:
             )
         return GeneratedSectionBundle(sections=sections)
 
-    def generate_reading_asset(
+    async def generate_reading_asset(
         self,
         *,
         title: str,
@@ -502,7 +540,7 @@ class ContentGenerationChain:
     ) -> GeneratedTextAsset:
         with TRACER.start_as_current_span("content_chain.generate_reading_asset"):
             try:
-                return self.primary_generator.generate_reading_asset(
+                return await self.primary_generator.generate_reading_asset(
                     title=title,
                     topic=topic,
                     snapshot=snapshot,
@@ -517,7 +555,7 @@ class ContentGenerationChain:
                     sources=sources,
                 )
 
-    def generate_slides_asset(
+    async def generate_slides_asset(
         self,
         *,
         title: str,
@@ -528,7 +566,7 @@ class ContentGenerationChain:
     ) -> GeneratedSlideDeck:
         with TRACER.start_as_current_span("content_chain.generate_slides_asset"):
             try:
-                return self.primary_generator.generate_slides_asset(
+                return await self.primary_generator.generate_slides_asset(
                     title=title,
                     topic=topic,
                     snapshot=snapshot,
@@ -543,7 +581,7 @@ class ContentGenerationChain:
                     sources=sources,
                 )
 
-    def generate_mindmap_asset(
+    async def generate_mindmap_asset(
         self,
         *,
         title: str,
@@ -554,7 +592,7 @@ class ContentGenerationChain:
     ) -> GeneratedMindMap:
         with TRACER.start_as_current_span("content_chain.generate_mindmap_asset"):
             try:
-                return self.primary_generator.generate_mindmap_asset(
+                return await self.primary_generator.generate_mindmap_asset(
                     title=title,
                     topic=topic,
                     snapshot=snapshot,
@@ -569,7 +607,7 @@ class ContentGenerationChain:
                     sources=sources,
                 )
 
-    def generate_code_asset(
+    async def generate_code_asset(
         self,
         *,
         title: str,
@@ -580,7 +618,7 @@ class ContentGenerationChain:
     ) -> GeneratedCodeAsset:
         with TRACER.start_as_current_span("content_chain.generate_code_asset"):
             try:
-                return self.primary_generator.generate_code_asset(
+                return await self.primary_generator.generate_code_asset(
                     title=title,
                     topic=topic,
                     snapshot=snapshot,

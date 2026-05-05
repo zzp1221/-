@@ -203,10 +203,12 @@ function consumeTaskStreamEvent(event: SmartEngineStreamEvent, handlers: TaskRun
     const title = readString(envelope.payload?.title) || readString(envelope.payload?.fileName) || '资源文件';
     const downloadUrl = readString(envelope.payload?.downloadUrl);
     const resourceType = readString(envelope.payload?.assetType);
+    const fileName = readString(envelope.payload?.fileName);
     if (downloadUrl) {
       handlers.onDownload({
         title,
         url: downloadUrl,
+        fileName: fileName || undefined,
         expiresHint: formatExpiresHint(envelope.payload),
         resourceType,
         thumbnailUrl: readUrlField(envelope.payload, ['thumbnailUrl', 'thumbnail_url', 'posterUrl', 'coverUrl']),
@@ -633,11 +635,11 @@ function resourceTypeLabel(resourceType: string): string {
 function normalizeResourceType(resourceType: string): string {
   switch (resourceType) {
     case 'EXPLANATION':
-      return 'DOCUMENT';
+      return 'READING';
     case 'CODE_CASE':
       return 'CODE';
     case 'QUIZ':
-      return 'DOCUMENT';
+      return 'QUIZ';
     default:
       return resourceType;
   }
@@ -722,7 +724,11 @@ function readVideoResult(payload: Record<string, unknown> | undefined): VideoRes
   const videoUrl =
     readUrlField(payload, ['videoUrl', 'finalVideoUrl', 'final_video_url', 'downloadUrl', 'resourceUrl']) ||
     readNestedVideoUrl(payload.result);
-  if (!videoUrl || !/\.mp4($|\?)/i.test(videoUrl)) {
+  if (!videoUrl) {
+    return null;
+  }
+  const isVideoUrl = /\.mp4($|\?)/i.test(videoUrl) || videoUrl.startsWith('/api/assets/download/');
+  if (!isVideoUrl) {
     return null;
   }
 

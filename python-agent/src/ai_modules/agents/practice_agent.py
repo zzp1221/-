@@ -19,11 +19,7 @@ from src.ai_modules.models import (
 )
 from src.ai_modules.prompts import build_practice_system_prompt
 from src.ai_modules.runtime import (
-    AgentCoreLoop,
-    PermissionLevel,
-    RecoveryEngine,
     SystemSnapshot,
-    ToolRegistry,
 )
 
 
@@ -121,77 +117,14 @@ class PracticeAgent(PlaceholderAgent):
         params: dict[str, Any],
         system_prompt: str,
     ) -> dict[str, Any]:
-        tool_registry = ToolRegistry()
-        tool_registry.register(
-            name="generate_questions",
-            fn=lambda tool_input: self._tool_generate_questions(tool_input=tool_input, params=params),
-            permission_level=PermissionLevel.CONTENT_GENERATE,
-            description="Generate a practice question set for the current topic. Returns a dict with 'title', 'topic', 'difficulty', 'questions'.",
-            parameters={
-                "type": "object",
-                "properties": {},
-                "additionalProperties": False,
-            },
-        )
-        tool_registry.register(
-            name="validate_question",
-            fn=self._tool_validate_question,
-            permission_level=PermissionLevel.CONTENT_GENERATE,
-            description="Validate generated practice questions. Pass the output of generate_questions directly as input.",
-            parameters={
-                "type": "object",
-                "properties": {
-                    "title": {"type": "string", "description": "Batch title"},
-                    "topic": {"type": "string", "description": "Topic name"},
-                    "difficulty": {"type": "string", "description": "Difficulty level"},
-                    "questions": {
-                        "type": "array",
-                        "description": "Questions from generate_questions",
-                        "items": {"type": "object"},
-                    },
-                },
-                "required": ["questions"],
-            },
-        )
-        tool_registry.register(
-            name="format_question_batch",
-            fn=lambda tool_input: self._tool_format_question_batch(tool_input=tool_input, params=params),
-            permission_level=PermissionLevel.CONTENT_GENERATE,
-            description="Format the validated questions into a standard batch payload. Pass the output of validate_question directly as input.",
-            parameters={
-                "type": "object",
-                "properties": {
-                    "topic": {"type": "string"},
-                    "difficulty": {"type": "string"},
-                    "questions": {
-                        "type": "array",
-                        "description": "Validated questions from validate_question",
-                        "items": {"type": "object"},
-                    },
-                },
-                "required": ["questions"],
-            },
-        )
-        result = await AgentCoreLoop(
-            llm_client=self.llm_client,
-            tool_registry=tool_registry,
-            recovery_engine=RecoveryEngine(),
-            max_iterations=6,
-            agent_level=PermissionLevel.CONTENT_GENERATE,
-        ).run(
-            system_prompt=system_prompt,
-            messages=[
-                {
-                    "role": "user",
-                    "content": (
-                        f"请围绕 `{self._resolve_topic(params)}` 生成 {self._question_count(params)} 道练习题，"
-                        f"难度为 {self._resolve_difficulty(params)}。"
-                    ),
-                }
-            ],
-        )
-        batch_output = result.tool_results[-1].output if result.tool_results else {}
-        return batch_output if isinstance(batch_output, dict) else {}
+        # Step 1: Generate questions (1 LLM call)
+        raw_batch = await self._tool_generate_questions(tool_input={}, params=params)
+
+        # Step 2: Validate (deterministic)
+        validated = self._tool_validate_question(raw_batch)
+
+        # Step 3: Format (deterministic)
+        return self._tool_format_question_batch(tool_input=validated, params=params)
 
     async def _tool_generate_questions(
         self,

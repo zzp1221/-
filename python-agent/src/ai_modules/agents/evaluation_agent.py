@@ -19,11 +19,7 @@ from src.ai_modules.models import (
 )
 from src.ai_modules.prompts import build_evaluation_system_prompt
 from src.ai_modules.runtime import (
-    AgentCoreLoop,
-    PermissionLevel,
-    RecoveryEngine,
     SystemSnapshot,
-    ToolRegistry,
 )
 
 LOGGER = logging.getLogger(__name__)
@@ -87,75 +83,18 @@ class EvaluationAgent(PlaceholderAgent):
         snapshot: SystemSnapshot,
         system_prompt: str,
     ) -> EvaluationPayload:
-        tool_registry = ToolRegistry()
-        tool_registry.register(
-            name="aggregate_behavior",
-            fn=lambda tool_input: self._tool_aggregate_behavior(
-                tool_input=tool_input,
-                params=params,
-                snapshot=snapshot,
-            ),
-            permission_level=PermissionLevel.CONTENT_GENERATE,
-            description="Aggregate learner behavior, profile, and judging context into evaluation evidence.",
-            parameters={"type": "object", "properties": {}, "additionalProperties": False},
-        )
-        tool_registry.register(
-            name="generate_report",
-            fn=lambda tool_input: self._tool_generate_report(
-                tool_input=tool_input,
-                params=params,
-                snapshot=snapshot,
-                system_prompt=system_prompt,
-            ),
-            permission_level=PermissionLevel.CONTENT_GENERATE,
-            description="Generate the structured evaluation report from aggregated behavior evidence.",
-            parameters={
-                "type": "object",
-                "properties": {
-                    "candidateStrengths": {"type": "array", "items": {"type": "string"}},
-                    "candidateWeaknesses": {"type": "array", "items": {"type": "string"}},
-                    "recommendedFocus": {"type": "array", "items": {"type": "string"}},
-                    "behaviorSignals": {"type": "object"},
-                },
-                "additionalProperties": True,
-            },
-        )
         try:
-            result = await AgentCoreLoop(
-                llm_client=self.llm_client,
-                tool_registry=tool_registry,
-                recovery_engine=RecoveryEngine(),
-                max_iterations=4,
-                agent_level=PermissionLevel.CONTENT_GENERATE,
-            ).run(
-                system_prompt=system_prompt,
-                messages=[
-                    {
-                        "role": "user",
-                        "content": "请先聚合学习行为，再输出结构化能力评估报告。",
-                    }
-                ],
-            )
-        except Exception:
-            LOGGER.warning(
-                "Tool-driven evaluation failed, falling back to safe evaluation.",
-                exc_info=True,
-            )
-            aggregated = self._tool_aggregate_behavior(
-                tool_input={},
-                params=params,
-                snapshot=snapshot,
-            )
+            # Step 1: Aggregate behavior (deterministic)
+            aggregated = self._tool_aggregate_behavior(tool_input={}, params=params, snapshot=snapshot)
+
+            # Step 2: Generate report (1 LLM call)
             return await self._safe_evaluate(
-                params=params,
-                snapshot=snapshot,
-                system_prompt=system_prompt,
+                params=params, snapshot=snapshot, system_prompt=system_prompt,
                 aggregated_behavior=aggregated,
             )
-        report_output = result.tool_results[-1].output if result.tool_results else {}
-        if isinstance(report_output, dict):
-            return EvaluationPayload.model_validate(report_output)
-        return self._fallback_evaluation(params=params, snapshot=snapshot)
+        except Exception:
+            LOGGER.warning("Evaluation failed, falling back.", exc_info=True)
+            return self._fallback_evaluation(params=params, snapshot=snapshot)
 
     def _tool_aggregate_behavior(
         self,

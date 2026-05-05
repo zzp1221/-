@@ -23,11 +23,7 @@ from src.ai_modules.models import (
 )
 from src.ai_modules.prompts import build_path_planning_system_prompt
 from src.ai_modules.runtime import (
-    AgentCoreLoop,
-    PermissionLevel,
-    RecoveryEngine,
     SystemSnapshot,
-    ToolRegistry,
 )
 
 
@@ -97,116 +93,37 @@ class PathPlanningAgent(PlaceholderAgent):
         snapshot: SystemSnapshot,
         system_prompt: str,
     ) -> dict[str, Any]:
-        tool_registry = ToolRegistry()
-        tool_registry.register(
-            name="analyze_profile",
-            fn=lambda tool_input: self._tool_analyze_profile(
-                tool_input=tool_input,
-                params=params,
-                snapshot=snapshot,
-            ),
-            permission_level=PermissionLevel.SYSTEM_WRITE,
-            description="Analyze profile and evaluation context into planning signals.",
-            parameters={"type": "object", "properties": {}, "additionalProperties": False},
-        )
-        tool_registry.register(
-            name="generate_path",
-            fn=lambda tool_input: self._tool_generate_path(
-                tool_input=tool_input,
-                params=params,
-                snapshot=snapshot,
-                system_prompt=system_prompt,
-            ),
-            permission_level=PermissionLevel.SYSTEM_WRITE,
-            description="Generate the structured learning path from analyzed planning context.",
-            parameters={
-                "type": "object",
-                "properties": {
-                    "goal": {"type": "string"},
-                    "studentLevel": {"type": "string"},
-                    "weaknesses": {"type": "array", "items": {"type": "string"}},
-                    "nextFocus": {"type": "array", "items": {"type": "string"}},
-                    "triggerSource": {"type": "string"},
-                },
-                "additionalProperties": True,
-            },
-        )
-        tool_registry.register(
-            name="update_path_plan",
-            fn=lambda tool_input: self._tool_update_path_plan(
-                tool_input=tool_input,
-                user_id=user_id,
-                params=params,
-            ),
-            permission_level=PermissionLevel.SYSTEM_WRITE,
-            description="Persist the latest learning path and create a versioned snapshot.",
-            parameters={
-                "type": "object",
-                "properties": {
-                    "goal": {"type": "string"},
-                    "duration": {"type": "string"},
-                    "milestones": {"type": "array", "items": {"type": "string"}},
-                    "steps": {"type": "array", "items": {"type": "object"}},
-                    "summaryText": {"type": "string"},
-                },
-                "required": ["goal", "steps", "summaryText"],
-                "additionalProperties": True,
-            },
-        )
         try:
-            result = await AgentCoreLoop(
-                llm_client=self.llm_client,
-                tool_registry=tool_registry,
-                recovery_engine=RecoveryEngine(),
-                max_iterations=5,
-                agent_level=PermissionLevel.SYSTEM_WRITE,
-            ).run(
-                system_prompt=system_prompt,
-                messages=[
-                    {
-                        "role": "user",
-                        "content": "请先分析用户画像，再生成并落库学习路径。",
-                    }
-                ],
-            )
-        except Exception:
-            planning_context = self._tool_analyze_profile(
-                tool_input={},
-                params=params,
-                snapshot=snapshot,
-            )
-            fallback_plan = await self._safe_plan(
-                params=params,
-                snapshot=snapshot,
-                system_prompt=system_prompt,
+            # Step 1: Analyze profile (deterministic)
+            planning_context = self._tool_analyze_profile(tool_input={}, params=params, snapshot=snapshot)
+
+            # Step 2: Generate path (1 LLM call)
+            plan = await self._safe_plan(
+                params=params, snapshot=snapshot, system_prompt=system_prompt,
                 planning_context=planning_context,
             )
+
+            # Step 3: Save to store (deterministic)
+            metadata = await self._safe_save_learning_plan(
+                user_id=user_id, course_id=self._resolve_course_id(params),
+                plan=plan, trigger_source=self._resolve_trigger_source(params),
+            )
+            return {
+                "learningPath": plan.model_dump(by_alias=True),
+                "persistence": metadata,
+                "summaryText": plan.summary_text,
+            }
+        except Exception:
+            fallback_plan = self._fallback_plan(params=params, snapshot=snapshot)
             fallback_metadata = await self._safe_save_learning_plan(
-                user_id=user_id,
-                course_id=self._resolve_course_id(params),
-                plan=fallback_plan,
-                trigger_source=self._resolve_trigger_source(params),
+                user_id=user_id, course_id=self._resolve_course_id(params),
+                plan=fallback_plan, trigger_source=self._resolve_trigger_source(params),
             )
             return {
                 "learningPath": fallback_plan.model_dump(by_alias=True),
                 "persistence": fallback_metadata,
                 "summaryText": fallback_plan.summary_text,
             }
-        planning_output = result.tool_results[-1].output if result.tool_results else {}
-        if isinstance(planning_output, dict) and planning_output.get("learningPath"):
-            return planning_output
-        fallback_plan = self._fallback_plan(params=params, snapshot=snapshot)
-        fallback_metadata = await self._safe_save_learning_plan(
-            user_id=user_id,
-            course_id=self._resolve_course_id(params),
-            plan=fallback_plan,
-            trigger_source=self._resolve_trigger_source(params),
-        )
-        return {
-            "learningPath": fallback_plan.model_dump(by_alias=True),
-            "persistence": fallback_metadata,
-            "summaryText": fallback_plan.summary_text,
-        }
 
     def _tool_analyze_profile(
         self,

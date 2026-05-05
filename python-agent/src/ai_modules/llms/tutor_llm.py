@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from src.ai_modules.config import get_settings
-from src.ai_modules.llms.bailian_compatible import BailianCompatibleToolCallingLLM
+from src.ai_modules.llms.openai_compatible import OpenAICompatibleToolCallingLLM
 from src.ai_modules.llms.spark_compatible import SparkCompatibleToolCallingLLM
 from src.ai_modules.runtime import AssistantTurn, ToolCall
 
@@ -194,12 +194,15 @@ class RuleBasedTutorLLM:
         return ""
 
 
-class BailianToolCallingLLM(BailianCompatibleToolCallingLLM):
-    """Compatibility alias for the project's Bailian tool-calling adapter."""
+class OpenAICompatibleTutorLLM(OpenAICompatibleToolCallingLLM):
+    """Compatibility alias for the project's default OpenAI-compatible adapter."""
+
+
+BailianToolCallingLLM = OpenAICompatibleTutorLLM
 
 
 class TutorLLMClientFactory:
-    """Create the Tutor LLM client with Bailian primary and rule-based fallback."""
+    """Create the Tutor LLM client with OpenAI-compatible primary and rule-based fallback."""
 
     @staticmethod
     def create() -> Any:
@@ -213,5 +216,5 @@ class TutorLLMClientFactory:
             )
             if provider_name == "spark":
                 return SparkCompatibleToolCallingLLM(model_name=model_name)
-            return BailianToolCallingLLM(model_name=model_name)
+            return OpenAICompatibleTutorLLM(model_name=model_name)
         return RuleBasedTutorLLM()

@@ -134,9 +134,10 @@ public class ConversationService {
             } catch (Exception ex) {
                 try {
                     if (assistantReply.isEmpty()) {
-                        appendConversationMessage(conversationId, currentUser.userId(), "assistant", ex.getMessage(), false);
+                        appendConversationMessage(conversationId, currentUser.userId(), "assistant", "抱歉，处理过程中遇到了问题，请稍后重试。", false);
                     }
-                    sendErrorEvent(emitter, conversationId, sequence, ex.getMessage());
+                    LOGGER.warn("Conversation stream failed conversationId={}", conversationId, ex);
+                    sendErrorEvent(emitter, conversationId, sequence, "会话流式调用失败，请稍后重试");
                 } catch (IOException ioException) {
                     emitter.completeWithError(ioException);
                     return;
@@ -156,8 +157,9 @@ public class ConversationService {
     ) {
         int nextSeq = sequence.incrementAndGet();
         Map<String, Object> payload = new LinkedHashMap<>(event.safePayload());
-        if (event.stage() != null && !event.stage().isBlank() && !payload.containsKey("stage")) {
-            payload.put("stage", event.stage());
+        String eventStage = event.stage();
+        if (eventStage != null && !eventStage.isBlank() && !payload.containsKey("stage")) {
+            payload.put("stage", eventStage);
         }
         try {
             emitter.send(SseEmitter.event()

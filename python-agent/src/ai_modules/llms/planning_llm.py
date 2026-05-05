@@ -6,7 +6,6 @@ from typing import Any
 
 from src.ai_modules.config import get_settings
 from src.ai_modules.llms.agent_models import create_tool_calling_llm
-from src.ai_modules.llms.bailian_compatible import BailianCompatibleToolCallingLLM
 from src.ai_modules.runtime import AssistantTurn, ToolCall
 
 
@@ -84,7 +83,7 @@ class RuleBasedPlanningLLM:
 
 
 class PlanningLLMClientFactory:
-    """Create the planning LLM client with Bailian primary and rule fallback."""
+    """Create the planning LLM client with OpenAI-compatible primary and rule fallback."""
 
     @staticmethod
     def create() -> Any:

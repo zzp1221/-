@@ -75,8 +75,8 @@ async def test_tutor_agent_compacts_long_conversation_and_emits_dialog_state() -
     assert params["structuredConversationSummary"]["lastUserMessage"] == "联合索引和普通索引有什么区别"
     assert events[0].dialog_state is not None
     assert events[0].dialog_state.pedagogy_strategy == "retrieval_grounded_scaffold"
-    assert "我先回顾一下历史摘要" in events[1].payload.text
-    assert "接下来请你先回答" in events[1].payload.text
+    assert "关于" in events[1].payload.text
+    assert "联合索引" in events[1].payload.text
 
 
 def test_conversation_compactor_keeps_recent_messages() -> None:
@@ -147,7 +147,7 @@ async def test_tutor_agent_loads_and_persists_structured_summary() -> None:
         )
     ]
 
-    assert "我先回顾一下历史摘要" in events[1].payload.text
+    assert "联合索引" in events[1].payload.text
     assert len(store.documents) >= 2
 
 

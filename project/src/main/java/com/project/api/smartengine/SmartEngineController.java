@@ -80,4 +80,14 @@ public class SmartEngineController {
     ) {
         return orchestratorService.subscribe(AuthenticatedUserResolver.require(authentication), taskId);
     }
+
+    @PostMapping("/tasks/{taskId}/cancel")
+    @Operation(summary = "Cancel a running task")
+    public ResponseEntity<Void> cancelTask(
+        Authentication authentication,
+        @PathVariable UUID taskId
+    ) {
+        orchestratorService.cancel(AuthenticatedUserResolver.require(authentication), taskId);
+        return ResponseEntity.noContent().build();
+    }
 }

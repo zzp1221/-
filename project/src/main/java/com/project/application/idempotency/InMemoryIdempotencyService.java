@@ -30,6 +30,7 @@ public class InMemoryIdempotencyService implements IdempotencyService {
 
     @Override
     public Optional<UUID> findExisting(UUID userId, String operation, String idempotencyKey) {
+        evictExpired();
         String key = composeKey(userId, operation, idempotencyKey);
         Entry entry = taskIdsByKey.get(key);
         if (entry == null) {

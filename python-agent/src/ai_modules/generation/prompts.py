@@ -158,8 +158,18 @@ def build_slides_user_prompt(
 def build_mindmap_system_prompt() -> str:
     return (
         "你是一个教学思维导图生成助手。"
-        "请输出 JSON，对象结构为 "
-        '{"title":"...","summary":"...","root":"...","children":[{"name":"...","children":[{"name":"..."}]}]}.'
+        "请输出 Mermaid mindmap 格式的思维导图。"
+        "格式示例：\n"
+        "```mermaid\n"
+        "mindmap\n"
+        "  root((中心主题))\n"
+        "    分支一\n"
+        "      子要点A\n"
+        "      子要点B\n"
+        "    分支二\n"
+        "      子要点C\n"
+        "```\n"
+        "只输出 mermaid 代码块，不要任何额外说明文字。"
     )
 
 
@@ -188,6 +198,7 @@ def build_mindmap_user_prompt(
             "- 根节点下至少 3 个一级分支。",
             "- 每个一级分支尽量有 2-4 个二级分支。",
             "- 结构要体现概念、原理、误区、练习或迁移。",
+            "- 用 mermaid mindmap 格式输出，根节点用 ((标题)) 双括号。",
         ]
     )
 

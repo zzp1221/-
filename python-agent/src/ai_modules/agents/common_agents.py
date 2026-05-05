@@ -23,11 +23,7 @@ from src.ai_modules.models import (
 )
 from src.ai_modules.prompts import build_critic_system_prompt, build_safety_system_prompt
 from src.ai_modules.runtime import (
-    AgentCoreLoop,
-    PermissionLevel,
-    RecoveryEngine,
     SystemSnapshot,
-    ToolRegistry,
 )
 
 
@@ -95,82 +91,21 @@ class CriticAgent(PlaceholderAgent):
         snapshot: SystemSnapshot,
         system_prompt: str,
     ) -> CriticReviewPayload:
-        tool_registry = ToolRegistry()
-        tool_registry.register(
-            name="check_fact_consistency",
-            fn=lambda tool_input: self._tool_check_fact_consistency(
-                tool_input=tool_input,
-                params=params,
-            ),
-            permission_level=PermissionLevel.CONTENT_GENERATE,
-            description="Check whether the generated content is supported by available learning sources.",
-            parameters={"type": "object", "properties": {}, "additionalProperties": False},
-        )
-        tool_registry.register(
-            name="check_difficulty_match",
-            fn=lambda tool_input: self._tool_check_difficulty_match(
-                tool_input=tool_input,
-                params=params,
-                snapshot=snapshot,
-            ),
-            permission_level=PermissionLevel.CONTENT_GENERATE,
-            description="Check whether the generated content matches the learner difficulty level.",
-            parameters={"type": "object", "properties": {}, "additionalProperties": False},
-        )
-        tool_registry.register(
-            name="review_source_coverage",
-            fn=lambda tool_input: self._tool_review_source_coverage(
-                tool_input=tool_input,
-                params=params,
-            ),
-            permission_level=PermissionLevel.CONTENT_GENERATE,
-            description="Review source coverage and whether the resource references enough evidence.",
-            parameters={"type": "object", "properties": {}, "additionalProperties": False},
-        )
-        tool_registry.register(
-            name="synthesize_review",
-            fn=lambda tool_input: self._tool_synthesize_review(
-                tool_input=tool_input,
-                params=params,
-                snapshot=snapshot,
-                system_prompt=system_prompt,
-            ),
-            permission_level=PermissionLevel.CONTENT_GENERATE,
-            description="Generate the final structured critic review from all previous check signals.",
-            parameters={"type": "object", "properties": {}, "additionalProperties": True},
-        )
         try:
-            result = await AgentCoreLoop(
-                llm_client=self.llm_client,
-                tool_registry=tool_registry,
-                recovery_engine=RecoveryEngine(),
-                max_iterations=6,
-                agent_level=PermissionLevel.CONTENT_GENERATE,
-            ).run(
-                system_prompt=system_prompt,
-                messages=[
-                    {
-                        "role": "user",
-                        "content": "请依次检查事实一致性、难度匹配和来源覆盖度，再给出 Critic 复核结论。",
-                    }
-                ],
-            )
-            final_output = result.tool_results[-1].output if result.tool_results else {}
-            if isinstance(final_output, dict):
-                return CriticReviewPayload.model_validate(final_output)
-        except Exception:
-            LOGGER.warning(
-                "Critic tool review failed, falling back to deterministic review.",
-                exc_info=True,
-            )
+            # Step 1-3: Deterministic checks (no LLM)
+            review_signals = self._collect_critic_signals(params=params, snapshot=snapshot)
 
-        fallback_signals = self._collect_critic_signals(params=params, snapshot=snapshot)
-        return await self._safe_review(
-            params=params,
-            snapshot=snapshot,
-            system_prompt=system_prompt,
-            review_signals=fallback_signals,
-        )
+            # Step 4: LLM review (1 LLM call)
+            return await self._safe_review(
+                params=params,
+                snapshot=snapshot,
+                system_prompt=system_prompt,
+                review_signals=review_signals,
+            )
+        except Exception:
+            LOGGER.warning("Critic review failed, falling back to deterministic review.", exc_info=True)
+            fallback_signals = self._collect_critic_signals(params=params, snapshot=snapshot)
+            return self._fallback_review(review_signals=fallback_signals)
 
     def _tool_check_fact_consistency(
         self,
@@ -426,81 +361,21 @@ class SafetyAgent(PlaceholderAgent):
         snapshot: SystemSnapshot,
         system_prompt: str,
     ) -> SafetyReviewPayload:
-        tool_registry = ToolRegistry()
-        tool_registry.register(
-            name="classify_content",
-            fn=lambda tool_input: self._tool_classify_content(
-                tool_input=tool_input,
-                params=params,
-            ),
-            permission_level=PermissionLevel.CONTENT_GENERATE,
-            description="Classify the generated content type and intended usage.",
-            parameters={"type": "object", "properties": {}, "additionalProperties": False},
-        )
-        tool_registry.register(
-            name="detect_boundary_risk",
-            fn=lambda tool_input: self._tool_detect_boundary_risk(
-                tool_input=tool_input,
-                params=params,
-            ),
-            permission_level=PermissionLevel.CONTENT_GENERATE,
-            description="Detect out-of-scope or risky operational guidance in the generated content.",
-            parameters={"type": "object", "properties": {}, "additionalProperties": False},
-        )
-        tool_registry.register(
-            name="filter_academic_misconduct",
-            fn=lambda tool_input: self._tool_filter_academic_misconduct(
-                tool_input=tool_input,
-                params=params,
-            ),
-            permission_level=PermissionLevel.CONTENT_GENERATE,
-            description="Detect cheating, plagiarism, or answer-giving risks in educational content.",
-            parameters={"type": "object", "properties": {}, "additionalProperties": False},
-        )
-        tool_registry.register(
-            name="synthesize_review",
-            fn=lambda tool_input: self._tool_synthesize_review(
-                tool_input=tool_input,
+        try:
+            # Step 1-3: Deterministic checks (no LLM)
+            risk_signals = self._collect_safety_signals(params=params)
+
+            # Step 4: LLM review (1 LLM call)
+            return await self._safe_review(
                 params=params,
                 snapshot=snapshot,
                 system_prompt=system_prompt,
-            ),
-            permission_level=PermissionLevel.CONTENT_GENERATE,
-            description="Generate the final structured safety review from all previous risk signals.",
-            parameters={"type": "object", "properties": {}, "additionalProperties": True},
-        )
-        try:
-            result = await AgentCoreLoop(
-                llm_client=self.llm_client,
-                tool_registry=tool_registry,
-                recovery_engine=RecoveryEngine(),
-                max_iterations=6,
-                agent_level=PermissionLevel.CONTENT_GENERATE,
-            ).run(
-                system_prompt=system_prompt,
-                messages=[
-                    {
-                        "role": "user",
-                        "content": "请依次做内容分类、越界风险识别和学术违规过滤，再给出 Safety 复核结论。",
-                    }
-                ],
+                review_signals=risk_signals,
             )
-            final_output = result.tool_results[-1].output if result.tool_results else {}
-            if isinstance(final_output, dict):
-                return SafetyReviewPayload.model_validate(final_output)
         except Exception:
-            LOGGER.warning(
-                "Safety tool review failed, falling back to deterministic review.",
-                exc_info=True,
-            )
-
-        risk_signals = self._collect_safety_signals(params=params)
-        return await self._safe_review(
-            params=params,
-            snapshot=snapshot,
-            system_prompt=system_prompt,
-            review_signals=risk_signals,
-        )
+            LOGGER.warning("Safety review failed, falling back to deterministic review.", exc_info=True)
+            fallback_signals = self._collect_safety_signals(params=params)
+            return self._fallback_review(review_signals=fallback_signals)
 
     def _tool_classify_content(
         self,

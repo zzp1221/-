@@ -19,16 +19,15 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
+import java.time.Duration;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Consumer;
 
 /**
- * JDK {@link HttpClient}-based implementation for the Python streaming endpoint.
- *
- * <p>The implementation intentionally uses the JDK client to keep the control
- * plane lightweight and independent from reactive server infrastructure while
- * still supporting incremental SSE-style reads from the Python runtime.</p>
+ * JDK {@link HttpClient}-based implementation for the Python streaming endpoint
+ * with retry on transient failures and support for task cancellation.
  */
 @Component
 public class HttpStreamingPythonAgentClient implements PythonAgentClient {
@@ -40,6 +39,7 @@ public class HttpStreamingPythonAgentClient implements PythonAgentClient {
     private final ObjectMapper objectMapper;
     private final AppProperties appProperties;
     private final HttpClient httpClient;
+    private final ConcurrentHashMap<String, java.io.Closeable> activeStreams = new ConcurrentHashMap<>();
 
     public HttpStreamingPythonAgentClient(ObjectMapper objectMapper, AppProperties appProperties) {
         this.objectMapper = objectMapper;
@@ -52,6 +52,36 @@ public class HttpStreamingPythonAgentClient implements PythonAgentClient {
 
     @Override
     public void stream(SmartEngineInvocation invocation, Consumer<PythonStreamEvent> eventConsumer) {
+        int maxRetries = appProperties.getPythonAgent().getMaxRetries();
+        Duration backoff = appProperties.getPythonAgent().getRetryBackoff();
+        String traceId = invocation.traceId();
+
+        for (int attempt = 0; attempt <= maxRetries; attempt++) {
+            if (attempt > 0) {
+                LOGGER.info("Retrying Python agent stream attempt={}/{} traceId={}", attempt, maxRetries, traceId);
+                try {
+                    Thread.sleep(backoff.multipliedBy(attempt).toMillis());
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    throw new IllegalStateException("Retry interrupted", e);
+                }
+            }
+
+            try {
+                doStream(invocation, eventConsumer);
+                return;
+            } catch (RetryableStreamException ex) {
+                if (attempt == maxRetries) {
+                    throw new IllegalStateException(
+                        "Python agent stream failed after " + (maxRetries + 1) + " attempts: " + ex.getMessage(), ex);
+                }
+                LOGGER.warn("Python agent stream attempt {}/{} failed traceId={}: {}",
+                    attempt + 1, maxRetries + 1, traceId, ex.getMessage());
+            }
+        }
+    }
+
+    private void doStream(SmartEngineInvocation invocation, Consumer<PythonStreamEvent> eventConsumer) throws RetryableStreamException {
         try {
             String requestBody = buildRequestBody(invocation);
             HttpRequest request = HttpRequest.newBuilder()
@@ -63,30 +93,76 @@ public class HttpStreamingPythonAgentClient implements PythonAgentClient {
                 .build();
 
             HttpResponse<java.io.InputStream> response = httpClient.send(request, HttpResponse.BodyHandlers.ofInputStream());
-            if (response.statusCode() < 200 || response.statusCode() >= 300) {
-                String responseBody = new String(response.body().readAllBytes(), StandardCharsets.UTF_8);
-                LOGGER.warn(
-                    "Python agent rejected request status={} traceId={} taskId={} body={} response={}",
-                    response.statusCode(),
-                    invocation.traceId(),
-                    invocation.taskId(),
-                    requestBody,
-                    responseBody
-                );
-                throw new IllegalStateException(
-                    responseBody == null || responseBody.isBlank()
-                        ? "Python agent returned status " + response.statusCode()
-                        : "Python agent returned status " + response.statusCode() + ": " + responseBody
-                );
+
+            if (response.statusCode() >= 500 || response.statusCode() == 429) {
+                String body = readBodySafely(response);
+                throw new RetryableStreamException(
+                    "Python agent returned status " + response.statusCode() + ": " + body);
             }
 
-            readEventStream(response, eventConsumer);
+            if (response.statusCode() < 200 || response.statusCode() >= 300) {
+                String body = readBodySafely(response);
+                LOGGER.warn(
+                    "Python agent rejected request status={} traceId={} taskId={} body={}",
+                    response.statusCode(), invocation.traceId(), invocation.taskId(), body);
+                throw new IllegalStateException(
+                    body == null || body.isBlank()
+                        ? "Python agent returned status " + response.statusCode()
+                        : "Python agent returned status " + response.statusCode() + ": " + body);
+            }
+
+            activeStreams.put(invocation.taskId().toString(), response.body());
+            try {
+                readEventStream(response, eventConsumer);
+            } finally {
+                activeStreams.remove(invocation.taskId().toString());
+            }
         } catch (InterruptedException ex) {
             Thread.currentThread().interrupt();
-            throw new IllegalStateException("Failed to call Python agent stream", ex);
+            activeStreams.remove(invocation.taskId().toString());
+            throw new IllegalStateException("Stream interrupted (cancelled)", ex);
+        } catch (java.net.ConnectException | java.net.http.HttpConnectTimeoutException ex) {
+            throw new RetryableStreamException("Connection failed: " + ex.getMessage(), ex);
         } catch (IOException ex) {
+            if (isConnectionReset(ex)) {
+                throw new RetryableStreamException("Connection reset: " + ex.getMessage(), ex);
+            }
             throw new IllegalStateException("Failed to call Python agent stream", ex);
         }
+    }
+
+    @Override
+    public void cancel(String taskId) {
+        java.io.Closeable stream = activeStreams.remove(taskId);
+        if (stream != null) {
+            try {
+                stream.close();
+            } catch (IOException ignored) {
+            }
+        }
+        try {
+            HttpRequest request = HttpRequest.newBuilder()
+                .uri(URI.create(appProperties.getPythonAgent().getBaseUrl() + "/internal/smart-engine/" + taskId + "/cancel"))
+                .timeout(Duration.ofSeconds(3))
+                .POST(HttpRequest.BodyPublishers.noBody())
+                .build();
+            httpClient.send(request, HttpResponse.BodyHandlers.discarding());
+        } catch (Exception ex) {
+            LOGGER.debug("Python cancel notification failed for taskId={}: {}", taskId, ex.getMessage());
+        }
+    }
+
+    private String readBodySafely(HttpResponse<java.io.InputStream> response) {
+        try {
+            return new String(response.body().readAllBytes(), StandardCharsets.UTF_8);
+        } catch (IOException e) {
+            return "";
+        }
+    }
+
+    private boolean isConnectionReset(IOException ex) {
+        String message = ex.getMessage();
+        return message != null && (message.contains("Connection reset") || message.contains("GOAWAY"));
     }
 
     private String buildRequestBody(SmartEngineInvocation invocation) throws IOException {
@@ -118,7 +194,10 @@ public class HttpStreamingPythonAgentClient implements PythonAgentClient {
                     continue;
                 }
                 if (line.startsWith("data:")) {
-                    dataBuffer.append(line.substring(5).trim());
+                    if (!dataBuffer.isEmpty()) {
+                        dataBuffer.append('\n');
+                    }
+                    dataBuffer.append(line.substring(5));
                     continue;
                 }
                 if (line.isBlank()) {
@@ -164,5 +243,18 @@ public class HttpStreamingPythonAgentClient implements PythonAgentClient {
             payload
         ));
         return stage;
+    }
+
+    /**
+     * Exception that signals a retryable failure (5xx, rate-limit, connection error).
+     */
+    private static class RetryableStreamException extends Exception {
+        RetryableStreamException(String message) {
+            super(message);
+        }
+
+        RetryableStreamException(String message, Throwable cause) {
+            super(message, cause);
+        }
     }
 }

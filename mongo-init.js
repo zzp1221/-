@@ -46,7 +46,7 @@ zhixueDb.createCollection("conversation_messages", {
   validator: {
     $jsonSchema: {
       bsonType: "object",
-      required: ["threadId", "qnaSessionId", "userId", "messageId", "messageSeq", "role", "content", "createdAt"],
+      required: ["qnaSessionId", "userId", "messageId", "messageSeq", "role", "content", "createdAt"],
       properties: {
         threadId: { bsonType: "objectId", description: "conversation_threads._id" },
         qnaSessionId: { bsonType: "string" },

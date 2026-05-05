@@ -15,6 +15,14 @@ interface StreamSseOptions {
 }
 
 export async function streamSse(url: string, options: StreamSseOptions): Promise<void> {
+  let doneCalled = false;
+  const safeDone = () => {
+    if (!doneCalled) {
+      doneCalled = true;
+      options.onDone();
+    }
+  };
+
   try {
     const response = await fetch(url, options.init);
     if (!response.ok) {
@@ -55,7 +63,7 @@ export async function streamSse(url: string, options: StreamSseOptions): Promise
       }
     }
 
-    options.onDone();
+    safeDone();
   } catch (error) {
     if (error instanceof DOMException && error.name === 'AbortError') {
       return;

@@ -3,13 +3,13 @@
 from __future__ import annotations
 
 from src.ai_modules.config import get_settings
-from src.ai_modules.llms.bailian_compatible import (
-    BailianCompatibleClient,
-    BailianCompatibleToolCallingLLM,
+from src.ai_modules.llms.openai_compatible import (
+    OpenAICompatibleClient,
+    OpenAICompatibleToolCallingLLM,
 )
 
 
-class SparkCompatibleClient(BailianCompatibleClient):
+class SparkCompatibleClient(OpenAICompatibleClient):
     """Small async client for Spark OpenAI-compatible chat completions."""
 
     def __init__(
@@ -30,7 +30,7 @@ class SparkCompatibleClient(BailianCompatibleClient):
         self.provider_name = "spark"
 
 
-class SparkCompatibleToolCallingLLM(BailianCompatibleToolCallingLLM):
+class SparkCompatibleToolCallingLLM(OpenAICompatibleToolCallingLLM):
     """Tool-calling adapter over Spark OpenAI-compatible chat completions."""
 
     def __init__(

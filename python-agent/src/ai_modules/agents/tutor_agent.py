@@ -77,12 +77,6 @@ class TutorAgent(PlaceholderAgent):
             )
 
         strategy = self._select_strategy(snapshot=snapshot, params=params)
-        response_text = await self._run_agent_core_loop(
-            system_prompt=system_prompt,
-            params=params,
-            snapshot=snapshot,
-            persisted_summary=persisted_summary,
-        )
         dialog_state = DialogState(
             conversationId=self._conversation_id(params, task_id),
             turnId=f"{task_id}-turn",
@@ -96,22 +90,51 @@ class TutorAgent(PlaceholderAgent):
             seq=seq,
             payload=ProgressPayload(
                 stage=self.stage_name,
-                percent=75 if compaction_result.was_compacted else 60,
+                percent=30 if compaction_result.was_compacted else 20,
                 message=(
-                    "已压缩历史对话并通过 AgentCoreLoop 生成辅导回答"
+                    "已压缩历史对话，开始流式生成辅导回答"
                     if compaction_result.was_compacted
-                    else "已通过 AgentCoreLoop 生成辅导回答"
+                    else "开始流式生成辅导回答"
                 ),
             ),
             dialogState=dialog_state,
         )
-        yield ResultChunkSSEEvent(
-            taskId=task_id,
-            traceId=trace_id,
-            seq=seq + 1,
-            payload=ResultChunkPayload(text=response_text),
-            dialogState=dialog_state,
-        )
+
+        current_seq = seq + 1
+        streamed = False
+        try:
+            async for token in self._try_direct_chat_stream(
+                system_prompt=system_prompt,
+                params=params,
+                persisted_summary=persisted_summary,
+            ):
+                streamed = True
+                yield ResultChunkSSEEvent(
+                    taskId=task_id,
+                    traceId=trace_id,
+                    seq=current_seq,
+                    payload=ResultChunkPayload(text=token, stage="tutoring"),
+                    dialogState=dialog_state,
+                )
+                current_seq += 1
+        except Exception:
+            pass
+
+        if not streamed:
+            response_text = await self._run_agent_core_loop(
+                system_prompt=system_prompt,
+                params=params,
+                snapshot=snapshot,
+                persisted_summary=persisted_summary,
+            )
+            yield ResultChunkSSEEvent(
+                taskId=task_id,
+                traceId=trace_id,
+                seq=current_seq,
+                payload=ResultChunkPayload(text=response_text, stage="tutoring"),
+                dialogState=dialog_state,
+            )
+            current_seq += 1
 
     def _extract_conversation(self, params: dict[str, Any]) -> list[dict[str, Any]]:
         candidates = params.get("messages") or params.get("conversation") or []
@@ -146,6 +169,142 @@ class TutorAgent(PlaceholderAgent):
         snapshot: SystemSnapshot,
         persisted_summary: dict[str, Any] | None,
     ) -> str:
+        del snapshot
+        user_query = str(
+            params.get("query")
+            or params.get("message")
+            or params.get("rewrittenQuery")
+            or params.get("structuredConversationSummary", {}).get("lastUserMessage")
+            or "当前主题"
+        )
+        try:
+            return await self._try_direct_chat(
+                system_prompt=system_prompt,
+                user_query=user_query,
+                params=params,
+                persisted_summary=persisted_summary,
+            )
+        except (AttributeError, Exception):
+            pass
+        return await self._run_with_agent_core_loop(
+            system_prompt=system_prompt,
+            user_query=user_query,
+            params=params,
+            persisted_summary=persisted_summary,
+        )
+
+    async def _try_direct_chat(
+        self,
+        *,
+        system_prompt: str,
+        user_query: str,
+        params: dict[str, Any],
+        persisted_summary: dict[str, Any] | None,
+    ) -> str:
+        client = self.llm_client.client
+        memory_data = self._tool_load_conversation_memory(
+            tool_input={}, persisted_summary=persisted_summary,
+        )
+        context_data = self._tool_read_compacted_context(tool_input={}, params=params)
+        evidence_data = self._tool_read_retrieval_evidence(tool_input={}, params=params)
+        enriched_message = self._build_enriched_message(
+            user_query=user_query,
+            memory=memory_data,
+            context=context_data,
+            evidence=evidence_data,
+        )
+        response = await client.chat_completion(
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": enriched_message},
+            ],
+        )
+        message = client.extract_message(response)
+        return client.extract_content(message)
+
+    async def _try_direct_chat_stream(
+        self,
+        *,
+        system_prompt: str,
+        params: dict[str, Any],
+        persisted_summary: dict[str, Any] | None,
+    ):
+        """Stream tokens from the LLM for real-time tutoring display."""
+        client = self.llm_client.client
+        user_query = str(
+            params.get("query")
+            or params.get("message")
+            or params.get("rewrittenQuery")
+            or params.get("structuredConversationSummary", {}).get("lastUserMessage")
+            or "当前主题"
+        )
+        memory_data = self._tool_load_conversation_memory(
+            tool_input={}, persisted_summary=persisted_summary,
+        )
+        context_data = self._tool_read_compacted_context(tool_input={}, params=params)
+        evidence_data = self._tool_read_retrieval_evidence(tool_input={}, params=params)
+        enriched_message = self._build_enriched_message(
+            user_query=user_query,
+            memory=memory_data,
+            context=context_data,
+            evidence=evidence_data,
+        )
+
+        # Accumulate tokens in batches of 3 for smoother UI updates
+        batch: list[str] = []
+        async for token in client.chat_completion_stream(
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": enriched_message},
+            ],
+        ):
+            batch.append(token)
+            if len(batch) >= 3:
+                yield "".join(batch)
+                batch.clear()
+        if batch:
+            yield "".join(batch)
+
+    def _build_enriched_message(
+        self,
+        *,
+        user_query: str,
+        memory: dict[str, Any],
+        context: dict[str, Any],
+        evidence: dict[str, Any],
+    ) -> str:
+        parts: list[str] = []
+        topic_focus = memory.get("topicFocus") or context.get("topicFocus") or []
+        learner_goal = memory.get("learnerGoal") or context.get("learnerGoal") or ""
+        known_gaps = memory.get("knownGaps") or context.get("knownGaps") or []
+        unresolved = memory.get("unresolvedQuestions") or context.get("unresolvedQuestions") or []
+        if topic_focus:
+            parts.append(f"对话主题：{', '.join(topic_focus) if isinstance(topic_focus, list) else topic_focus}")
+        if learner_goal:
+            parts.append(f"学习目标：{learner_goal}")
+        if known_gaps:
+            parts.append(f"已知薄弱点：{', '.join(known_gaps)}")
+        if unresolved:
+            parts.append(f"未解决问题：{', '.join(unresolved)}")
+        documents = evidence.get("documents", []) if isinstance(evidence.get("documents"), list) else []
+        if documents:
+            parts.append("检索到的知识来源：")
+            for i, doc in enumerate(documents[:5], 1):
+                title = str(doc.get("title") or "")
+                snippet = str(doc.get("evidence") or doc.get("snippet") or "")[:200]
+                parts.append(f"  {i}. {title}: {snippet}")
+        parts.append(f"用户问题：{user_query}")
+        parts.append("请基于以上上下文给出一段辅导回答，并在结尾提出一个追问。")
+        return "\n\n".join(parts)
+
+    async def _run_with_agent_core_loop(
+        self,
+        *,
+        system_prompt: str,
+        user_query: str,
+        params: dict[str, Any],
+        persisted_summary: dict[str, Any] | None,
+    ) -> str:
         tool_registry = ToolRegistry()
         tool_registry.register(
             name="load_conversation_memory",
@@ -177,20 +336,12 @@ class TutorAgent(PlaceholderAgent):
             description="Read the retrieved evidence supporting the tutoring answer.",
             parameters={"type": "object", "properties": {}, "additionalProperties": False},
         )
-
         core_loop = AgentCoreLoop(
             llm_client=self.llm_client,
             tool_registry=tool_registry,
             recovery_engine=RecoveryEngine(),
             max_iterations=4,
             agent_level=PermissionLevel.READ_ONLY,
-        )
-        user_query = str(
-            params.get("query")
-            or params.get("message")
-            or params.get("rewrittenQuery")
-            or params.get("structuredConversationSummary", {}).get("lastUserMessage")
-            or "当前主题"
         )
         result = await core_loop.run(
             system_prompt=system_prompt,

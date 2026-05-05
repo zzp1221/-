@@ -1,9 +1,9 @@
-from src.ai_modules.llms import BailianToolCallingLLM
+from src.ai_modules.llms import OpenAICompatibleTutorLLM
 from src.ai_modules.runtime import AssistantTurn, ToolCall, ToolExecutionResult
 
 
-def test_bailian_llm_normalizes_tool_call_roundtrip_messages() -> None:
-    llm = BailianToolCallingLLM(api_key="test-key")
+def test_openai_compatible_llm_normalizes_tool_call_roundtrip_messages() -> None:
+    llm = OpenAICompatibleTutorLLM(api_key="test-key")
     assistant_message = AssistantTurn(
         content="",
         tool_calls=[

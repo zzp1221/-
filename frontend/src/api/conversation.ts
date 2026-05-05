@@ -55,7 +55,6 @@ export const conversationApi = {
     return request.get<ConversationHistoryItem[]>('/api/conversations', {
       dedupe: true,
       dedupeKey: 'recent-conversations',
-      retry: 0,
     });
   },
 
@@ -67,7 +66,6 @@ export const conversationApi = {
     return request.get<ConversationMessageItem[]>(`/api/conversations/${conversationId}/messages`, {
       dedupe: true,
       dedupeKey: `conversation-messages:${conversationId}`,
-      retry: 0,
     });
   },
 

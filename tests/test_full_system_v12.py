@@ -71,16 +71,16 @@ async def part_a_agent_llm_verification():
     from src.ai_modules.config import get_settings
 
     settings = get_settings()
-    has_key = bool(settings.bailian_api_key)
-    print(f"  BAILIAN_API_KEY: {'已配置' if has_key else '未配置'}")
+    has_key = bool(settings.openai_compatible_api_key)
+    print(f"  OPENAI_COMPATIBLE_API_KEY: {'已配置' if has_key else '未配置'}")
     print(f"  MODEL_NAME: {settings.model_name}")
     print(f"  FAST_MODEL_NAME: {settings.fast_model_name}")
 
     if not has_key:
-        fail("API Key 检查", "BAILIAN_API_KEY 未配置，所有 Agent 将使用 RuleBased fallback")
+        fail("API Key 检查", "OPENAI_COMPATIBLE_API_KEY 未配置，所有 Agent 将使用 RuleBased fallback")
         return
 
-    ok("API Key 检查", f"已配置 (长度={len(settings.bailian_api_key)})")
+    ok("API Key 检查", f"已配置 (长度={len(settings.openai_compatible_api_key)})")
 
     # A1: 验证工厂创建真实 LLM 实例
     from src.ai_modules.llms import (

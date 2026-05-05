@@ -1,0 +1,145 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://zhixue.dev/contracts/sse-events.schema.json",
+  "title": "智能引擎 SSE 事件契约",
+  "description": "Python Agent → Java BFF SSE streaming wire format shared contract. Both sides MUST validate against this schema in integration tests.",
+  "definitions": {
+    "EventType": {
+      "type": "string",
+      "enum": [
+        "message",
+        "progress",
+        "result_chunk",
+        "resource_file",
+        "question_batch",
+        "judge_result",
+        "done",
+        "error",
+        "video_gen:start",
+        "video_gen:script",
+        "video_gen:speech",
+        "video_gen:avatar",
+        "video_gen:complete"
+      ]
+    },
+    "TaskId": {
+      "type": "string",
+      "format": "uuid",
+      "description": "UUID of the task (string form)."
+    },
+    "TraceId": {
+      "type": "string",
+      "description": "Trace identifier for distributed tracing."
+    },
+    "DialogState": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "conversationId": { "type": ["string", "null"] },
+        "turnId": { "type": ["string", "null"] },
+        "pedagogyStrategy": { "type": ["string", "null"] },
+        "nextAction": { "type": ["string", "null"] }
+      }
+    },
+    "ProgressPayload": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["stage", "percent"],
+      "properties": {
+        "stage": { "type": "string", "minLength": 1 },
+        "percent": { "type": "integer", "minimum": 0, "maximum": 100 },
+        "message": { "type": ["string", "null"] }
+      }
+    },
+    "ResultChunkPayload": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["text"],
+      "properties": {
+        "text": { "type": "string" }
+      }
+    },
+    "ResourceFilePayload": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["assetType", "title", "fileName"],
+      "properties": {
+        "assetType": { "type": "string", "minLength": 1 },
+        "title": { "type": "string", "minLength": 1 },
+        "summary": { "type": "string" },
+        "displayMode": { "type": "string" },
+        "fileName": { "type": "string", "minLength": 1 },
+        "localPath": { "type": ["string", "null"] },
+        "sandboxPath": { "type": ["string", "null"] },
+        "mimeType": { "type": ["string", "null"] },
+        "downloadUrl": { "type": ["string", "null"] },
+        "expiresInSec": { "type": ["integer", "null"] },
+        "expiresAt": { "type": ["string", "null"] },
+        "thumbnailPath": { "type": ["string", "null"] },
+        "thumbnailFileName": { "type": ["string", "null"] },
+        "thumbnailMimeType": { "type": ["string", "null"] },
+        "durationSeconds": { "type": ["integer", "null"] },
+        "videoStyle": { "type": ["string", "null"] },
+        "knowledgePoint": { "type": ["string", "null"] }
+      }
+    },
+    "QuestionBatchPayload": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["questions"],
+      "properties": {
+        "questions": { "type": "array" }
+      }
+    },
+    "JudgeResultPayload": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "DonePayload": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["status", "summary"],
+      "properties": {
+        "status": { "type": "string", "enum": ["SUCCESS", "FAILED"] },
+        "summary": { "type": "string" },
+        "learningPath": { "type": ["object", "null"] }
+      }
+    },
+    "ErrorPayload": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["code", "message"],
+      "properties": {
+        "code": { "type": "string", "minLength": 1 },
+        "message": { "type": "string" }
+      }
+    },
+    "VideoGenerationPayload": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "Payload": {
+      "oneOf": [
+        { "$ref": "#/definitions/ProgressPayload" },
+        { "$ref": "#/definitions/ResultChunkPayload" },
+        { "$ref": "#/definitions/ResourceFilePayload" },
+        { "$ref": "#/definitions/QuestionBatchPayload" },
+        { "$ref": "#/definitions/JudgeResultPayload" },
+        { "$ref": "#/definitions/DonePayload" },
+        { "$ref": "#/definitions/ErrorPayload" },
+        { "$ref": "#/definitions/VideoGenerationPayload" }
+      ]
+    }
+  },
+  "type": "object",
+  "required": ["event", "taskId", "traceId", "seq", "payload"],
+  "additionalProperties": true,
+  "properties": {
+    "event": { "$ref": "#/definitions/EventType" },
+    "taskId": { "$ref": "#/definitions/TaskId" },
+    "traceId": { "$ref": "#/definitions/TraceId" },
+    "seq": { "type": "integer", "minimum": 0 },
+    "payload": { "$ref": "#/definitions/Payload" },
+    "dialogState": { "$ref": "#/definitions/DialogState" }
+  }
+}

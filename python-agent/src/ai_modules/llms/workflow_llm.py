@@ -6,7 +6,6 @@ from typing import Any
 
 from src.ai_modules.config import get_settings
 from src.ai_modules.llms.agent_models import create_tool_calling_llm
-from src.ai_modules.llms.bailian_compatible import BailianCompatibleToolCallingLLM
 from src.ai_modules.runtime import AssistantTurn, ToolCall
 
 

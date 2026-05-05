@@ -196,3 +196,17 @@ class ErrorSSEEvent(SSEEvent):
 
     event: Literal["error"] = "error"
     payload: ErrorPayload
+
+
+class VideoProgressSSEEvent(SSEEvent):
+    """Video generation progress event with stage-specific event type."""
+
+    event: str  # "video_gen:start", "video_gen:script", "video_gen:speech", "video_gen:avatar"
+    payload: ProgressPayload
+
+
+class VideoCompleteSSEEvent(SSEEvent):
+    """Video generation completion with result data."""
+
+    event: Literal["video_gen:complete"] = "video_gen:complete"
+    payload: dict[str, Any]

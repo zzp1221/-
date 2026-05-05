@@ -22,11 +22,7 @@ from src.ai_modules.models import (
 from src.ai_modules.prompts import build_query_rewrite_prompt
 from src.ai_modules.retrieval import QueryRewriteService
 from src.ai_modules.runtime import (
-    AgentCoreLoop,
-    PermissionLevel,
-    RecoveryEngine,
     SystemSnapshot,
-    ToolRegistry,
 )
 
 LOGGER = logging.getLogger(__name__)
@@ -100,60 +96,25 @@ class QueryRewriteAgent(PlaceholderAgent):
         snapshot: SystemSnapshot,
         system_prompt: str,
     ):
-        tool_registry = ToolRegistry()
-        tool_registry.register(
-            name="extract_query_context",
-            fn=lambda tool_input: self._tool_extract_query_context(tool_input=tool_input, params=params),
-            permission_level=PermissionLevel.READ_ONLY,
-            description="Extract query and learning context before rewrite.",
-            parameters={"type": "object", "properties": {}, "additionalProperties": False},
-        )
-        tool_registry.register(
-            name="rewrite_query",
-            fn=lambda tool_input: self._tool_rewrite_query(
-                tool_input=tool_input,
-                params=params,
-                snapshot=snapshot,
-                system_prompt=system_prompt,
-            ),
-            permission_level=PermissionLevel.READ_ONLY,
-            description="Generate the rewritten query and keywords.",
-            parameters={"type": "object", "properties": {}, "additionalProperties": True},
-        )
-        tool_registry.register(
-            name="finalize_rewrite",
-            fn=self._tool_finalize_rewrite,
-            permission_level=PermissionLevel.READ_ONLY,
-            description="Validate and finalize the rewritten query payload.",
-            parameters={"type": "object", "properties": {}, "additionalProperties": True},
-        )
+        # Step 1: Extract query context (deterministic)
+        context = self._tool_extract_query_context(tool_input={}, params=params)
+        original_query = context["originalQuery"]
+
+        # Step 2: Rewrite query via LLM (1 LLM call)
         try:
-            result = await AgentCoreLoop(
-                llm_client=self.llm_client,
-                tool_registry=tool_registry,
-                recovery_engine=RecoveryEngine(),
-                max_iterations=4,
-                agent_level=PermissionLevel.READ_ONLY,
-            ).run(
-                system_prompt=system_prompt,
-                messages=[
-                    {
-                        "role": "user",
-                        "content": "请先抽取检索上下文，再完成查询改写和关键词整理。",
-                    }
-                ],
+            rewritten_payload = await self._tool_rewrite_query(
+                tool_input={}, params=params, snapshot=snapshot, system_prompt=system_prompt,
             )
-            final_output = result.tool_results[-1].output if result.tool_results else {}
-            if isinstance(final_output, QueryRewriteResult):
-                return final_output
-            if isinstance(final_output, dict):
-                return self._tool_finalize_rewrite(final_output)
         except Exception:
-            LOGGER.warning(
-                "Tool-driven query rewrite failed, falling back to direct rewrite.",
-                exc_info=True,
-            )
-        return self.service.rewrite(params)
+            LOGGER.warning("LLM query rewrite failed, falling back to direct rewrite.", exc_info=True)
+            return self.service.rewrite(params)
+
+        # Step 3: Validate result (deterministic)
+        try:
+            return self._tool_finalize_rewrite(rewritten_payload)
+        except Exception:
+            LOGGER.warning("Query rewrite validation failed, falling back.", exc_info=True)
+            return self.service.rewrite(params)
 
     def _tool_extract_query_context(
         self,

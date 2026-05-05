@@ -52,6 +52,8 @@ public class AppProperties {
         private String baseUrl = "http://localhost:8000";
         private Duration connectTimeout = Duration.ofSeconds(5);
         private Duration readTimeout = Duration.ofMinutes(10);
+        private int maxRetries = 2;
+        private Duration retryBackoff = Duration.ofSeconds(1);
 
         public String getBaseUrl() {
             return baseUrl;
@@ -75,6 +77,22 @@ public class AppProperties {
 
         public void setReadTimeout(Duration readTimeout) {
             this.readTimeout = readTimeout;
+        }
+
+        public int getMaxRetries() {
+            return maxRetries;
+        }
+
+        public void setMaxRetries(int maxRetries) {
+            this.maxRetries = maxRetries;
+        }
+
+        public Duration getRetryBackoff() {
+            return retryBackoff;
+        }
+
+        public void setRetryBackoff(Duration retryBackoff) {
+            this.retryBackoff = retryBackoff;
         }
     }
 

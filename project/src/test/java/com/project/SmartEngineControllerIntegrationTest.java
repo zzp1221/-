@@ -186,7 +186,7 @@ class SmartEngineControllerIntegrationTest {
                     Map.entry("videoStyle", "hybrid"),
                     Map.entry("ttsProvider", "edge_tts"),
                     Map.entry("avatarProvider", "sadtalker"),
-                    Map.entry("activeProvider", "bailian"),
+                    Map.entry("activeProvider", "openai_compatible"),
                     Map.entry("fallbackProvider", "spark"),
                     Map.entry("scriptText", "今天我们来学习联合索引。"),
                     Map.entry("scriptJson", Map.of(

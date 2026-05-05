@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import copy
 from collections.abc import AsyncIterator
 
@@ -24,7 +25,7 @@ from src.ai_modules.agents import (
     TutorAgent,
     VideoGenerationAgent,
 )
-from src.ai_modules.models import DonePayload, DoneSSEEvent, EngineStreamRequest, SSEEvent
+from src.ai_modules.models import DonePayload, DoneSSEEvent, EngineStreamRequest, ErrorPayload, ErrorSSEEvent, SSEEvent
 from src.ai_modules.runtime import SnapshotBuilder, SystemSnapshot
 
 
@@ -127,12 +128,122 @@ class PythonAgentSupervisor:
     ) -> str:
         return self.agent_registry[agent_name].system_prompt(snapshot)
 
-    async def stream(self, request: EngineStreamRequest) -> AsyncIterator[SSEEvent]:
+    async def stream(self, request: EngineStreamRequest, cancelled: set[str] | None = None) -> AsyncIterator[SSEEvent]:
         route_plan = self.resolve_route(request.service_type, request.params)
         snapshot = await self.build_snapshot(request)
         current_params = copy.deepcopy(request.params)
         seq = 1
-        for agent_name in route_plan.agent_names:
+        agent_names = list(route_plan.agent_names)
+        i = 0
+        while i < len(agent_names):
+            if cancelled and request.task_id in cancelled:
+                yield ErrorSSEEvent(
+                    taskId=request.task_id,
+                    traceId=request.trace_id,
+                    seq=seq,
+                    payload=ErrorPayload(
+                        code="TASK_CANCELLED",
+                        message="任务已被取消",
+                    ),
+                )
+                yield DoneSSEEvent(
+                    taskId=request.task_id,
+                    traceId=request.trace_id,
+                    seq=seq + 1,
+                    payload=DonePayload(
+                        status="FAILED",
+                        summary="任务已被取消",
+                    ),
+                )
+                return
+
+            agent_name = agent_names[i]
+
+            # P0-2: Run query_rewrite and retrieval in parallel
+            if (
+                agent_name == "query_rewrite"
+                and i + 1 < len(agent_names)
+                and agent_names[i + 1] == "retrieval"
+            ):
+                rewrite_params = copy.deepcopy(current_params)
+                retrieval_params = copy.deepcopy(current_params)
+                retrieval_params["rewrittenQuery"] = str(
+                    retrieval_params.get("query")
+                    or retrieval_params.get("message", "")
+                )
+                retrieval_params["keywords"] = []
+
+                async def _run_agent(_agent_name: str, _agent_params: dict):
+                    agent = self.agent_registry[_agent_name]
+                    sp = self.build_agent_system_prompt(agent_name=_agent_name, snapshot=snapshot)
+                    events: list[SSEEvent] = []
+                    async for event in agent.run(
+                        task_id=request.task_id,
+                        trace_id=request.trace_id,
+                        seq=0,
+                        service_type=request.service_type,
+                        params=_agent_params,
+                        snapshot=snapshot,
+                        system_prompt=sp,
+                    ):
+                        events.append(event)
+                    return events, _agent_params
+
+                rewrite_task = asyncio.create_task(_run_agent("query_rewrite", rewrite_params))
+                retrieval_task = asyncio.create_task(_run_agent("retrieval", retrieval_params))
+
+                rewrite_events, _rw_params = await rewrite_task
+                retrieval_events, _ret_params = await retrieval_task
+
+                for event in rewrite_events:
+                    yield event.model_copy(update={"seq": seq})
+                    seq += 1
+                for event in retrieval_events:
+                    yield event.model_copy(update={"seq": seq})
+                    seq += 1
+
+                current_params.update(_ret_params)
+                current_params["rewrittenQuery"] = _rw_params.get(
+                    "rewrittenQuery", current_params.get("rewrittenQuery")
+                )
+                current_params["keywords"] = _rw_params.get(
+                    "keywords", current_params.get("keywords", [])
+                )
+
+                i += 2
+                snapshot = await self.snapshot_builder.build(
+                    user_id=request.user_id,
+                    task_id=request.task_id,
+                    conversation_id=request.conversation_id,
+                    params=current_params,
+                )
+                continue
+
+            # P1-1: ProfileAgent runs in background for TUTORING
+            if agent_name == "profile" and request.service_type == "TUTORING":
+                agent_params = copy.deepcopy(current_params)
+                sp = self.build_agent_system_prompt(agent_name="profile", snapshot=snapshot)
+                agent = self.agent_registry["profile"]
+
+                async def _run_background():
+                    try:
+                        async for _ in agent.run(
+                            task_id=request.task_id,
+                            trace_id=request.trace_id,
+                            seq=0,
+                            service_type=request.service_type,
+                            params=agent_params,
+                            snapshot=snapshot,
+                            system_prompt=sp,
+                        ):
+                            pass
+                    except Exception:
+                        pass
+
+                asyncio.create_task(_run_background())
+                i += 1
+                continue
+
             agent = self.agent_registry[agent_name]
             agent_params = copy.deepcopy(current_params)
             system_prompt = self.build_agent_system_prompt(
@@ -157,6 +268,7 @@ class PythonAgentSupervisor:
                 conversation_id=request.conversation_id,
                 params=current_params,
             )
+            i += 1
 
         yield DoneSSEEvent(
             taskId=request.task_id,

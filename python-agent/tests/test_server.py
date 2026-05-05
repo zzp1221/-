@@ -13,8 +13,8 @@ def test_health_endpoint(client) -> None:
 
     assert response.status_code == 200
     assert response.json()["status"] == "ok"
-    assert response.json()["provider"] == "bailian"
-    assert response.json()["runtimeProvider"] == "bailian"
+    assert response.json()["provider"] == "openai_compatible"
+    assert response.json()["runtimeProvider"] == "openai_compatible"
 
 
 def test_sse_event_serialization() -> None:
@@ -175,8 +175,8 @@ def test_stream_endpoint_emits_error_and_failed_done_when_supervisor_raises(clie
             del service_type, params
             return None
 
-        async def stream(self, request):
-            del request
+        async def stream(self, request, cancelled=None):
+            del request, cancelled
             raise RuntimeError("boom")
             yield  # pragma: no cover
 
@@ -211,9 +211,9 @@ def test_settings_switch_provider_via_env() -> None:
         {
             "APP_NAME": "agent",
             "ACTIVE_PROVIDER": "spark",
-            "FALLBACK_PROVIDER": "bailian",
+            "FALLBACK_PROVIDER": "openai_compatible",
             "SPARK_API_KEY": "spark-key",
-            "BAILIAN_API_KEY": "bailian-key",
+            "OPENAI_COMPATIBLE_API_KEY": "openai-key",
             "SPARK_MODEL_NAME": "Spark Ultra",
             "MODEL_NAME": "qwen3.6-plus",
         }
@@ -228,13 +228,13 @@ def test_settings_fallback_to_bailian_when_active_provider_not_ready() -> None:
         {
             "APP_NAME": "agent",
             "ACTIVE_PROVIDER": "spark",
-            "FALLBACK_PROVIDER": "bailian",
+            "FALLBACK_PROVIDER": "openai_compatible",
             "SPARK_API_KEY": "",
-            "BAILIAN_API_KEY": "bailian-key",
+            "OPENAI_COMPATIBLE_API_KEY": "openai-key",
             "SPARK_MODEL_NAME": "Spark Ultra",
             "MODEL_NAME": "qwen3.6-plus",
         }
     )
 
-    assert settings.runtime_provider_name() == "bailian"
+    assert settings.runtime_provider_name() == "openai_compatible"
     assert settings.resolve_logical_model("main_chat_model") == "qwen3.6-plus"

@@ -1,6 +1,7 @@
 package com.project.application.ratelimit;
 
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
 import java.time.Duration;
@@ -37,6 +38,11 @@ public class InMemorySlidingWindowRateLimiter implements RateLimiter {
             bucket.addLast(now);
             return true;
         }
+    }
+
+    @Scheduled(fixedDelay = 300_000)
+    public void evictExpired() {
+        evictExpired(Duration.ofMinutes(5));
     }
 
     /** Remove buckets that have been idle for longer than the window. */

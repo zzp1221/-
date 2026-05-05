@@ -1,4 +1,4 @@
-from src.ai_modules.llms import BailianSubjectiveJudgeEvaluator, HeuristicSubjectiveJudgeEvaluator
+from src.ai_modules.llms import HeuristicSubjectiveJudgeEvaluator, OpenAICompatibleSubjectiveJudgeEvaluator
 from src.ai_modules.models import PracticeQuestion
 
 
@@ -29,8 +29,8 @@ async def test_heuristic_subjective_evaluator_handles_empty_answer() -> None:
     assert result.confidence_level == "LOW"
 
 
-def test_bailian_subjective_evaluator_extracts_json_payload() -> None:
-    evaluator = BailianSubjectiveJudgeEvaluator(api_key="test-key")
+def test_openai_compatible_subjective_evaluator_extracts_json_payload() -> None:
+    evaluator = OpenAICompatibleSubjectiveJudgeEvaluator(api_key="test-key")
 
     payload = evaluator._extract_json(
         """```json

@@ -15,12 +15,9 @@ from src.ai_modules.models import ProgressPayload, ProgressSSEEvent, ResultChunk
 from src.ai_modules.prompts import build_retrieval_summary_prompt
 from src.ai_modules.retrieval import HybridRetrievalService
 from src.ai_modules.runtime import (
-    AgentCoreLoop,
-    PermissionLevel,
     RecoveryEngine,
     RecoveryFailureType,
     SystemSnapshot,
-    ToolRegistry,
 )
 
 LOGGER = logging.getLogger(__name__)
@@ -100,105 +97,55 @@ class RetrievalAgent(PlaceholderAgent):
         params: dict[str, Any],
         system_prompt: str,
     ):
-        tool_registry = ToolRegistry()
-        tool_registry.register(
-            name="grep_search",
-            fn=lambda tool_input: self._tool_grep_search(
-                tool_input=tool_input,
-                rewritten_query=rewritten_query,
-                keywords=keywords,
-                params=params,
-            ),
-            permission_level=PermissionLevel.READ_ONLY,
-            description="Run exact/phrase retrieval and collect grep channel hits.",
-            parameters={"type": "object", "properties": {}, "additionalProperties": False},
-        )
-        tool_registry.register(
-            name="vector_search",
-            fn=lambda tool_input: self._tool_vector_search(
-                tool_input=tool_input,
-                rewritten_query=rewritten_query,
-                keywords=keywords,
-                params=params,
-            ),
-            permission_level=PermissionLevel.READ_ONLY,
-            description="Run vector retrieval for semantic recall.",
-            parameters={"type": "object", "properties": {}, "additionalProperties": True},
-        )
-        tool_registry.register(
-            name="graph_expand",
-            fn=lambda tool_input: self._tool_graph_expand(
-                tool_input=tool_input,
-                rewritten_query=rewritten_query,
-                keywords=keywords,
-                params=params,
-            ),
-            permission_level=PermissionLevel.READ_ONLY,
-            description="Expand graph-related retrieval candidates.",
-            parameters={"type": "object", "properties": {}, "additionalProperties": True},
-        )
-        tool_registry.register(
-            name="rrf_merge",
-            fn=lambda tool_input: self._tool_rrf_merge(
-                tool_input=tool_input,
-                query=query,
-                rewritten_query=rewritten_query,
-                keywords=keywords,
-                params=params,
-            ),
-            permission_level=PermissionLevel.READ_ONLY,
-            description="Merge grep/vector/graph results and produce normalized retrieval response.",
-            parameters={"type": "object", "properties": {}, "additionalProperties": True},
-        )
-        tool_registry.register(
-            name="summarize_sources",
-            fn=lambda tool_input: self._tool_summarize_sources(
-                tool_input=tool_input,
-                system_prompt=system_prompt,
-                params=params,
-            ),
-            permission_level=PermissionLevel.READ_ONLY,
-            description="Summarize retrieval evidence with LLM.",
-            parameters={"type": "object", "properties": {}, "additionalProperties": True},
-        )
         try:
-            result = await AgentCoreLoop(
-                llm_client=self.llm_client,
-                tool_registry=tool_registry,
-                recovery_engine=self.recovery_engine,
-                max_iterations=6,
-                agent_level=PermissionLevel.READ_ONLY,
-            ).run(
-                system_prompt=system_prompt,
-                messages=[
-                    {
-                        "role": "user",
-                        "content": "请按 grep、vector、graph、RRF 融合的顺序执行检索，并输出来源摘要。",
-                    }
-                ],
+            # Step 1: Get raw retrieval results (1 DB query, with recovery)
+            raw_result = await self._safe_get_raw_result(
+                rewritten_query=rewritten_query, keywords=keywords,
             )
-            final_output = result.tool_results[-1].output if result.tool_results else {}
-            if isinstance(final_output, dict):
-                merged = params.get("mergedRetrievalResult")
-                if merged is not None:
-                    fallback_summary = getattr(merged, "sources_summary", None)
-                    if isinstance(merged, dict):
-                        fallback_summary = merged.get("sourcesSummary") or merged.get("summaryText") or fallback_summary
-                    return merged, str(final_output.get("summaryText") or fallback_summary or "")
+            params["retrievalRawResult"] = raw_result
+
+            # Step 2: Channel results (deterministic, parallel)
+            import asyncio
+            grep_task = asyncio.to_thread(self.service.channel_results, raw_result, "grep")
+            vector_task = asyncio.to_thread(self.service.channel_results, raw_result, "vector")
+            graph_task = asyncio.to_thread(self.service.channel_results, raw_result, "graph")
+            grep_result, vector_result, graph_result = await asyncio.gather(
+                grep_task, vector_task, graph_task,
+            )
+            params["grepRetrievalResult"] = {
+                "priority": grep_result.get("priority", []) if isinstance(grep_result, dict) else [],
+                "query": rewritten_query,
+            }
+            params["vectorRetrievalResult"] = {
+                "results": list(vector_result) if not isinstance(vector_result, dict) else vector_result.get("results", []),
+                "query": rewritten_query,
+            }
+            params["graphRetrievalResult"] = {
+                "results": list(graph_result) if not isinstance(graph_result, dict) else graph_result.get("results", []),
+                "query": rewritten_query,
+            }
+
+            # Step 3: RRF merge (deterministic)
+            retrieval_response = self.service.build_response(
+                query=query, rewritten_query=rewritten_query, keywords=keywords, raw_result=raw_result,
+            )
+            params["mergedRetrievalResult"] = retrieval_response
+
+            # Step 4: Summarize sources (1 LLM call)
+            summary_text = await self._safe_summarize(
+                retrieval_response=retrieval_response, system_prompt=system_prompt,
+            )
+            params["retrievalSummaryText"] = summary_text
+            return retrieval_response, summary_text
+
         except Exception:
-            LOGGER.warning(
-                "Tool-driven retrieval failed, falling back to service retrieval.",
-                exc_info=True,
-            )
+            LOGGER.warning("Direct retrieval failed, falling back to service retrieval.", exc_info=True)
 
         retrieval_response = self.service.retrieve(
-            query=query,
-            rewritten_query=rewritten_query,
-            keywords=keywords,
+            query=query, rewritten_query=rewritten_query, keywords=keywords,
         )
         summary_text = await self._safe_summarize(
-            retrieval_response=retrieval_response,
-            system_prompt=system_prompt,
+            retrieval_response=retrieval_response, system_prompt=system_prompt,
         )
         return retrieval_response, summary_text
 

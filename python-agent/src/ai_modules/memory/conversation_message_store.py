@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 from typing import Any, Literal, Protocol
 from uuid import uuid4
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from src.ai_modules.config import get_settings
 
@@ -21,8 +21,19 @@ class ConversationMessageDocument(BaseModel):
     role: Literal["user", "assistant"]
     content: str
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc), alias="createdAt")
+    # MongoDB schema fields — mapped from conversation_id
+    qna_session_id: str | None = Field(default=None, alias="qnaSessionId")
+    thread_id: str | None = Field(default=None, alias="threadId")
+    message_seq: int | None = Field(default=None, alias="messageSeq")
 
     model_config = ConfigDict(populate_by_name=True)
+
+    @field_validator("created_at", mode="before")
+    @classmethod
+    def _ensure_timezone(cls, v: datetime) -> datetime:
+        if isinstance(v, datetime) and v.tzinfo is None:
+            return v.replace(tzinfo=timezone.utc)
+        return v
 
 
 class ConversationMessageStore(Protocol):
@@ -86,9 +97,19 @@ class MongoConversationMessageStore:
         return self._collection
 
     async def append_message(self, document: ConversationMessageDocument) -> None:
+        # Populate MongoDB-required fields from conversation_id
+        if document.qna_session_id is None:
+            document.qna_session_id = document.conversation_id
+        if document.message_seq is None:
+            # Auto-generate sequence number based on existing messages in this conversation
+            count = await asyncio.to_thread(
+                self.collection.count_documents,
+                {"qnaSessionId": document.conversation_id},
+            )
+            document.message_seq = count + 1
         await asyncio.to_thread(
             self.collection.insert_one,
-            document.model_dump(by_alias=True),
+            document.model_dump(by_alias=True, exclude_none=True),
         )
 
     async def list_messages(

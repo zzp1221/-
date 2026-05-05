@@ -4,22 +4,29 @@ import com.project.api.smartengine.dto.SubmitTaskRequest;
 import com.project.api.smartengine.dto.SubmitTaskResponse;
 import com.project.api.smartengine.dto.TaskStatusResponse;
 import com.project.application.audit.AuditService;
+import com.project.application.common.ApplicationException;
 import com.project.application.idempotency.IdempotencyService;
 import com.project.domain.task.SmartEngineTask;
 import com.project.security.JwtAuthenticatedUser;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.core.task.TaskExecutor;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * Coordinates task submission, background execution, and external SSE exposure.
+ * Coordinates task submission, background execution, cancellation, and external SSE exposure.
  */
 @Service
 public class SmartEngineOrchestratorService {
+
+    private static final Logger LOGGER = LoggerFactory.getLogger(SmartEngineOrchestratorService.class);
 
     private final TaskStateMachineService taskStateMachineService;
     private final PythonAgentClient pythonAgentClient;
@@ -27,6 +34,7 @@ public class SmartEngineOrchestratorService {
     private final TaskExecutor smartEngineTaskExecutor;
     private final IdempotencyService idempotencyService;
     private final AuditService auditService;
+    private final ConcurrentHashMap<UUID, Thread> runningThreads = new ConcurrentHashMap<>();
 
     public SmartEngineOrchestratorService(
         TaskStateMachineService taskStateMachineService,
@@ -116,7 +124,15 @@ public class SmartEngineOrchestratorService {
             request.safeParams()
         );
 
-        smartEngineTaskExecutor.execute(() -> executeTask(task.getId(), invocation));
+        smartEngineTaskExecutor.execute(() -> {
+            Thread currentThread = Thread.currentThread();
+            runningThreads.put(taskId, currentThread);
+            try {
+                executeTask(taskId, invocation);
+            } finally {
+                runningThreads.remove(taskId);
+            }
+        });
 
         return new SubmitTaskAcceptance(
             new SubmitTaskResponse(task.getId(), traceId, task.getTaskStatus()),
@@ -131,6 +147,32 @@ public class SmartEngineOrchestratorService {
     public SseEmitter subscribe(JwtAuthenticatedUser currentUser, UUID taskId) {
         SmartEngineTask task = taskStateMachineService.getOwnedTask(taskId, currentUser.userId());
         return sseEmitterService.subscribe(task);
+    }
+
+    /**
+     * Cancel a running task. No-op if the task is already in a terminal state.
+     */
+    public void cancel(JwtAuthenticatedUser currentUser, UUID taskId) {
+        SmartEngineTask task = taskStateMachineService.getOwnedTask(taskId, currentUser.userId());
+
+        if (task.isTerminal()) {
+            return;
+        }
+
+        auditService.log("TASK", "MEDIUM", "取消任务", currentUser.userId(), taskId, Map.of(
+            "currentStatus", task.getTaskStatus().name(),
+            "currentStage", task.getCurrentStage() == null ? "" : task.getCurrentStage()
+        ));
+
+        pythonAgentClient.cancel(taskId.toString());
+
+        Thread thread = runningThreads.remove(taskId);
+        if (thread != null) {
+            thread.interrupt();
+        }
+
+        TaskStreamEventPayload cancelPayload = taskStateMachineService.markCancelled(taskId);
+        sseEmitterService.cancelTask(taskId, cancelPayload);
     }
 
     private void executeTask(UUID taskId, SmartEngineInvocation invocation) {
@@ -149,6 +191,10 @@ public class SmartEngineOrchestratorService {
                 sseEmitterService.publish(autoCompleted, true);
             }
         } catch (Exception ex) {
+            if (Thread.currentThread().isInterrupted() || taskStateMachineService.isCancelled(taskId)) {
+                LOGGER.info("Task {} was cancelled, not marking as failed", taskId);
+                return;
+            }
             auditService.log("TASK", "MEDIUM", "任务执行失败", invocation.userId(), taskId, Map.of("message", ex.getMessage() == null ? "" : ex.getMessage()));
             TaskStreamEventPayload failurePayload = taskStateMachineService.failTask(
                 taskId,

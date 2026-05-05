@@ -4,7 +4,6 @@ import pytest
 
 from src.ai_modules.config import get_settings
 from src.ai_modules.generation import (
-    BailianStructuredGenerator,
     ContentGenerationChain,
     GeneratedCodeAsset,
     GeneratedMindMap,
@@ -12,6 +11,7 @@ from src.ai_modules.generation import (
     GeneratedSectionBundle,
     GeneratedSlideDeck,
     GeneratedTextAsset,
+    OpenAICompatibleStructuredGenerator,
     ResourceGenerationService,
 )
 from src.ai_modules.runtime import SystemSnapshot
@@ -387,12 +387,12 @@ def test_structured_generator_uses_spark_openai_compatible_config(
         }
 
     monkeypatch.setattr(
-        BailianStructuredGenerator,
+        OpenAICompatibleStructuredGenerator,
         "_post_chat_completion",
         fake_post_chat_completion,
     )
 
-    generator = BailianStructuredGenerator()
+    generator = OpenAICompatibleStructuredGenerator()
     asset = generator.generate_reading_asset(
         title="联合索引延伸阅读",
         topic="联合索引",

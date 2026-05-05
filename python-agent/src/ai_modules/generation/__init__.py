@@ -11,6 +11,7 @@ from src.ai_modules.generation.content_chain import (
     GeneratedSection,
     GeneratedSectionBundle,
     GeneratedTextAsset,
+    OpenAICompatibleStructuredGenerator,
 )
 from src.ai_modules.generation.resource_builder import (
     GeneratedAsset,
@@ -23,6 +24,7 @@ __all__ = [
     "GeneratedCodeAsset",
     "GeneratedMindMap",
     "GeneratedMindMapNode",
+    "OpenAICompatibleStructuredGenerator",
     "GeneratedSlide",
     "GeneratedSlideDeck",
     "GeneratedAsset",

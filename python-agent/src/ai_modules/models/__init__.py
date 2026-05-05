@@ -16,6 +16,8 @@ from src.ai_modules.models.events import (
     ResultChunkPayload,
     ResultChunkSSEEvent,
     SSEEvent,
+    VideoCompleteSSEEvent,
+    VideoProgressSSEEvent,
 )
 from src.ai_modules.models.practice import (
     JudgeItemResult,
@@ -85,7 +87,9 @@ __all__ = [
     "SafetyReviewPayload",
     "SSEEvent",
     "SubjectiveJudgeEvaluation",
+    "VideoCompleteSSEEvent",
     "VideoGenerationTaskPayload",
+    "VideoProgressSSEEvent",
     "VideoSandboxArtifact",
     "VideoScriptPayload",
     "VideoScriptSegment",

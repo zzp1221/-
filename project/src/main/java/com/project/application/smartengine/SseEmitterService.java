@@ -101,6 +101,24 @@ public class SseEmitterService {
             .data(payload));
     }
 
+    /**
+     * Force-complete all emitters for a cancelled task and publish the final event.
+     */
+    public void cancelTask(UUID taskId, TaskStreamEventPayload cancelPayload) {
+        CopyOnWriteArrayList<SseEmitter> taskEmitters = emitters.remove(taskId);
+        if (taskEmitters == null || taskEmitters.isEmpty()) {
+            return;
+        }
+        for (SseEmitter emitter : taskEmitters) {
+            try {
+                send(emitter, cancelPayload);
+                emitter.complete();
+            } catch (IOException ex) {
+                emitter.completeWithError(ex);
+            }
+        }
+    }
+
     private void removeEmitter(UUID taskId, SseEmitter emitter) {
         CopyOnWriteArrayList<SseEmitter> taskEmitters = emitters.get(taskId);
         if (taskEmitters == null) {

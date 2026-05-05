@@ -13,7 +13,7 @@ from pydantic import ValidationError
 
 from src.ai_modules.config import get_settings
 from src.ai_modules.llms.agent_models import create_compatible_client
-from src.ai_modules.llms.bailian_compatible import BailianCompatibleClient
+from src.ai_modules.llms.openai_compatible import OpenAICompatibleClient
 from src.ai_modules.models import PracticeQuestion, SubjectiveJudgeEvaluation
 
 LOGGER = logging.getLogger(__name__)
@@ -88,7 +88,7 @@ class HeuristicSubjectiveJudgeEvaluator:
         return "".join(str(value).strip().upper().split())
 
 
-class BailianSubjectiveJudgeEvaluator:
+class OpenAICompatibleSubjectiveJudgeEvaluator:
     """Provider-aware evaluator that returns validated structured judging output."""
 
     def __init__(
@@ -185,8 +185,9 @@ class SubjectiveJudgeEvaluatorFactory:
         settings = get_settings()
         provider_name = settings.resolve_component_provider("judge_llm")
         if settings.provider_ready(provider_name):
-            return BailianSubjectiveJudgeEvaluator()
+            return OpenAICompatibleSubjectiveJudgeEvaluator()
         return HeuristicSubjectiveJudgeEvaluator()
 
 
-SubjectiveJudgeEvaluator = BailianSubjectiveJudgeEvaluator
+SubjectiveJudgeEvaluator = OpenAICompatibleSubjectiveJudgeEvaluator
+BailianSubjectiveJudgeEvaluator = OpenAICompatibleSubjectiveJudgeEvaluator

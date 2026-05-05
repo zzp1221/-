@@ -98,9 +98,12 @@ export default function Layout() {
       });
       setConversationHistory(sorted);
       setLastSyncAt(new Date().toISOString());
-    } catch {
-      setConversationHistory([]);
-      setLastSyncAt('');
+    } catch (error) {
+      console.error('Failed to load conversation history:', error);
+      if (isUnauthorizedError(error)) {
+        setConversationHistory([]);
+        setLastSyncAt('');
+      }
     }
   };
 
@@ -168,12 +171,6 @@ export default function Layout() {
       window.removeEventListener('app:conversation-updated', handleConversationUpdated);
     };
   }, []);
-
-  useEffect(() => {
-    if (currentUser) {
-      void loadRecentConversations();
-    }
-  }, [currentUser]);
 
   const openAuthModal = (tab: AuthTab = 'login', hint = '请先登录') => {
     setDefaultTab(tab);

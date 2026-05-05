@@ -7,7 +7,7 @@ import logging
 from contextlib import asynccontextmanager
 from typing import AsyncIterator
 
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.responses import JSONResponse, StreamingResponse
 from opentelemetry import trace
 from pydantic import BaseModel, ConfigDict, Field
@@ -23,6 +23,7 @@ SETTINGS = get_settings()
 TRACER = trace.get_tracer(__name__)
 SUPERVISOR = PythonAgentSupervisor()
 MESSAGE_STORE = MongoConversationMessageStore()
+CANCELLED_TASKS: set[str] = set()
 
 
 class InternalConversationMessageRequest(BaseModel):
@@ -94,25 +95,24 @@ async def _sandbox_cleanup_loop() -> None:
 app = FastAPI(title=SETTINGS.app_name, lifespan=lifespan)
 
 
-async def _supervisor_event_stream(request: EngineStreamRequest) -> AsyncIterator[str]:
+async def _supervisor_event_stream(engine_request: EngineStreamRequest) -> AsyncIterator[str]:
     """Yield SSE events produced by the placeholder supervisor."""
 
     with TRACER.start_as_current_span("internal.smart_engine.stream"):
         seq = 1
         try:
-            async for event in SUPERVISOR.stream(request):
+            async for event in SUPERVISOR.stream(engine_request, cancelled=CANCELLED_TASKS):
                 seq = event.seq + 1
                 yield event.to_sse()
-                await asyncio.sleep(0.01)
         except Exception as exc:
             LOGGER.exception(
                 "Supervisor stream failed for task_id=%s trace_id=%s",
-                request.task_id,
-                request.trace_id,
+                engine_request.task_id,
+                engine_request.trace_id,
             )
             yield ErrorSSEEvent(
-                taskId=request.task_id,
-                traceId=request.trace_id,
+                taskId=engine_request.task_id,
+                traceId=engine_request.trace_id,
                 seq=seq,
                 payload=ErrorPayload(
                     code="PYTHON_AGENT_ERROR",
@@ -120,14 +120,16 @@ async def _supervisor_event_stream(request: EngineStreamRequest) -> AsyncIterato
                 ),
             ).to_sse()
             yield DoneSSEEvent(
-                taskId=request.task_id,
-                traceId=request.trace_id,
+                taskId=engine_request.task_id,
+                traceId=engine_request.trace_id,
                 seq=seq + 1,
                 payload=DonePayload(
                     status="FAILED",
                     summary="Supervisor 执行失败，任务已终止",
                 ),
             ).to_sse()
+        finally:
+            CANCELLED_TASKS.discard(engine_request.task_id)
 
 
 @app.get("/health")
@@ -148,30 +150,38 @@ async def health() -> JSONResponse:
 
 @app.post("/internal/smart-engine/stream")
 async def smart_engine_stream(
-    request: EngineStreamRequest,
+    engine_request: EngineStreamRequest,
 ) -> StreamingResponse:
     """Internal streaming endpoint used by the Java BFF."""
 
     LOGGER.info(
         "Received task_id=%s trace_id=%s service_type=%s",
-        request.task_id,
-        request.trace_id,
-        request.service_type,
+        engine_request.task_id,
+        engine_request.trace_id,
+        engine_request.service_type,
     )
     try:
-        SUPERVISOR.resolve_route(request.service_type, request.params)
+        SUPERVISOR.resolve_route(engine_request.service_type, engine_request.params)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     return StreamingResponse(
-        _supervisor_event_stream(request),
-        media_type="text/event-stream",
+        _supervisor_event_stream(engine_request),
+        media_type="text/event-stream; charset=utf-8",
         headers={
             "Cache-Control": "no-cache",
             "Connection": "keep-alive",
             "X-Accel-Buffering": "no",
         },
     )
+
+
+@app.post("/internal/smart-engine/{task_id}/cancel")
+async def cancel_smart_engine_task(task_id: str) -> JSONResponse:
+    """Cancel a running smart-engine task by its id."""
+    CANCELLED_TASKS.add(task_id)
+    LOGGER.info("Task cancellation requested: task_id=%s", task_id)
+    return JSONResponse({"status": "cancelled", "taskId": task_id})
 
 
 @app.post("/internal/conversations/{conversation_id}/messages")

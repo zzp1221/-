@@ -2,6 +2,7 @@
 .env
 .env.local
 .env.*.local
+/docs
 # Keep .env.example and .env.template as templates
 !.env.example
 !.env.template
