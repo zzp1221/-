@@ -332,9 +332,31 @@ class ResourceGenerationService:
         title = f"{params.get('query', '学习主题')}PPT大纲"
         retrieval = params.get("retrievalResult", {})
         sources = retrieval.get("documents", [])
+        topic = str(params.get("rewrittenQuery", params.get("query", "主题")))
+
+        # ── Attempt MiMo-V2-Omni PPTX generation ──
+        pptx_bytes = self._generate_pptx_with_omni(
+            title=title, topic=topic, snapshot=snapshot, sources=sources
+        )
+        if pptx_bytes is not None:
+            file_name = self._scoped_file_name("slides", "pptx", params)
+            path = self._write_bytes(file_name, pptx_bytes)
+            slide_count = self._count_pptx_slides(pptx_bytes)
+            return GeneratedAsset(
+                assetType="SLIDES",
+                title=title,
+                summary=f"MiMo-V2-Omni 生成的 PPT 演示文稿 ({slide_count} 页)",
+                displayMode="DOWNLOAD_CARD",
+                fileName=file_name,
+                localPath=str(path),
+                previewText=f"PPT 演示文稿 · {slide_count} 页 · {topic}",
+                mimeType="application/vnd.openxmlformats-officedocument.presentationml.presentation",
+            )
+
+        # ── Fallback to LLM + markdown ──
         generated_slides = self.content_chain.generate_slides_asset(
             title=title,
-            topic=str(params.get("rewrittenQuery", params.get("query", "主题"))),
+            topic=topic,
             snapshot=asdict(snapshot),
             sources=sources,
             fallback_builder=self,
@@ -366,6 +388,159 @@ class ResourceGenerationService:
             localPath=str(path),
             previewText=generated_slides.title,
         )
+
+    def _generate_pptx_with_omni(
+        self,
+        *,
+        title: str,
+        topic: str,
+        snapshot: SystemSnapshot,
+        sources: list[dict[str, Any]],
+    ) -> bytes | None:
+        """Attempt to generate a PPTX via MiMo-V2-Omni; returns None on failure."""
+        settings = get_settings()
+        if not settings.mimo_api_key:
+            return None
+
+        try:
+            from src.ai_modules.llms.mimo_client import MiMoClient
+
+            source_texts = "\n".join(
+                f"- {s.get('title', 'unknown')}: {s.get('evidence', '')[:200]}"
+                for s in sources[:4]
+            )
+            prompt = (
+                f"请为教学主题「{topic}」生成一份完整的 PPT 内容，用于 {snapshot.current_course} 课程。\n"
+                f"学生水平: {snapshot.student_level}，学习风格: {snapshot.preferred_style}。\n"
+                f"参考来源:\n{source_texts}\n\n"
+                "请以JSON格式输出，包含以下字段：\n"
+                '{{"slides":[{{"slideTitle":"标题","bullets":["要点1","要点2"],"speakerNotes":"讲解备注"}}]}}\n'
+                "要求：6-10页幻灯片，每页3-5个要点，speakerNotes用中文写50-100字的讲解说明。"
+                "首尾页分别为标题页和总结页。仅输出JSON。"
+            )
+
+            client = MiMoClient()
+            response = client.omni_chat_sync(
+                messages=[{"role": "user", "content": prompt}],
+                temperature=0.3,
+                max_tokens=4096,
+            )
+            slide_data = client.extract_json(response)
+            if not slide_data:
+                return None
+
+            slides = slide_data.get("slides", [])
+            if not slides:
+                return None
+
+            return self._build_pptx_bytes(
+                title=title,
+                topic=topic,
+                slides=slides,
+                course=str(snapshot.current_course),
+            )
+        except Exception:
+            return None
+
+    @staticmethod
+    def _build_pptx_bytes(
+        *,
+        title: str,
+        topic: str,
+        slides: list[dict[str, Any]],
+        course: str,
+    ) -> bytes:
+        """Build a PPTX file in memory using python-pptx."""
+        try:
+            from pptx import Presentation
+            from pptx.util import Inches, Pt
+            from pptx.enum.text import PP_ALIGN
+            from pptx.dml.color import RGBColor
+        except ImportError:
+            return None
+
+        prs = Presentation()
+        prs.slide_width = Inches(13.333)
+        prs.slide_height = Inches(7.5)
+
+        # ── Title slide ──
+        title_slide_layout = prs.slide_layouts[0]  # title slide layout
+        slide = prs.slides.add_slide(title_slide_layout)
+        title_placeholder = slide.shapes.title
+        subtitle_placeholder = slide.placeholders[1]
+        title_placeholder.text = title
+        subtitle_placeholder.text = f"{course}\n{topic}"
+
+        # ── Content slides ──
+        for slide_info in slides:
+            slide_title = slide_info.get("slideTitle", slide_info.get("title", ""))
+            bullets = slide_info.get("bullets", [])
+            speaker_notes_text = slide_info.get("speakerNotes", slide_info.get("speaker_notes", ""))
+
+            bullet_layout = prs.slide_layouts[1]  # title + content
+            slide = prs.slides.add_slide(bullet_layout)
+            if slide.shapes.title:
+                slide.shapes.title.text = slide_title
+
+            # Add bullets
+            body_shape = slide.placeholders[1] if len(slide.placeholders) > 1 else None
+            if body_shape and bullets:
+                tf = body_shape.text_frame
+                tf.clear()
+                for i, bullet in enumerate(bullets):
+                    if i == 0:
+                        p = tf.paragraphs[0]
+                    else:
+                        p = tf.add_paragraph()
+                    p.text = str(bullet)
+                    p.level = 0
+                    p.font.size = Pt(24)
+
+            # Speaker notes
+            if speaker_notes_text:
+                notes_slide = slide.notes_slide
+                notes_slide.notes_text_frame.text = str(speaker_notes_text)
+
+        # ── Summary slide ──
+        summary_layout = prs.slide_layouts[1]
+        slide = prs.slides.add_slide(summary_layout)
+        if slide.shapes.title:
+            slide.shapes.title.text = "总结与回顾"
+        body_shape = slide.placeholders[1] if len(slide.placeholders) > 1 else None
+        if body_shape:
+            tf = body_shape.text_frame
+            tf.clear()
+            summary_points = [
+                f"主题: {topic}",
+                f"课程: {course}",
+                f"共 {len(slides)} 个内容页",
+                "请结合课堂讨论加深理解",
+            ]
+            for i, point in enumerate(summary_points):
+                p = tf.paragraphs[0] if i == 0 else tf.add_paragraph()
+                p.text = point
+                p.font.size = Pt(24)
+
+        import io
+        output = io.BytesIO()
+        prs.save(output)
+        return output.getvalue()
+
+    @staticmethod
+    def _count_pptx_slides(pptx_bytes: bytes) -> int:
+        try:
+            from pptx import Presentation
+            import io
+            prs = Presentation(io.BytesIO(pptx_bytes))
+            return len(prs.slides)
+        except Exception:
+            return 0
+
+    def _write_bytes(self, file_name: str, data: bytes) -> Path:
+        self.sandbox_root.mkdir(parents=True, exist_ok=True)
+        path = self.sandbox_root / file_name
+        path.write_bytes(data)
+        return path
 
     def _build_mindmap(self, *, params: dict, snapshot: SystemSnapshot) -> GeneratedAsset:
         title = f"{params.get('query', '学习主题')}思维导图"
@@ -472,8 +647,29 @@ class ResourceGenerationService:
             encoding="utf-8",
         )
         script_text_path.write_text(script_payload.full_text, encoding="utf-8")
-        audio_path.write_bytes(b"placeholder-audio")
-        final_video_path.write_bytes(self.placeholder_video_bytes)
+        # Use real TTS audio when available, else placeholder
+        tts_audio_bytes = params.get("tts_audio_bytes")
+        has_real_audio = tts_audio_bytes and isinstance(tts_audio_bytes, bytes) and len(tts_audio_bytes) > 100
+        if has_real_audio:
+            audio_path.write_bytes(tts_audio_bytes)
+        else:
+            audio_path.write_bytes(b"placeholder-audio")
+
+        # Attempt ffmpeg rendering with real audio; fall back to placeholder video
+        if has_real_audio and self._ffmpeg_available():
+            try:
+                self._render_video_with_ffmpeg(
+                    script=script_payload,
+                    audio_path=audio_path,
+                    video_path=final_video_path,
+                    thumbnail_path=thumbnail_path,
+                    topic=topic,
+                    style=style,
+                )
+            except Exception:
+                final_video_path.write_bytes(self.placeholder_video_bytes)
+        else:
+            final_video_path.write_bytes(self.placeholder_video_bytes)
         thumbnail_path.write_text(
             self._build_video_thumbnail_svg(
                 title=script_payload.title,
@@ -675,6 +871,93 @@ class ResourceGenerationService:
             code=code,
             explanation="当前为回退代码示例，用于保证链路稳定。",
         )
+
+    @staticmethod
+    def _ffmpeg_available() -> bool:
+        import shutil
+        return shutil.which("ffmpeg") is not None
+
+    def _render_video_with_ffmpeg(
+        self,
+        *,
+        script: Any,
+        audio_path: Path,
+        video_path: Path,
+        thumbnail_path: Path,
+        topic: str,
+        style: str,
+    ) -> None:
+        import subprocess
+        import tempfile
+
+        full_text = getattr(script, "full_text", str(topic))
+        safe_topic = self._escape_svg_text(topic)
+        duration = int(getattr(script, "total_duration", 60))
+
+        # Generate a title frame SVG
+        svg_content = (
+            '<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="720" viewBox="0 0 1280 720">'
+            '<defs><linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">'
+            '<stop offset="0%" stop-color="#1e3a5f"/><stop offset="100%" stop-color="#2563eb"/>'
+            '</linearGradient></defs>'
+            '<rect width="1280" height="720" fill="url(#bg)"/>'
+            '<rect x="80" y="80" width="1120" height="560" rx="40" fill="rgba(15,23,42,0.3)" stroke="#60a5fa" stroke-width="2"/>'
+            '<text x="640" y="300" fill="#ffffff" font-size="52" font-family="sans-serif" text-anchor="middle" font-weight="bold">'
+            f'{safe_topic}</text>'
+            '<text x="640" y="380" fill="#93c5fd" font-size="32" font-family="sans-serif" text-anchor="middle">AI 教学视频</text>'
+            '<text x="640" y="440" fill="#bfdbfe" font-size="24" font-family="sans-serif" text-anchor="middle">'
+            f'风格: {style}</text>'
+            "</svg>"
+        )
+        with tempfile.NamedTemporaryFile(suffix=".svg", delete=False) as tmp_svg:
+            tmp_svg.write(svg_content.encode("utf-8"))
+            svg_frame_path = Path(tmp_svg.name)
+
+        try:
+            # Convert SVG to video frame using ffmpeg
+            frame_video = video_path.with_suffix(".frame.mp4")
+            subprocess.run(
+                [
+                    "ffmpeg", "-y",
+                    "-loop", "1",
+                    "-i", str(svg_frame_path),
+                    "-c:v", "libx264",
+                    "-t", str(duration),
+                    "-pix_fmt", "yuv420p",
+                    "-vf", "scale=1280:720",
+                    str(frame_video),
+                ],
+                capture_output=True,
+                timeout=60,
+                check=True,
+            )
+
+            # Merge frame video with audio
+            subprocess.run(
+                [
+                    "ffmpeg", "-y",
+                    "-i", str(frame_video),
+                    "-i", str(audio_path),
+                    "-c:v", "copy",
+                    "-c:a", "aac",
+                    "-shortest",
+                    str(video_path),
+                ],
+                capture_output=True,
+                timeout=60,
+                check=True,
+            )
+
+            # Clean up frame video
+            try:
+                frame_video.unlink()
+            except OSError:
+                pass
+        finally:
+            try:
+                svg_frame_path.unlink()
+            except OSError:
+                pass
 
     def _write_text(self, file_name: str, content: str) -> Path:
         self.sandbox_root.mkdir(parents=True, exist_ok=True)

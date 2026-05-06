@@ -97,8 +97,13 @@ class Settings(BaseSettings):
         default="Spark X2-Flash",
         alias="SPARK_SAFETY_MODEL_NAME",
     )
-    tts_provider: str = Field(default="edge_tts", alias="TTS_PROVIDER")
+    tts_provider: str = Field(default="mimo_tts", alias="TTS_PROVIDER")
     avatar_provider: str = Field(default="sadtalker", alias="AVATAR_PROVIDER")
+    mimo_api_key: str = Field(default="", alias="MIMO_API_KEY")
+    mimo_base_url: str = Field(
+        default="https://api.xiaomimimo.com/v1",
+        alias="MIMO_BASE_URL",
+    )
     llm_tool_content_max_string_chars: int = Field(
         default=600,
         alias="LLM_TOOL_CONTENT_MAX_STRING_CHARS",
@@ -270,6 +275,25 @@ class Settings(BaseSettings):
                         "safety_model": self.safety_model_name,
                     },
                 ),
+                "mimo": ProviderEndpointConfig(
+                    name="mimo",
+                    protocol="openai_compatible",
+                    baseUrl=self.mimo_base_url,
+                    apiKeyEnv="MIMO_API_KEY",
+                    timeoutMs=120000,
+                    models={
+                        "main_chat_model": "mimo-v2-omni",
+                        "fast_model": "mimo-v2-flash",
+                        "reasoning_model": "mimo-v2-omni",
+                        "code_model": "mimo-v2-omni",
+                        "code_fast_model": "mimo-v2-flash",
+                        "omni_model": "mimo-v2-omni",
+                        "omni_realtime_model": "mimo-v2-omni",
+                        "embedding_model": "text-embedding-v4",
+                        "rerank_model": "qwen3-rerank",
+                        "safety_model": "mimo-v2-flash",
+                    },
+                ),
                 "spark": ProviderEndpointConfig(
                     name="spark",
                     protocol="spark_compatible",
@@ -359,6 +383,8 @@ class Settings(BaseSettings):
         provider = self.normalize_provider_name(provider_name or self.runtime_provider_name())
         if provider == "spark":
             return self.spark_api_key
+        if provider == "mimo":
+            return self.mimo_api_key or self.openai_compatible_api_key
         return self.openai_compatible_api_key
 
     def provider_ready(self, provider_name: str | None = None) -> bool:
@@ -367,6 +393,8 @@ class Settings(BaseSettings):
         provider = self.normalize_provider_name(provider_name or self.runtime_provider_name())
         if provider == "spark":
             return bool(self.spark_api_key)
+        if provider == "mimo":
+            return bool(self.mimo_api_key or self.openai_compatible_api_key)
         return bool(self.openai_compatible_api_key)
 
     def llm_component_override(self, component_name: str) -> LLMComponentOverride:

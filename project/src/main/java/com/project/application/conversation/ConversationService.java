@@ -89,6 +89,8 @@ public class ConversationService {
         return pythonConversationMessageClient.listMessages(conversationId, currentUser.userId());
     }
 
+    private static final int MAX_HISTORY_MESSAGES = 20;
+
     @Transactional
     public SseEmitter streamMessage(
         JwtAuthenticatedUser currentUser,
@@ -106,6 +108,9 @@ public class ConversationService {
         }
         appendConversationMessage(conversationId, currentUser.userId(), "user", request.message(), true);
 
+        // Fetch conversation history for multi-turn memory
+        List<ConversationMessageItemResponse> history = fetchRecentHistory(conversationId, currentUser.userId());
+
         SseEmitter emitter = new SseEmitter(DEFAULT_TIMEOUT_MS);
         emitter.onCompletion(() -> LOGGER.debug("Conversation SSE emitter completed conversationId={}", conversationId));
         emitter.onTimeout(() -> LOGGER.debug("Conversation SSE emitter timed out conversationId={}", conversationId));
@@ -122,7 +127,7 @@ public class ConversationService {
                         UUID.randomUUID().toString(),
                         conversationId,
                         request.resolvedServiceType(),
-                        buildConversationParams(currentUser, conversationId, request)
+                        buildConversationParams(currentUser, conversationId, request, history)
                     ),
                     event -> {
                         collectAssistantReply(assistantReply, event);
@@ -275,10 +280,22 @@ public class ConversationService {
         }
     }
 
+    private List<ConversationMessageItemResponse> fetchRecentHistory(UUID conversationId, UUID userId) {
+        try {
+            List<ConversationMessageItemResponse> all = pythonConversationMessageClient.listMessages(conversationId, userId);
+            int fromIndex = Math.max(0, all.size() - MAX_HISTORY_MESSAGES);
+            return all.subList(fromIndex, all.size());
+        } catch (Exception ex) {
+            LOGGER.warn("Failed to load conversation history conversationId={}: {}", conversationId, ex.getMessage());
+            return List.of();
+        }
+    }
+
     private Map<String, Object> buildConversationParams(
         JwtAuthenticatedUser currentUser,
         UUID conversationId,
-        ConversationMessageStreamRequest request
+        ConversationMessageStreamRequest request,
+        List<ConversationMessageItemResponse> history
     ) {
         Map<String, Object> params = new LinkedHashMap<>();
         params.put("message", request.message());
@@ -286,10 +303,13 @@ public class ConversationService {
         params.put("userInput", request.message());
         params.put("conversationId", conversationId.toString());
         params.put("userId", currentUser.userId().toString());
-        params.put("messages", List.of(Map.of(
-            "role", "user",
-            "content", request.message()
-        )));
+        params.put("conversationLength", history.size());
+
+        List<Map<String, String>> messages = new java.util.ArrayList<>();
+        for (ConversationMessageItemResponse msg : history) {
+            messages.add(Map.of("role", msg.role(), "content", msg.content()));
+        }
+        params.put("messages", messages);
         return params;
     }
 

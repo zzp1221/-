@@ -528,8 +528,6 @@ class VideoGenerationAgent(_BaseGenerationAgent):
         stage_events = [
             ("video_gen:start", "video_started", 10, f"{topic} 视频生成任务已启动"),
             ("video_gen:script", "script_generated", 25, "脚本生成完成"),
-            ("video_gen:speech", "speech_synthesized", 50, "语音合成完成"),
-            ("video_gen:avatar", "video_rendering", 75, "视频渲染中..."),
         ]
         current_seq = seq
         for event_type, stage_name, percent, message in stage_events:
@@ -541,6 +539,60 @@ class VideoGenerationAgent(_BaseGenerationAgent):
                 payload=ProgressPayload(stage=stage_name, percent=percent, message=message),
             )
             current_seq += 1
+
+        # ── Real TTS synthesis via MiMo-V2.5-TTS ──
+        tts_audio_bytes: bytes | None = None
+        try:
+            from src.ai_modules.llms.mimo_client import MiMoClient
+            mimo_client = MiMoClient()
+            script_text = str(params.get("query") or topic)
+            retrieval = params.get("retrievalResult", {})
+            if isinstance(retrieval, dict):
+                docs = retrieval.get("documents", [])
+                if docs:
+                    snippets = [d.get("evidence", d.get("title", "")) for d in docs[:3] if d]
+                    script_text = f"{topic}。{'。'.join(s for s in snippets if s)}"
+            tts_audio_bytes = await mimo_client.synthesize_speech(
+                text=f"今天我们来学习{topic}。{script_text[:800]}",
+                style_description="用清晰自然的语速播报，声音沉稳专业，适合教学场景",
+                voice="mimo_default",
+                audio_format="mp3",
+            )
+            params["tts_audio_bytes"] = tts_audio_bytes
+            yield VideoProgressSSEEvent(
+                event="video_gen:speech",
+                taskId=task_id,
+                traceId=trace_id,
+                seq=current_seq,
+                payload=ProgressPayload(
+                    stage="speech_synthesized",
+                    percent=50,
+                    message=f"MiMo-V2.5-TTS 语音合成完成 ({len(tts_audio_bytes)} bytes)",
+                ),
+            )
+        except Exception as exc:
+            LOGGER.warning("MiMo TTS failed, using placeholder audio: %s", exc)
+            yield VideoProgressSSEEvent(
+                event="video_gen:speech",
+                taskId=task_id,
+                traceId=trace_id,
+                seq=current_seq,
+                payload=ProgressPayload(
+                    stage="speech_synthesized",
+                    percent=50,
+                    message=f"语音合成降级 (placeholder): {exc}",
+                ),
+            )
+        current_seq += 1
+
+        yield VideoProgressSSEEvent(
+            event="video_gen:avatar",
+            taskId=task_id,
+            traceId=trace_id,
+            seq=current_seq,
+            payload=ProgressPayload(stage="video_rendering", percent=75, message="视频渲染中..."),
+        )
+        current_seq += 1
 
         final_output_task = asyncio.create_task(
             self._run_agent_core_loop(
