@@ -175,8 +175,8 @@ def test_stream_endpoint_emits_error_and_failed_done_when_supervisor_raises(clie
             del service_type, params
             return None
 
-        async def stream(self, request, cancelled=None):
-            del request, cancelled
+        async def stream(self, request):
+            del request
             raise RuntimeError("boom")
             yield  # pragma: no cover
 

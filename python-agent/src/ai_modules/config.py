@@ -179,7 +179,6 @@ class Settings(BaseSettings):
         alias="KNOWLEDGE_EMBEDDING_DIMENSION",
     )
     minio_endpoint: str = Field(default="localhost:9000", alias="MINIO_ENDPOINT")
-    minio_public_endpoint: str = Field(default="localhost:9000", alias="MINIO_PUBLIC_ENDPOINT")
     minio_access_key: str = Field(default="minioadmin", alias="MINIO_ACCESS_KEY")
     minio_secret_key: str = Field(default="minioadmin123", alias="MINIO_SECRET_KEY")
     minio_secure: bool = Field(default=False, alias="MINIO_SECURE")
@@ -423,16 +422,6 @@ class Settings(BaseSettings):
 
         return {
             "endpoint": self.minio_endpoint,
-            "access_key": self.minio_access_key,
-            "secret_key": self.minio_secret_key,
-            "secure": self.minio_secure,
-        }
-
-    def minio_presign_kwargs(self) -> dict[str, Any]:
-        """Return MinIO kwargs for presigned URL generation (uses public endpoint)."""
-
-        return {
-            "endpoint": self.minio_public_endpoint,
             "access_key": self.minio_access_key,
             "secret_key": self.minio_secret_key,
             "secure": self.minio_secure,

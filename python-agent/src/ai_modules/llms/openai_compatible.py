@@ -133,57 +133,6 @@ class OpenAICompatibleClient:
             raise RuntimeError("missing message")
         return message
 
-    async def chat_completion_stream(
-        self,
-        *,
-        messages: list[dict[str, Any]],
-        model_name: str | None = None,
-        temperature: float = 0.2,
-        max_tokens: int | None = None,
-    ):
-        """Stream chat completion tokens from the OpenAI-compatible API."""
-        if not self.api_key:
-            raise RuntimeError("missing openai-compatible api key")
-
-        payload: dict[str, Any] = {
-            "model": model_name or self.model_name,
-            "messages": messages,
-            "temperature": temperature,
-            "stream": True,
-        }
-        if max_tokens is not None:
-            payload["max_tokens"] = max_tokens
-
-        headers = {
-            "Authorization": f"Bearer {self.api_key}",
-            "Content-Type": "application/json",
-        }
-        with TRACER.start_as_current_span("openai_compatible.chat_completion_stream"):
-            client = await self._get_client()
-            async with client.stream(
-                "POST",
-                f"{self.base_url}/chat/completions",
-                headers=headers,
-                json=payload,
-            ) as response:
-                response.raise_for_status()
-                async for line in response.aiter_lines():
-                    if not line or not line.startswith("data: "):
-                        continue
-                    data_str = line[6:]
-                    if data_str.strip() == "[DONE]":
-                        break
-                    try:
-                        data = json.loads(data_str)
-                        choices = data.get("choices", [])
-                        if choices:
-                            delta = choices[0].get("delta", {})
-                            content = delta.get("content", "")
-                            if content:
-                                yield content
-                    except json.JSONDecodeError:
-                        continue
-
     def extract_content(self, message: dict[str, Any]) -> str:
         content = message.get("content", "")
         if isinstance(content, str):

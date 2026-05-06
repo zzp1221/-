@@ -1,3 +1,5 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/compose-spec/compose-spec/master/schema/compose-spec.json
+
 name: zhixue-stack
 
 services:
@@ -197,6 +199,8 @@ services:
     image: zhixue-frontend:local
     container_name: zhixue-frontend
     restart: unless-stopped
+    depends_on:
+      - app
     ports:
       - "${FRONTEND_PORT:-80}:80"
     networks:

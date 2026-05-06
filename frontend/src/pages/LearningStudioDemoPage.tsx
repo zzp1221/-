@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useOutletContext } from 'react-router-dom';
+import { motion } from 'framer-motion';
+import { Sparkles } from 'lucide-react';
 import { conversationApi, type ConversationMessageItem } from '../api/conversation';
 import { smartEngineApi } from '../api/smartEngine';
 import { getErrorMessage } from '../api/request';
@@ -1025,9 +1027,20 @@ export default function LearningStudioDemoPage({ mode }: { mode: 'qna' | 'engine
   if (mode === 'qna') {
     if (!hasStartedConversation) {
       return (
-        <div className="mx-auto flex h-[calc(100vh-9.5rem)] w-full max-w-[1120px] flex-col items-center justify-center">
-          <h1 className="mb-9 text-[56px] font-semibold tracking-tight text-slate-800">你好，我是智学引擎</h1>
-          <div className="w-full max-w-[860px]">
+        <div className="mx-auto flex h-[calc(100vh-12rem)] w-full max-w-[1120px] flex-col items-center justify-center px-4">
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.5 }}
+            className="text-center"
+          >
+            <div className="mx-auto mb-6 flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-br from-indigo-500 to-violet-600 shadow-xl shadow-indigo-500/25">
+              <Sparkles className="h-7 w-7 text-white" />
+            </div>
+            <h1 className="mb-3 text-3xl font-semibold tracking-tight text-slate-800 dark:text-white md:text-[56px]">你好，我是智学引擎</h1>
+            <p className="mb-9 text-slate-500 dark:text-slate-400">AI驱动的个性化学习助手，随时为你解答问题</p>
+          </motion.div>
+          <div className="w-full max-w-[720px] md:max-w-[860px]">
             <InputPanel
               value={qnaInput}
               busy={qnaBusy}
@@ -1042,7 +1055,7 @@ export default function LearningStudioDemoPage({ mode }: { mode: 'qna' | 'engine
     }
 
     return (
-      <div className="mx-auto flex h-[calc(100vh-9.5rem)] w-full max-w-[1120px] flex-col">
+      <div className="mx-auto flex h-[calc(100vh-8rem)] w-full max-w-[1120px] flex-col md:h-[calc(100vh-9.5rem)]">
         <ChatPanel messages={qnaMessages} />
         <InputPanel
           value={qnaInput}
@@ -1057,7 +1070,7 @@ export default function LearningStudioDemoPage({ mode }: { mode: 'qna' | 'engine
   }
 
   return (
-    <div className="mx-auto max-w-[1180px] space-y-6 pb-10">
+    <div className="mx-auto max-w-[1180px] space-y-6 pb-10 px-1 md:px-0">
       <RealtimeProfile
         profile={profile}
         summary={profileSummary}
@@ -1067,28 +1080,32 @@ export default function LearningStudioDemoPage({ mode }: { mode: 'qna' | 'engine
         onToggleWeakPoints={() => setShowAllWeakPoints((prev) => !prev)}
       />
 
-      <div className="rounded-2xl border border-slate-200 bg-white p-5">
-        <div className="mb-4 text-center">
-          <h1 className="text-[34px] font-semibold text-slate-800">你好，我是智学引擎</h1>
-          <p className="mt-1 text-sm text-slate-500">你需要哪种服务？</p>
+      <div className="modern-card p-5 md:p-6">
+        <div className="mb-6 text-center">
+          <h1 className="text-2xl font-semibold tracking-tight text-slate-800 dark:text-white md:text-[34px]">你好，我是智学引擎</h1>
+          <p className="mt-1.5 text-sm text-slate-500 dark:text-slate-400">选择一项智能服务，开始你的学习之旅</p>
         </div>
 
-        <div className="mb-4 flex flex-wrap justify-center gap-2">
-          {serviceButtons.map((item) => (
-            <button
-              key={item.id}
-              type="button"
-              onClick={() => withAuth(() => handleSelectService(item.id))}
-              className={`inline-flex items-center gap-1 rounded-full border px-3 py-1.5 text-sm ${
-                selectedService === item.id
-                  ? 'border-blue-200 bg-blue-50 text-blue-700'
-                  : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'
-              }`}
-            >
-              <item.icon className="h-4 w-4" />
-              {item.label}
-            </button>
-          ))}
+        {/* Service Selection Cards */}
+        <div className="mb-6 grid grid-cols-2 gap-2 md:flex md:flex-wrap md:justify-center md:gap-3">
+          {serviceButtons.map((item) => {
+            const active = selectedService === item.id;
+            return (
+              <button
+                key={item.id}
+                type="button"
+                onClick={() => withAuth(() => handleSelectService(item.id))}
+                className={`group flex flex-col items-center gap-1.5 rounded-2xl border px-4 py-3 text-sm transition-all duration-200 md:flex-row md:gap-2 md:px-4 md:py-2 ${
+                  active
+                    ? 'border-indigo-300 bg-indigo-50 text-indigo-700 shadow-sm dark:border-indigo-700 dark:bg-indigo-500/10 dark:text-indigo-400'
+                    : 'border-slate-200 bg-white text-slate-600 hover:border-indigo-200 hover:bg-indigo-50/50 hover:text-indigo-600 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-400 dark:hover:border-indigo-700 dark:hover:bg-indigo-500/5'
+                }`}
+              >
+                <item.icon className={`h-5 w-5 md:h-4 md:w-4 ${active ? 'text-indigo-600 dark:text-indigo-400' : 'text-slate-400 group-hover:text-indigo-500 dark:text-slate-500'}`} />
+                <span className="text-xs md:text-sm">{item.label}</span>
+              </button>
+            );
+          })}
         </div>
 
         <ServiceDynamicForm

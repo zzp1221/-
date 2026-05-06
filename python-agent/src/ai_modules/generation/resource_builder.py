@@ -4,12 +4,9 @@ from __future__ import annotations
 
 import base64
 import json
-import logging
 from dataclasses import asdict
 from pathlib import Path
 from typing import Any
-
-LOGGER = logging.getLogger(__name__)
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -73,7 +70,7 @@ class ResourceGenerationService:
         self.content_chain = content_chain or ContentGenerationChain()
         self.placeholder_video_bytes = base64.b64decode(_PLACEHOLDER_MP4_BASE64)
 
-    async def build_asset(
+    def build_asset(
         self,
         *,
         asset_type: str,
@@ -91,9 +88,9 @@ class ResourceGenerationService:
         builder = builder_map.get(asset_type)
         if builder is None:
             raise ValueError(f"Unsupported assetType: {asset_type}")
-        return await builder(params=params, snapshot=snapshot)
+        return builder(params=params, snapshot=snapshot)
 
-    async def _build_document(self, *, params: dict, snapshot: SystemSnapshot) -> GeneratedAsset:
+    def _build_document(self, *, params: dict, snapshot: SystemSnapshot) -> GeneratedAsset:
         title = f"{params.get('query', '学习资源')}导学文档"
         retrieval = params.get("retrievalResult", {})
         sources = retrieval.get("documents", [])
@@ -102,7 +99,7 @@ class ResourceGenerationService:
             snapshot=snapshot,
             sources=sources,
         )
-        generated_sections = await self.content_chain.generate_document_sections(
+        generated_sections = self.content_chain.generate_document_sections(
             title=title,
             topic=str(params.get("rewrittenQuery", params.get("query", "主题"))),
             snapshot=asdict(snapshot),
@@ -307,11 +304,11 @@ class ResourceGenerationService:
         value = self._snapshot_value(snapshot, key)
         return list(value) if isinstance(value, list) else []
 
-    async def _build_reading(self, *, params: dict, snapshot: SystemSnapshot) -> GeneratedAsset:
+    def _build_reading(self, *, params: dict, snapshot: SystemSnapshot) -> GeneratedAsset:
         title = f"{params.get('query', '学习主题')}延伸阅读"
         retrieval = params.get("retrievalResult", {})
         sources = retrieval.get("documents", [])
-        generated_reading = await self.content_chain.generate_reading_asset(
+        generated_reading = self.content_chain.generate_reading_asset(
             title=title,
             topic=str(params.get("rewrittenQuery", params.get("query", "主题"))),
             snapshot=asdict(snapshot),
@@ -331,11 +328,11 @@ class ResourceGenerationService:
             previewText=generated_reading.title,
         )
 
-    async def _build_slides(self, *, params: dict, snapshot: SystemSnapshot) -> GeneratedAsset:
+    def _build_slides(self, *, params: dict, snapshot: SystemSnapshot) -> GeneratedAsset:
         title = f"{params.get('query', '学习主题')}PPT大纲"
         retrieval = params.get("retrievalResult", {})
         sources = retrieval.get("documents", [])
-        generated_slides = await self.content_chain.generate_slides_asset(
+        generated_slides = self.content_chain.generate_slides_asset(
             title=title,
             topic=str(params.get("rewrittenQuery", params.get("query", "主题"))),
             snapshot=asdict(snapshot),
@@ -370,21 +367,20 @@ class ResourceGenerationService:
             previewText=generated_slides.title,
         )
 
-    async def _build_mindmap(self, *, params: dict, snapshot: SystemSnapshot) -> GeneratedAsset:
+    def _build_mindmap(self, *, params: dict, snapshot: SystemSnapshot) -> GeneratedAsset:
         title = f"{params.get('query', '学习主题')}思维导图"
-        topic = str(params.get("rewrittenQuery", params.get("query", "主题")))
         retrieval = params.get("retrievalResult", {})
         sources = retrieval.get("documents", [])
-        generated_mindmap = await self.content_chain.generate_mindmap_asset(
+        generated_mindmap = self.content_chain.generate_mindmap_asset(
             title=title,
-            topic=topic,
+            topic=str(params.get("rewrittenQuery", params.get("query", "主题"))),
             snapshot=asdict(snapshot),
             sources=sources,
             fallback_builder=self,
         )
-        mermaid_md = f"# {generated_mindmap.title}\n\n{generated_mindmap.summary}\n\n```mermaid\n{generated_mindmap.mermaid}\n```\n"
-        file_name = self._scoped_file_name("mindmap", "md", params)
-        path = self._write_text(file_name, mermaid_md)
+        payload = generated_mindmap.model_dump(by_alias=True)
+        file_name = self._scoped_file_name("mindmap", "json", params)
+        path = self._write_text(file_name, json.dumps(payload, ensure_ascii=False, indent=2))
         return GeneratedAsset(
             assetType="MINDMAP",
             title=generated_mindmap.title,
@@ -392,15 +388,14 @@ class ResourceGenerationService:
             displayMode="MINDMAP_CARD",
             fileName=file_name,
             localPath=str(path),
-            mimeType="text/markdown",
             previewText=generated_mindmap.title,
         )
 
-    async def _build_code(self, *, params: dict, snapshot: SystemSnapshot) -> GeneratedAsset:
+    def _build_code(self, *, params: dict, snapshot: SystemSnapshot) -> GeneratedAsset:
         title = f"{params.get('query', '学习主题')}代码案例"
         retrieval = params.get("retrievalResult", {})
         sources = retrieval.get("documents", [])
-        generated_code = await self.content_chain.generate_code_asset(
+        generated_code = self.content_chain.generate_code_asset(
             title=title,
             topic=str(params.get("rewrittenQuery", params.get("query", "主题"))),
             snapshot=asdict(snapshot),
@@ -420,36 +415,55 @@ class ResourceGenerationService:
             previewText=generated_code.title,
         )
 
-    async def _build_video(self, *, params: dict, snapshot: SystemSnapshot) -> GeneratedAsset:
-        import subprocess
-        import shutil
-
+    def _build_video(self, *, params: dict, snapshot: SystemSnapshot) -> GeneratedAsset:
         topic = str(params.get("topic") or params.get("query") or "教学主题")
         task_id = str(params.get("taskId") or "video-task")
         style = str(params.get("style") or "hybrid")
-        duration_target = max(5, self._normalize_duration_seconds(params.get("duration") or params.get("durationTarget")))
-
+        duration_target = self._normalize_duration_seconds(params.get("duration") or params.get("durationTarget"))
+        script_payload = VideoScriptPayload.model_validate(
+            {
+                "title": f"{topic}教学视频",
+                "totalDuration": duration_target,
+                "segments": [
+                    {
+                        "id": 1,
+                        "type": "intro",
+                        "text": f"今天我们来学习 {topic}。",
+                        "duration": max(5, duration_target // 5),
+                        "visualHint": "show_title_card",
+                    },
+                    {
+                        "id": 2,
+                        "type": "explanation",
+                        "text": (
+                            f"结合 {snapshot.current_course} 和当前检索证据，"
+                            f"我们一步步讲清 {topic} 的核心概念与使用场景。"
+                        ),
+                        "duration": max(10, duration_target // 2),
+                        "visualHint": "show_concept_explanation",
+                    },
+                    {
+                        "id": 3,
+                        "type": "summary",
+                        "text": "最后回顾重点，并给出下一步练习建议。",
+                        "duration": max(5, duration_target // 4),
+                        "visualHint": "show_summary_card",
+                    },
+                ],
+                "fullText": (
+                    f"今天我们来学习 {topic}。"
+                    f" 我们会结合 {snapshot.current_course} 的上下文说明关键概念、"
+                    "典型误区和练习建议。"
+                ),
+                "videoStyle": style,
+            }
+        )
         task_dir = self.sandbox_root / f"video_{self._safe_task_id(task_id)}"
         task_dir.mkdir(parents=True, exist_ok=True)
 
-        script_payload = VideoScriptPayload.model_validate({
-            "title": f"{topic}教学视频",
-            "totalDuration": duration_target,
-            "segments": [
-                {"id": 1, "type": "intro", "text": f"今天我们来学习 {topic}。",
-                 "duration": max(3, duration_target // 4), "visualHint": "show_title_card"},
-                {"id": 2, "type": "explanation",
-                 "text": f"结合 {snapshot.current_course} 的上下文，我们一步步讲清 {topic} 的核心概念与使用场景。",
-                 "duration": max(4, duration_target // 2), "visualHint": "show_concept_explanation"},
-                {"id": 3, "type": "summary", "text": "最后回顾重点，并给出下一步练习建议。",
-                 "duration": max(3, duration_target // 4), "visualHint": "show_summary_card"},
-            ],
-            "fullText": f"今天我们来学习 {topic}。 我们会结合 {snapshot.current_course} 的上下文说明关键概念、典型误区和练习建议。",
-            "videoStyle": style,
-        })
-
         script_json_path = task_dir / "script.json"
         script_text_path = task_dir / "script.txt"
+        audio_path = task_dir / "speech.mp3"
         final_video_path = task_dir / "final.mp4"
         thumbnail_path = task_dir / "thumbnail.jpg"
 
@@ -458,144 +472,60 @@ class ResourceGenerationService:
             encoding="utf-8",
         )
         script_text_path.write_text(script_payload.full_text, encoding="utf-8")
-
-        # Generate real video with ffmpeg
-        ffmpeg = shutil.which("ffmpeg")
-        can_render = ffmpeg is not None
-        LOGGER.info("Video generation ffmpeg=%s task_dir=%s", ffmpeg, task_dir)
-
-        if can_render:
-            try:
-                self._render_video_with_ffmpeg(
-                    ffmpeg=ffmpeg,
-                    topic=topic,
-                    segments=script_payload.segments,
-                    total_duration=duration_target,
-                    output_path=final_video_path,
-                    task_dir=task_dir,
-                )
-            except Exception as exc:
-                LOGGER.warning("ffmpeg render failed, falling back: %s", exc)
-                can_render = False
-
-        if not can_render:
-            final_video_path.write_bytes(self.placeholder_video_bytes)
-
-        # Generate thumbnail
-        try:
-            self._render_video_thumbnail(ffmpeg=ffmpeg if can_render else None,
-                                         title=script_payload.title, topic=topic,
-                                         style=style, output_path=thumbnail_path,
-                                         task_dir=task_dir)
-        except Exception:
-            thumbnail_path.write_text(
-                self._build_video_thumbnail_svg(title=script_payload.title, topic=topic, style=style),
-                encoding="utf-8",
-            )
+        audio_path.write_bytes(b"placeholder-audio")
+        final_video_path.write_bytes(self.placeholder_video_bytes)
+        thumbnail_path.write_text(
+            self._build_video_thumbnail_svg(
+                title=script_payload.title,
+                topic=topic,
+                style=style,
+            ),
+            encoding="utf-8",
+        )
 
         artifact = VideoSandboxArtifact(
             taskDir=str(task_dir),
             scriptJsonPath=str(script_json_path),
             scriptTextPath=str(script_text_path),
-            audioPath="",
+            audioPath=str(audio_path),
             finalVideoPath=str(final_video_path),
             thumbnailPath=str(thumbnail_path),
             durationSeconds=script_payload.total_duration,
             videoStyle=style,
             previewText=script_payload.full_text[:100],
-            summaryText=f"{topic} 教学视频已生成。" if can_render else f"{topic} 教学视频脚本已生成（视频渲染组件未安装）。",
+            summaryText=f"{topic} 教学视频脚本与占位视频已生成。",
         )
         params["videoSandboxArtifact"] = artifact.model_dump(by_alias=True)
         params["videoGenerationTask"] = VideoGenerationTaskPayload(
-            status="completed", title=script_payload.title, topic=topic,
-            script=script_payload, durationSeconds=artifact.duration_seconds,
+            status="completed",
+            title=script_payload.title,
+            topic=topic,
+            script=script_payload,
+            durationSeconds=artifact.duration_seconds,
             videoStyle=style,
             ttsProvider=get_settings().tts_provider,
             avatarProvider="sadtalker",
-            generationParams={"durationTarget": script_payload.total_duration, "style": style},
+            generationParams={
+                "durationTarget": script_payload.total_duration,
+                "style": style,
+            },
         ).model_dump(by_alias=True)
         return GeneratedAsset(
-            assetType="VIDEO", title=script_payload.title,
-            summary=artifact.summary_text, displayMode="VIDEO_PLAYER",
-            fileName="final.mp4", localPath=str(final_video_path),
-            previewText=artifact.preview_text, mimeType="video/mp4",
-            thumbnailPath=str(thumbnail_path), thumbnailFileName="thumbnail.jpg",
-            thumbnailMimeType="image/jpeg", durationSeconds=artifact.duration_seconds,
-            videoStyle=style, knowledgePoint=topic,
+            assetType="VIDEO",
+            title=script_payload.title,
+            summary=artifact.summary_text,
+            displayMode="VIDEO_PLAYER",
+            fileName="final.mp4",
+            localPath=str(final_video_path),
+            previewText=artifact.preview_text,
+            mimeType="video/mp4",
+            thumbnailPath=str(thumbnail_path),
+            thumbnailFileName="thumbnail.svg",
+            thumbnailMimeType="image/svg+xml",
+            durationSeconds=artifact.duration_seconds,
+            videoStyle=style,
+            knowledgePoint=topic,
         )
-
-    def _render_video_with_ffmpeg(
-        self, *, ffmpeg: str, topic: str,
-        segments, total_duration: int, output_path, task_dir,
-    ) -> None:
-        import subprocess
-
-        # Build concat of segments, each as a text slide
-        segment_files: list[Path] = []
-        seg_start = 0
-        for i, seg in enumerate(segments):
-            seg_duration = max(1, int(seg.duration))
-            seg_text = seg.text.replace("'", "'\\''")
-            font_size = 32
-            seg_file = task_dir / f"seg{i}.mp4"
-
-            cmd = [
-                ffmpeg, "-y", "-f", "lavfi",
-                "-i", f"color=c=0x1a1a2e:s=1280x720:d={seg_duration}:r=24",
-                "-f", "lavfi",
-                "-i", f"anullsrc=r=44100:cl=stereo",
-                "-vf", (
-                    f"drawtext=text='{topic}':fontsize={font_size + 12}:fontcolor=white:"
-                    f"x=(w-text_w)/2:y=(h-text_h)/2-60:enable='between(0,{seg_duration})',"
-                    f"drawtext=text='{seg_text}':fontsize={font_size}:fontcolor=#cccccc:"
-                    f"x=(w-text_w)/2:y=(h-text_h)/2+20:enable='between(0,{seg_duration})'"
-                ),
-                "-c:v", "libx264", "-preset", "ultrafast", "-crf", "28",
-                "-c:a", "aac", "-b:a", "64k",
-                "-shortest", "-t", str(seg_duration),
-                str(seg_file),
-            ]
-            subprocess.run(cmd, check=True, capture_output=True, timeout=120)
-            segment_files.append(seg_file)
-            seg_start += seg_duration
-
-        # Concat segments
-        if len(segment_files) == 1:
-            import shutil
-            shutil.copy(str(segment_files[0]), str(output_path))
-        else:
-            concat_list = task_dir / "concat.txt"
-            concat_list.write_text(
-                "\n".join(f"file '{str(f)}'" for f in segment_files)
-            )
-            subprocess.run([
-                ffmpeg, "-y", "-f", "concat", "-safe", "0",
-                "-i", str(concat_list), "-c", "copy",
-                str(output_path),
-            ], check=True, capture_output=True, timeout=60)
-
-    def _render_video_thumbnail(
-        self, *, ffmpeg: str | None, title: str, topic: str,
-        style: str, output_path, task_dir,
-    ) -> None:
-        import subprocess
-        if ffmpeg:
-            subprocess.run([
-                ffmpeg, "-y", "-f", "lavfi",
-                "-i", f"color=c=0x1a1a2e:s=640x360:r=1",
-                "-vf", (
-                    f"drawtext=text='{title}':fontsize=28:fontcolor=white:"
-                    f"x=(w-text_w)/2:y=(h-text_h)/2-15,"
-                    f"drawtext=text='{topic}':fontsize=18:fontcolor=#888888:"
-                    f"x=(w-text_w)/2:y=(h-text_h)/2+20"
-                ),
-                "-frames:v", "1", str(output_path),
-            ], check=True, capture_output=True, timeout=30)
-        else:
-            output_path.write_text(
-                self._build_video_thumbnail_svg(title=title, topic=topic, style=style),
-                encoding="utf-8",
-            )
 
     def _safe_task_id(self, task_id: str) -> str:
         return "".join(ch if ch.isalnum() or ch in ("-", "_") else "_" for ch in task_id)
@@ -708,21 +638,15 @@ class ResourceGenerationService:
         sources: list[dict[str, Any]],
     ) -> GeneratedMindMap:
         del snapshot, sources
-        mermaid = f"""mindmap
-  root(({topic}))
-    定义与概念
-      核心概念
-      适用场景
-    原理与机制
-      工作原理
-      关键算法
-    应用与实践
-      典型案例
-      常见误区"""
         return GeneratedMindMap(
             title=title,
-            summary=f"{topic} 思维导图",
-            mermaid=mermaid,
+            summary="思维导图 JSON 结构",
+            root=topic,
+            children=[
+                {"name": "定义", "children": [{"name": "核心概念"}, {"name": "适用场景"}]},
+                {"name": "原理", "children": [{"name": "判断条件"}, {"name": "边界"}]},
+                {"name": "练习", "children": [{"name": "例题"}, {"name": "误区"}]},
+            ],
         )
 
     def build_fallback_code_asset(

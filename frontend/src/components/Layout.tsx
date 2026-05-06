@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useState } from 'react';
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
-import { motion } from 'framer-motion';
-import { Clock3, Compass, History, MessageCirclePlus, Search, Sparkles } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
+import { Clock3, Compass, History, Menu, MessageCirclePlus, Search, Sparkles } from 'lucide-react';
 import AuthModal from './AuthModal';
+import ThemeToggle from './ThemeToggle';
 import { authApi, type AuthUser } from '../api/auth';
 import { conversationApi, type ConversationHistoryItem } from '../api/conversation';
 import { clearAuthSession, getAuthToken, isUnauthorizedError } from '../api/request';
@@ -61,6 +62,7 @@ export default function Layout() {
   const [lastSyncAt, setLastSyncAt] = useState('');
   const [activeConversationId, setActiveConversationId] = useState('');
   const [historySearch, setHistorySearch] = useState('');
+  const [sidebarOpen, setSidebarOpen] = useState(false);
 
   const isAuthenticated = Boolean(currentUser);
 
@@ -224,10 +226,12 @@ export default function Layout() {
     setActiveConversationId('');
     window.dispatchEvent(new CustomEvent('app:active-conversation-changed', { detail: { conversationId: '' } }));
     window.dispatchEvent(new Event('app:new-chat'));
+    setSidebarOpen(false);
   };
 
   const handleOpenConversation = (item: ConversationHistoryItem) => {
     if (item.conversationId === activeConversationId && location.pathname === '/') {
+      setSidebarOpen(false);
       return;
     }
     if (typeof window !== 'undefined') {
@@ -259,109 +263,127 @@ export default function Layout() {
         },
       }),
     );
+    setSidebarOpen(false);
   };
 
-  return (
-    <div className="flex min-h-screen bg-[#f7f8fb] text-slate-900">
-      <aside className="fixed left-0 top-0 z-40 flex h-screen w-[280px] flex-col border-r border-slate-200 bg-white">
-        <div className="border-b border-slate-200 px-4 py-4">
-          <NavLink to="/" className="flex items-center gap-2.5">
-            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-blue-600 text-white">
-              <Sparkles className="h-4 w-4" />
-            </div>
-            <div>
-              <p className="text-base font-semibold text-slate-900">智学引擎</p>
-              <p className="text-xs text-slate-500">比赛系统 DEMO</p>
-            </div>
-          </NavLink>
-        </div>
+  const closeSidebar = () => setSidebarOpen(false);
 
-        <div className="px-4 py-4">
-          <NavLink
-            to="/"
-            onClick={handleCreateNewChat}
-            className={({ isActive }) =>
-              `mb-2 flex w-full items-center justify-center gap-2 rounded-xl px-3 py-2.5 text-sm font-medium transition ${
-                isActive
-                  ? 'bg-blue-50 text-blue-700'
-                  : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
-              }`
-            }
-          >
-            <MessageCirclePlus className="h-4 w-4" />
-            新对话
-          </NavLink>
-          <NavLink
-            to="/engine"
-            className={({ isActive }) =>
-              `flex w-full items-center justify-center gap-2 rounded-xl px-3 py-2.5 text-sm font-medium transition ${
-                isActive
-                  ? 'bg-blue-50 text-blue-700'
-                  : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
-              }`
-            }
-          >
-            <Compass className="h-4 w-4" />
-            智学引擎
-          </NavLink>
-        </div>
-
-        <div className="px-4 pb-2">
-          {!isAuthenticated ? (
-            <button
-              type="button"
-              onClick={() => openAuthModal('login', '')}
-              className="w-full rounded-xl bg-blue-600 px-3 py-2.5 text-sm font-medium text-white hover:bg-blue-700"
-            >
-              立即登录
-            </button>
-          ) : (
-            <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
-              <div className="text-xs text-slate-500">当前用户</div>
-              <div className="mt-1 text-sm font-medium text-slate-800">{userDisplayName}</div>
-              <button type="button" onClick={handleLogout} className="mt-2 text-xs text-blue-600 hover:text-blue-700">
-                退出登录
-              </button>
-            </div>
-          )}
-        </div>
-
-        <div className="px-4">
-          <label className="flex rounded-xl border border-slate-200 bg-white px-3 py-2">
-            <div className="mr-2 flex items-center text-slate-400">
-              <Search className="h-3.5 w-3.5" />
-            </div>
-            <input
-              value={historySearch}
-              onChange={(event) => setHistorySearch(event.target.value)}
-              placeholder="搜索历史对话"
-              className="w-full bg-transparent text-xs text-slate-600 outline-none placeholder:text-slate-400"
-            />
-          </label>
-        </div>
-
-        <div className="mt-4 flex-1 overflow-y-auto px-3 pb-4">
-          <div className="mb-2 flex items-center gap-2 px-2 text-xs font-medium text-slate-500">
-            <History className="h-3.5 w-3.5" />
-            最近对话
+  const sidebarContent = (
+    <div className="flex h-full flex-col">
+      {/* Logo */}
+      <div className="border-b border-slate-200/60 px-5 py-4 dark:border-slate-700/60">
+        <NavLink to="/" onClick={closeSidebar} className="flex items-center gap-3">
+          <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-indigo-500 to-violet-600 text-white shadow-lg shadow-indigo-500/25">
+            <Sparkles className="h-4 w-4" />
           </div>
-          <div className="space-y-1">
-            {filteredConversationHistory.length > 0 ? filteredConversationHistory.map((item) => (
-              <button
+          <div>
+            <p className="text-base font-semibold tracking-tight text-slate-900 dark:text-white">智学引擎</p>
+            <p className="text-[11px] text-slate-400 dark:text-slate-500">AI 学习平台</p>
+          </div>
+        </NavLink>
+      </div>
+
+      {/* Navigation */}
+      <div className="px-4 py-4 space-y-1.5">
+        <NavLink
+          to="/"
+          onClick={() => {
+            handleCreateNewChat();
+          }}
+          className={({ isActive }) =>
+            `flex w-full items-center gap-2.5 rounded-xl px-3 py-2.5 text-sm font-medium transition-all duration-200 ${
+              isActive
+                ? 'bg-indigo-50 text-indigo-700 dark:bg-indigo-500/10 dark:text-indigo-400'
+                : 'text-slate-600 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800'
+            }`
+          }
+        >
+          <MessageCirclePlus className="h-4 w-4" />
+          新对话
+        </NavLink>
+        <NavLink
+          to="/engine"
+          onClick={closeSidebar}
+          className={({ isActive }) =>
+            `flex w-full items-center gap-2.5 rounded-xl px-3 py-2.5 text-sm font-medium transition-all duration-200 ${
+              isActive
+                ? 'bg-indigo-50 text-indigo-700 dark:bg-indigo-500/10 dark:text-indigo-400'
+                : 'text-slate-600 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800'
+            }`
+          }
+        >
+          <Compass className="h-4 w-4" />
+          智学引擎
+        </NavLink>
+      </div>
+
+      {/* Auth / User */}
+      <div className="px-4 pb-3">
+        {!isAuthenticated ? (
+          <button
+            type="button"
+            onClick={() => {
+              closeSidebar();
+              openAuthModal('login', '');
+            }}
+            className="w-full rounded-xl bg-gradient-to-r from-indigo-600 to-violet-600 px-3 py-2.5 text-sm font-medium text-white shadow-lg shadow-indigo-500/25 transition-all hover:shadow-xl hover:shadow-indigo-500/30 active:scale-[0.98]"
+          >
+            立即登录
+          </button>
+        ) : (
+          <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 dark:border-slate-700 dark:bg-slate-800/50">
+            <div className="text-[11px] text-slate-400 dark:text-slate-500">当前用户</div>
+            <div className="mt-0.5 text-sm font-medium text-slate-800 dark:text-slate-200">{userDisplayName}</div>
+            <button type="button" onClick={handleLogout} className="mt-1.5 text-xs text-indigo-600 hover:text-indigo-700 dark:text-indigo-400 dark:hover:text-indigo-300">
+              退出登录
+            </button>
+          </div>
+        )}
+      </div>
+
+      {/* Search */}
+      <div className="px-4 pb-3">
+        <label className="flex items-center rounded-xl border border-slate-200 bg-white px-3 py-2 transition-all focus-within:border-indigo-300 focus-within:ring-2 focus-within:ring-indigo-500/20 dark:border-slate-700 dark:bg-slate-900 dark:focus-within:border-indigo-600">
+          <Search className="mr-2 h-3.5 w-3.5 shrink-0 text-slate-400" />
+          <input
+            value={historySearch}
+            onChange={(event) => setHistorySearch(event.target.value)}
+            placeholder="搜索历史对话"
+            className="w-full bg-transparent text-xs text-slate-700 outline-none placeholder:text-slate-400 dark:text-slate-300 dark:placeholder:text-slate-500"
+          />
+        </label>
+      </div>
+
+      {/* Conversation List */}
+      <div className="mt-2 flex-1 overflow-y-auto scrollbar-thin px-3 pb-4">
+        <div className="mb-2 flex items-center gap-2 px-2 text-[11px] font-medium uppercase tracking-wider text-slate-400 dark:text-slate-500">
+          <History className="h-3.5 w-3.5" />
+          最近对话
+        </div>
+        <div className="space-y-0.5">
+          <AnimatePresence mode="popLayout">
+            {filteredConversationHistory.length > 0 ? filteredConversationHistory.map((item, index) => (
+              <motion.button
                 key={item.conversationId}
+                initial={{ opacity: 0, x: -8 }}
+                animate={{ opacity: 1, x: 0 }}
+                transition={{ delay: Math.min(index * 0.02, 0.3) }}
                 type="button"
                 onClick={() => handleOpenConversation(item)}
-                className={`w-full truncate rounded-lg border px-3 py-2 text-left text-sm transition ${
+                className={`group w-full truncate rounded-lg px-3 py-2 text-left text-sm transition-all duration-200 ${
                   item.conversationId === activeConversationId
-                    ? 'border-blue-300 bg-blue-50 text-blue-700'
-                    : 'border-transparent text-slate-600 hover:bg-slate-100 hover:text-slate-900'
+                    ? 'bg-indigo-50 text-indigo-700 ring-1 ring-indigo-200/50 dark:bg-indigo-500/10 dark:text-indigo-400 dark:ring-indigo-500/20'
+                    : 'text-slate-600 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800'
                 }`}
                 title={item.lastMessagePreview || item.title}
               >
-                {item.title}
-              </button>
+                <div className="truncate text-[13px] font-medium">{item.title}</div>
+                {item.lastMessagePreview ? (
+                  <div className="mt-0.5 truncate text-[11px] opacity-60">{item.lastMessagePreview}</div>
+                ) : null}
+              </motion.button>
             )) : (
-              <div className="rounded-lg px-3 py-2 text-sm text-slate-400">
+              <div className="rounded-lg px-3 py-2 text-[13px] text-slate-400 dark:text-slate-500">
                 {isAuthenticated
                   ? historySearch.trim()
                     ? '没有匹配的历史对话'
@@ -369,48 +391,104 @@ export default function Layout() {
                   : '登录后显示最近对话'}
               </div>
             )}
-          </div>
+          </AnimatePresence>
         </div>
+      </div>
 
-        <div className="border-t border-slate-200 px-4 py-3">
-          <div className="flex items-center justify-between rounded-xl bg-slate-50 px-3 py-2">
-            <div className="flex items-center gap-2 text-xs text-slate-500">
-              <Clock3 className="h-3.5 w-3.5" />
-              最后同步 {lastSyncAt ? new Date(lastSyncAt).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' }) : '--'}
-            </div>
-            <button type="button" onClick={() => void loadRecentConversations()} className="text-xs text-blue-600 hover:text-blue-700">
-              记录
-            </button>
+      {/* Footer */}
+      <div className="border-t border-slate-200/60 px-4 py-3 dark:border-slate-700/60">
+        <div className="flex items-center justify-between rounded-xl bg-slate-50 px-3 py-2 dark:bg-slate-800/50">
+          <div className="flex items-center gap-2 text-[11px] text-slate-400 dark:text-slate-500">
+            <Clock3 className="h-3.5 w-3.5" />
+            同步 {lastSyncAt ? new Date(lastSyncAt).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' }) : '--'}
           </div>
+          <button type="button" onClick={() => void loadRecentConversations()} className="text-[11px] text-indigo-600 hover:text-indigo-700 dark:text-indigo-400 dark:hover:text-indigo-300">
+            刷新
+          </button>
         </div>
+      </div>
+    </div>
+  );
+
+  return (
+    <div className="flex min-h-screen bg-slate-50 text-slate-900 dark:bg-slate-950 dark:text-slate-100">
+      {/* Desktop Sidebar */}
+      <aside className="fixed left-0 top-0 z-40 hidden h-screen w-[280px] flex-col border-r border-slate-200/60 bg-white/90 backdrop-blur-xl dark:border-slate-700/60 dark:bg-slate-900/90 md:flex">
+        {sidebarContent}
       </aside>
 
-      <main className="ml-[280px] min-h-screen flex-1">
-        <header className="sticky top-0 z-30 flex items-center justify-between border-b border-slate-200 bg-white/90 px-8 py-3 backdrop-blur">
-          <div className="flex items-center gap-2 text-sm text-slate-700">
-            <Compass className="h-4 w-4 text-blue-600" />
-            {inEngine ? '智学引擎 / 服务选择面板' : '新对话 / 智能辅导链路'}
+      {/* Mobile Sidebar Overlay */}
+      <AnimatePresence>
+        {sidebarOpen ? (
+          <>
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.2 }}
+              className="fixed inset-0 z-50 bg-black/40 backdrop-blur-sm md:hidden"
+              onClick={closeSidebar}
+            />
+            <motion.aside
+              initial={{ x: -300 }}
+              animate={{ x: 0 }}
+              exit={{ x: -300 }}
+              transition={{ duration: 0.25, ease: 'easeOut' }}
+              className="fixed left-0 top-0 z-50 flex h-screen w-[280px] flex-col border-r border-slate-200/60 bg-white/95 backdrop-blur-xl dark:border-slate-700/60 dark:bg-slate-900/95 md:hidden"
+            >
+              {sidebarContent}
+            </motion.aside>
+          </>
+        ) : null}
+      </AnimatePresence>
+
+      {/* Main Content */}
+      <main className="flex-1 md:ml-[280px]">
+        {/* Top Header */}
+        <header className="sticky top-0 z-30 flex items-center justify-between border-b border-slate-200/60 bg-white/80 px-4 py-3 backdrop-blur-xl dark:border-slate-700/60 dark:bg-slate-900/80 md:px-6">
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              onClick={() => setSidebarOpen(true)}
+              className="flex h-9 w-9 items-center justify-center rounded-xl text-slate-500 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800 md:hidden"
+            >
+              <Menu className="h-5 w-5" />
+            </button>
+            <div className="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-300">
+              <Compass className="h-4 w-4 text-indigo-500" />
+              <span className="hidden sm:inline">{inEngine ? '智学引擎 / 服务选择面板' : '新对话 / 智能辅导链路'}</span>
+              <span className="sm:hidden">{inEngine ? '服务面板' : '智能对话'}</span>
+            </div>
           </div>
-          <div className="flex items-center gap-5 text-xs text-slate-500">
-            <span>API 服务已连接</span>
-            <span>当前已是最新版本</span>
-            <span>反馈通道筹备中</span>
+          <div className="flex items-center gap-3">
+            <span className="hidden text-[11px] text-slate-400 dark:text-slate-500 lg:inline">API 已连接</span>
+            <ThemeToggle />
+            {!isAuthenticated ? (
+              <button
+                type="button"
+                onClick={() => openAuthModal('login', '')}
+                className="rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-indigo-700 md:hidden"
+              >
+                登录
+              </button>
+            ) : null}
           </div>
         </header>
 
-        <div className="px-8 py-6">
+        {/* Page Content */}
+        <div className="px-4 py-4 md:px-6 md:py-6">
           <motion.div
             key={inEngine ? 'engine-shell' : 'qna-shell'}
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -20 }}
             transition={{ duration: 0.3 }}
-            className="relative"
           >
             <Outlet context={{ isAuthenticated, currentUser, openAuthModal } satisfies LayoutOutletContext} />
           </motion.div>
         </div>
       </main>
+
       <AuthModal
         open={modalOpen}
         defaultTab={defaultTab}

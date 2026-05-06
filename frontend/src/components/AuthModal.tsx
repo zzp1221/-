@@ -1,4 +1,6 @@
 import { FormEvent, useEffect, useState } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
+import { LoaderCircle, Sparkles, X } from 'lucide-react';
 import { authApi, type AuthResponse, type AuthUser } from '../api/auth';
 import { getErrorMessage, persistAuthSession } from '../api/request';
 
@@ -82,105 +84,171 @@ export default function AuthModal(props: AuthModalProps) {
     }
   };
 
-  if (!props.open) {
-    return null;
-  }
+  const inputClass = "w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-sm outline-none transition-all duration-200 focus:border-indigo-400 focus:ring-2 focus:ring-indigo-500/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:focus:border-indigo-500";
 
   return (
-    <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/45 px-4">
-      <div className="w-full max-w-[420px] rounded-2xl border border-slate-200 bg-white p-5 shadow-xl">
-        <div className="mb-3 flex items-center justify-between">
-          <h3 className="text-base font-semibold text-slate-900">请先登录</h3>
-          <button type="button" onClick={props.onClose} className="text-sm text-slate-500 hover:text-slate-700">
-            关闭
-          </button>
-        </div>
-
-        {props.hint ? <div className="mb-3 rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-700">{props.hint}</div> : null}
-
-        <div className="mb-4 grid grid-cols-2 rounded-lg border border-slate-200 bg-slate-50 p-1">
-          <button
-            type="button"
-            onClick={() => setTab('login')}
-            className={`rounded-md px-3 py-2 text-sm ${tab === 'login' ? 'bg-white text-blue-700 shadow-sm' : 'text-slate-600'}`}
+    <AnimatePresence>
+      {props.open ? (
+        <div className="fixed inset-0 z-[120] flex items-center justify-center px-4">
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.2 }}
+            className="absolute inset-0 bg-black/50 backdrop-blur-sm"
+            onClick={props.onClose}
+          />
+          <motion.div
+            initial={{ opacity: 0, scale: 0.95, y: 10 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.95, y: 10 }}
+            transition={{ duration: 0.25, ease: 'easeOut' }}
+            className="relative w-full max-w-[420px] overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl dark:border-slate-700 dark:bg-slate-900"
           >
-            登录
-          </button>
-          <button
-            type="button"
-            onClick={() => setTab('register')}
-            className={`rounded-md px-3 py-2 text-sm ${tab === 'register' ? 'bg-white text-blue-700 shadow-sm' : 'text-slate-600'}`}
-          >
-            注册
-          </button>
-        </div>
+            {/* Header */}
+            <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4 dark:border-slate-800">
+              <div className="flex items-center gap-2.5">
+                <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-gradient-to-br from-indigo-500 to-violet-600 shadow-lg shadow-indigo-500/25">
+                  <Sparkles className="h-4 w-4 text-white" />
+                </div>
+                <h3 className="text-base font-semibold text-slate-800 dark:text-white">智学引擎</h3>
+              </div>
+              <button
+                type="button"
+                onClick={props.onClose}
+                className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-600 dark:hover:bg-slate-800 dark:hover:text-slate-300"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
 
-        <form onSubmit={onSubmit} className="space-y-3">
-          <label className="block">
-            <div className="mb-1 text-xs text-slate-500">登录账号</div>
-            <input
-              value={loginId}
-              onChange={(e) => setLoginId(e.target.value)}
-              className="w-full rounded-md border border-slate-200 px-3 py-2 text-sm outline-none focus:border-blue-400"
-              placeholder="请输入登录账号"
-            />
-          </label>
-          <label className="block">
-            <div className="mb-1 text-xs text-slate-500">密码</div>
-            <input
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              className="w-full rounded-md border border-slate-200 px-3 py-2 text-sm outline-none focus:border-blue-400"
-              placeholder="请输入密码"
-            />
-          </label>
+            {/* Hint */}
+            {props.hint ? (
+              <div className="mx-5 mt-4 rounded-xl bg-amber-50 px-4 py-3 text-sm text-amber-700 dark:bg-amber-500/10 dark:text-amber-400">
+                {props.hint}
+              </div>
+            ) : null}
 
-          {tab === 'register' ? (
-            <>
+            {/* Tab Switcher */}
+            <div className="mx-5 mt-4 grid grid-cols-2 rounded-xl border border-slate-200 bg-slate-50 p-1 dark:border-slate-700 dark:bg-slate-800">
+              <button
+                type="button"
+                onClick={() => setTab('login')}
+                className={`relative rounded-lg px-3 py-2 text-sm font-medium transition-all duration-200 ${
+                  tab === 'login'
+                    ? 'bg-white text-indigo-700 shadow-sm dark:bg-slate-900 dark:text-indigo-400'
+                    : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-300'
+                }`}
+              >
+                登录
+              </button>
+              <button
+                type="button"
+                onClick={() => setTab('register')}
+                className={`relative rounded-lg px-3 py-2 text-sm font-medium transition-all duration-200 ${
+                  tab === 'register'
+                    ? 'bg-white text-indigo-700 shadow-sm dark:bg-slate-900 dark:text-indigo-400'
+                    : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-300'
+                }`}
+              >
+                注册
+              </button>
+            </div>
+
+            {/* Form */}
+            <form onSubmit={onSubmit} className="space-y-3.5 px-5 py-4">
               <label className="block">
-                <div className="mb-1 text-xs text-slate-500">确认密码</div>
+                <div className="mb-1.5 text-xs font-medium text-slate-500 dark:text-slate-400">登录账号</div>
+                <input
+                  value={loginId}
+                  onChange={(e) => setLoginId(e.target.value)}
+                  className={inputClass}
+                  placeholder="请输入登录账号"
+                  autoComplete="username"
+                />
+              </label>
+              <label className="block">
+                <div className="mb-1.5 text-xs font-medium text-slate-500 dark:text-slate-400">密码</div>
                 <input
                   type="password"
-                  value={confirmPassword}
-                  onChange={(e) => setConfirmPassword(e.target.value)}
-                  className="w-full rounded-md border border-slate-200 px-3 py-2 text-sm outline-none focus:border-blue-400"
-                  placeholder="请再次输入密码"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  className={inputClass}
+                  placeholder="请输入密码"
+                  autoComplete={tab === 'login' ? 'current-password' : 'new-password'}
                 />
               </label>
-              <label className="block">
-                <div className="mb-1 text-xs text-slate-500">姓名</div>
-                <input
-                  value={fullName}
-                  onChange={(e) => setFullName(e.target.value)}
-                  className="w-full rounded-md border border-slate-200 px-3 py-2 text-sm outline-none focus:border-blue-400"
-                  placeholder="请输入姓名"
-                />
-              </label>
-              <label className="block">
-                <div className="mb-1 text-xs text-slate-500">专业方向（可选）</div>
-                <input
-                  value={majorCode}
-                  onChange={(e) => setMajorCode(e.target.value)}
-                  className="w-full rounded-md border border-slate-200 px-3 py-2 text-sm outline-none focus:border-blue-400"
-                  placeholder="例如：CS"
-                />
-              </label>
-            </>
-          ) : null}
 
-          {error ? <div className="rounded-md bg-rose-50 px-3 py-2 text-sm text-rose-700">{error}</div> : null}
+              {tab === 'register' ? (
+                <motion.div
+                  initial={{ opacity: 0, height: 0 }}
+                  animate={{ opacity: 1, height: 'auto' }}
+                  transition={{ duration: 0.25 }}
+                  className="space-y-3.5 overflow-hidden"
+                >
+                  <label className="block">
+                    <div className="mb-1.5 text-xs font-medium text-slate-500 dark:text-slate-400">确认密码</div>
+                    <input
+                      type="password"
+                      value={confirmPassword}
+                      onChange={(e) => setConfirmPassword(e.target.value)}
+                      className={inputClass}
+                      placeholder="请再次输入密码"
+                      autoComplete="new-password"
+                    />
+                  </label>
+                  <label className="block">
+                    <div className="mb-1.5 text-xs font-medium text-slate-500 dark:text-slate-400">姓名</div>
+                    <input
+                      value={fullName}
+                      onChange={(e) => setFullName(e.target.value)}
+                      className={inputClass}
+                      placeholder="请输入姓名"
+                    />
+                  </label>
+                  <label className="block">
+                    <div className="mb-1.5 text-xs font-medium text-slate-500 dark:text-slate-400">专业方向（可选）</div>
+                    <input
+                      value={majorCode}
+                      onChange={(e) => setMajorCode(e.target.value)}
+                      className={inputClass}
+                      placeholder="例如：计算机科学"
+                    />
+                  </label>
+                </motion.div>
+              ) : null}
 
-          <button
-            type="submit"
-            disabled={submitting}
-            className="w-full rounded-md bg-blue-600 px-3 py-2 text-sm text-white hover:bg-blue-700 disabled:opacity-60"
-          >
-            {submitting ? '提交中...' : tab === 'login' ? '登录' : '注册'}
-          </button>
-        </form>
-      </div>
-    </div>
+              {error ? (
+                <motion.div
+                  initial={{ opacity: 0, y: -4 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  className="rounded-xl bg-rose-50 px-4 py-3 text-sm text-rose-600 dark:bg-rose-500/10 dark:text-rose-400"
+                >
+                  {error}
+                </motion.div>
+              ) : null}
+
+              <button
+                type="submit"
+                disabled={submitting}
+                className="flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-indigo-600 to-violet-600 px-4 py-2.5 text-sm font-medium text-white shadow-lg shadow-indigo-500/25 transition-all hover:shadow-xl hover:shadow-indigo-500/30 disabled:cursor-not-allowed disabled:opacity-50 disabled:shadow-none active:scale-[0.98]"
+              >
+                {submitting ? (
+                  <>
+                    <LoaderCircle className="h-4 w-4 animate-spin" />
+                    提交中...
+                  </>
+                ) : tab === 'login' ? (
+                  '登录'
+                ) : (
+                  '注册'
+                )}
+              </button>
+            </form>
+          </motion.div>
+        </div>
+      ) : null}
+    </AnimatePresence>
   );
 }
 

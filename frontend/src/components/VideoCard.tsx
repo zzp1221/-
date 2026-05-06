@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
-import { PlayCircle } from 'lucide-react';
+import { motion } from 'framer-motion';
+import { LoaderCircle, Play, PlayCircle } from 'lucide-react';
 
 export type VideoCardStyle = 'talking_head' | 'animation' | 'hybrid';
 
@@ -15,15 +16,16 @@ export interface VideoCardProps {
   onComplete?: () => void;
 }
 
-const styleLabelMap: Record<VideoCardStyle, string> = {
-  talking_head: '数字人讲解',
-  animation: '动画演示',
-  hybrid: '混合讲解',
+const styleLabelMap: Record<VideoCardStyle, { label: string; color: string }> = {
+  talking_head: { label: '数字人讲解', color: 'bg-violet-50 text-violet-700 dark:bg-violet-500/10 dark:text-violet-400' },
+  animation: { label: '动画演示', color: 'bg-sky-50 text-sky-700 dark:bg-sky-500/10 dark:text-sky-400' },
+  hybrid: { label: '混合讲解', color: 'bg-indigo-50 text-indigo-700 dark:bg-indigo-500/10 dark:text-indigo-400' },
 };
 
 export default function VideoCard(props: VideoCardProps) {
   const [started, setStarted] = useState(false);
   const [completed, setCompleted] = useState(false);
+  const [loading, setLoading] = useState(true);
 
   const durationLabel = useMemo(() => {
     if (typeof props.duration !== 'number' || Number.isNaN(props.duration) || props.duration <= 0) {
@@ -37,27 +39,76 @@ export default function VideoCard(props: VideoCardProps) {
     return `${minutes} 分 ${seconds.toString().padStart(2, '0')} 秒`;
   }, [props.duration]);
 
+  const styleInfo = props.style ? styleLabelMap[props.style] : null;
+
   return (
-    <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+    <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-700 dark:bg-slate-900">
+      {/* Video Player Area */}
       <div className="relative aspect-video bg-slate-900">
+        {/* Thumbnail / Background */}
         {props.thumbnailUrl ? (
-          <img src={props.thumbnailUrl} alt={props.title} className="absolute inset-0 h-full w-full object-cover" />
+          <img
+            src={props.thumbnailUrl}
+            alt={props.title}
+            className="absolute inset-0 h-full w-full object-cover"
+            onLoad={() => setLoading(false)}
+          />
         ) : (
-          <div className="absolute inset-0 bg-gradient-to-br from-slate-900 via-slate-800 to-blue-900" />
+          <div className="absolute inset-0 bg-gradient-to-br from-slate-800 via-slate-900 to-indigo-950" />
         )}
-        <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-slate-950/70 via-transparent to-transparent" />
-        <div className="pointer-events-none absolute left-4 top-4 inline-flex items-center gap-1 rounded-full bg-black/45 px-2.5 py-1 text-xs text-white">
+
+        {/* Loading Overlay */}
+        {loading && !started ? (
+          <div className="absolute inset-0 z-20 flex items-center justify-center bg-slate-900/60">
+            <LoaderCircle className="h-8 w-8 animate-spin text-white/60" />
+          </div>
+        ) : null}
+
+        {/* Gradient Overlay */}
+        <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-slate-950/80 via-transparent to-transparent" />
+
+        {/* Top Badge */}
+        <div className="pointer-events-none absolute left-4 top-4 z-10 inline-flex items-center gap-1.5 rounded-full bg-black/50 px-3 py-1.5 text-xs font-medium text-white backdrop-blur-sm">
           <PlayCircle className="h-3.5 w-3.5" />
           教学视频
         </div>
+
+        {/* Duration Badge */}
         {durationLabel ? (
-          <div className="pointer-events-none absolute bottom-4 right-4 rounded-full bg-black/60 px-2.5 py-1 text-xs text-white">{durationLabel}</div>
+          <div className="pointer-events-none absolute bottom-4 right-4 z-10 rounded-full bg-black/50 px-3 py-1.5 text-xs font-medium text-white backdrop-blur-sm">
+            {durationLabel}
+          </div>
         ) : null}
+
+        {/* Play Button Overlay (when not started) */}
+        {!started ? (
+          <button
+            type="button"
+            onClick={() => {
+              const video = document.querySelector(`video[data-video-id="${props.videoUrl}"]`) as HTMLVideoElement | null;
+              if (video) {
+                video.play();
+              }
+            }}
+            className="absolute inset-0 z-20 flex items-center justify-center transition-opacity hover:opacity-80"
+          >
+            <motion.div
+              whileHover={{ scale: 1.1 }}
+              whileTap={{ scale: 0.95 }}
+              className="flex h-16 w-16 items-center justify-center rounded-full bg-white/90 shadow-2xl backdrop-blur-sm"
+            >
+              <Play className="ml-1 h-6 w-6 text-indigo-600" />
+            </motion.div>
+          </button>
+        ) : null}
+
         <video
+          data-video-id={props.videoUrl}
           controls
           preload="metadata"
           poster={props.thumbnailUrl}
           className="relative z-10 h-full w-full"
+          onLoadedData={() => setLoading(false)}
           onPlay={() => {
             if (!started) {
               setStarted(true);
@@ -75,19 +126,44 @@ export default function VideoCard(props: VideoCardProps) {
           当前浏览器不支持视频播放，请直接下载后查看。
         </video>
       </div>
-      <div className="space-y-3 p-4">
+
+      {/* Info Section */}
+      <div className="space-y-3 p-4 md:p-5">
         <div>
-          <div className="text-base font-semibold text-slate-800">{props.title}</div>
-          {props.knowledgePoint ? <div className="mt-1 text-sm text-slate-500">知识点：{props.knowledgePoint}</div> : null}
+          <h3 className="text-base font-semibold text-slate-800 dark:text-white">{props.title}</h3>
+          {props.knowledgePoint ? (
+            <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">知识点：{props.knowledgePoint}</p>
+          ) : null}
         </div>
-        <div className="flex flex-wrap gap-2 text-xs">
-          {props.style ? <span className="rounded-full bg-blue-50 px-2.5 py-1 text-blue-700">{styleLabelMap[props.style]}</span> : null}
-          {started ? <span className="rounded-full bg-emerald-50 px-2.5 py-1 text-emerald-700">已开始观看</span> : null}
-          {completed ? <span className="rounded-full bg-emerald-50 px-2.5 py-1 text-emerald-700">已观看完成</span> : null}
+
+        {/* Tags */}
+        <div className="flex flex-wrap gap-2">
+          {styleInfo ? (
+            <span className={`rounded-full px-2.5 py-1 text-xs font-medium ${styleInfo.color}`}>
+              {styleInfo.label}
+            </span>
+          ) : null}
+          {started ? (
+            <span className="rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-medium text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-400">
+              已开始观看
+            </span>
+          ) : null}
+          {completed ? (
+            <span className="rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-medium text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-400">
+              已观看完成
+            </span>
+          ) : null}
         </div>
-        <div className="flex items-center justify-between gap-3 text-sm">
-          <span className="text-slate-500">{props.expiresHint || '视频资源已生成'}</span>
-          <a href={props.videoUrl} target="_blank" rel="noreferrer" className="font-medium text-blue-600 hover:text-blue-700">
+
+        {/* Footer */}
+        <div className="flex items-center justify-between gap-3 border-t border-slate-100 pt-3 dark:border-slate-800">
+          <span className="text-xs text-slate-400 dark:text-slate-500">{props.expiresHint || '视频资源已生成'}</span>
+          <a
+            href={props.videoUrl}
+            target="_blank"
+            rel="noreferrer"
+            className="text-xs font-medium text-indigo-600 transition-colors hover:text-indigo-700 dark:text-indigo-400 dark:hover:text-indigo-300"
+          >
             打开原始视频
           </a>
         </div>
