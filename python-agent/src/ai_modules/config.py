@@ -3,6 +3,7 @@
 from functools import lru_cache
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlparse
 
 from pydantic import AliasChoices, BaseModel, ConfigDict, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -164,6 +165,10 @@ class Settings(BaseSettings):
         default_factory=LLMComponentOverride,
         alias="PATH_PLANNING_LLM",
     )
+    resource_push_llm: LLMComponentOverride = Field(
+        default_factory=LLMComponentOverride,
+        alias="RESOURCE_PUSH_LLM",
+    )
     postgres_host: str = Field(default="localhost", alias="POSTGRES_HOST")
     postgres_port: int = Field(default=5432, alias="POSTGRES_PORT")
     postgres_db: str = Field(default="zhixue", alias="POSTGRES_DB")
@@ -184,11 +189,21 @@ class Settings(BaseSettings):
         alias="KNOWLEDGE_EMBEDDING_DIMENSION",
     )
     minio_endpoint: str = Field(default="localhost:9000", alias="MINIO_ENDPOINT")
+    minio_public_endpoint: str = Field(default="", alias="MINIO_PUBLIC_ENDPOINT")
     minio_access_key: str = Field(default="minioadmin", alias="MINIO_ACCESS_KEY")
     minio_secret_key: str = Field(default="minioadmin123", alias="MINIO_SECRET_KEY")
     minio_secure: bool = Field(default=False, alias="MINIO_SECURE")
     minio_bucket: str = Field(default="zhixue-resources", alias="MINIO_BUCKET")
     sandbox_root: str = Field(default="sandbox-temp", alias="SANDBOX_ROOT")
+
+    avatar_data_dir: str = Field(
+        default="/data/sandbox-temp/avatar_data",
+        alias="AVATAR_DATA_DIR",
+    )
+    dh_live_checkpoint_dir: str = Field(
+        default="src/ai_modules/generation/dh_live/checkpoint",
+        alias="DH_LIVE_CHECKPOINT_DIR",
+    )
 
     otel_exporter_otlp_endpoint: str = Field(
         default="",
@@ -454,6 +469,31 @@ class Settings(BaseSettings):
             "secret_key": self.minio_secret_key,
             "secure": self.minio_secure,
         }
+
+    def minio_presign_kwargs(self) -> dict[str, Any]:
+        """Return MinIO kwargs for creating externally reachable presigned URLs."""
+
+        endpoint, secure = self._normalize_minio_endpoint(
+            self.minio_public_endpoint or self.minio_endpoint,
+            default_secure=self.minio_secure,
+        )
+        return {
+            "endpoint": endpoint,
+            "access_key": self.minio_access_key,
+            "secret_key": self.minio_secret_key,
+            "secure": secure,
+        }
+
+    @staticmethod
+    def _normalize_minio_endpoint(endpoint: str, *, default_secure: bool) -> tuple[str, bool]:
+        raw = endpoint.strip()
+        if "://" not in raw:
+            return raw, default_secure
+
+        parsed = urlparse(raw)
+        normalized = parsed.netloc or parsed.path or raw
+        secure = parsed.scheme.lower() == "https" if parsed.scheme else default_secure
+        return normalized, secure
 
 
 @lru_cache(maxsize=1)

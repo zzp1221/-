@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import AsyncIterator
+import inspect
 import logging
 from pathlib import Path
 from typing import Any
@@ -27,8 +28,6 @@ from src.ai_modules.models import (
     VideoProgressSSEEvent,
 )
 from src.ai_modules.runtime import (
-    RecoveryEngine,
-    RecoveryFailureType,
     SystemSnapshot,
 )
 
@@ -53,7 +52,6 @@ class _BaseGenerationAgent(PlaceholderAgent):
         self.llm_client = llm_client or GenerationToolLLMClientFactory.create()
         self.critic_agent = critic_agent or CriticAgent()
         self.safety_agent = safety_agent or SafetyAgent()
-        self.recovery_engine = RecoveryEngine()
         self.heartbeat_interval_seconds = heartbeat_interval_seconds
 
     async def run(
@@ -144,6 +142,9 @@ class _BaseGenerationAgent(PlaceholderAgent):
                 fileName=asset.file_name,
                 localPath=asset.local_path,
                 mimeType=asset.mime_type,
+                inlineContent=asset.inline_content,
+                language=asset.language,
+                explanation=asset.explanation,
                 thumbnailPath=asset.thumbnail_path,
                 thumbnailFileName=asset.thumbnail_file_name,
                 thumbnailMimeType=asset.thumbnail_mime_type,
@@ -161,68 +162,28 @@ class _BaseGenerationAgent(PlaceholderAgent):
         snapshot: SystemSnapshot,
         system_prompt: str,
     ) -> dict[str, Any]:
-        try:
-            # Step 1: Generate outline (deterministic)
-            outline = self._tool_generate_outline(tool_input={}, params=params, snapshot=snapshot)
-
-            # Step 2: Expand content (1 LLM call inside build_asset)
-            draft = await self._tool_expand_content(
-                tool_input=outline, task_id=task_id, params=params, snapshot=snapshot,
-            )
-
-            # Phase F: Skip review for VIDEO (entirely deterministic placeholder)
-            if self.asset_type == "VIDEO":
-                default_pass = {
-                    "verdict": "PASS", "factConsistency": "SUPPORTED",
-                    "difficultyMatch": "MATCHED", "sourceCoverage": "GOOD",
-                    "issues": [], "suggestions": ["视频内容为占位符，无需审查。"],
-                    "summaryText": "视频占位符，跳过审查。",
-                }
-                default_safety = {
-                    "allowed": True, "riskLevel": "LOW", "categories": ["educational_content"],
-                    "riskTags": [], "blockedReason": None,
-                    "suggestions": ["内容安全。"], "summaryText": "Safety 复核完成：allowed=true。",
-                }
-                params["criticReview"] = default_pass
-                params["safetyReview"] = default_safety
-                return self._normalize_final_output({
-                    "asset": draft["asset"], "criticReview": default_pass, "safetyReview": default_safety,
-                })
-
-            # Step 3+4: Review + Safety in parallel (Phase B)
-            import copy
-            review_params = copy.deepcopy(params)
-            safety_params = copy.deepcopy(params)
-
-            critic_task = self._tool_review_content(
-                tool_input=draft, params=review_params, snapshot=snapshot,
-            )
-            safety_task = self._tool_format_output(
-                tool_input=draft, params=safety_params, snapshot=snapshot,
-            )
-            reviewed, formatted = await asyncio.gather(critic_task, safety_task)
-
-            # Merge results back
-            params["criticReview"] = review_params.get("criticReview", {})
-            params["safetyReview"] = safety_params.get("safetyReview", {})
-
-            return self._normalize_final_output({
-                "asset": draft["asset"],
-                "criticReview": params["criticReview"],
-                "safetyReview": params["safetyReview"],
-            })
-        except Exception:
-            LOGGER.warning("Generation pipeline failed, falling back to sequential.", exc_info=True)
-
-        # Fallback: sequential
         outline = self._tool_generate_outline(tool_input={}, params=params, snapshot=snapshot)
         draft = await self._tool_expand_content(
             tool_input=outline, task_id=task_id, params=params, snapshot=snapshot,
         )
-        reviewed = await self._tool_review_content(tool_input=draft, params=params, snapshot=snapshot)
-        return self._normalize_final_output(
-            await self._tool_format_output(tool_input=reviewed, params=params, snapshot=snapshot)
+
+        import copy
+        review_params = copy.deepcopy(params)
+        safety_params = copy.deepcopy(params)
+
+        await asyncio.gather(
+            self._tool_review_content(tool_input=draft, params=review_params, snapshot=snapshot),
+            self._tool_format_output(tool_input=draft, params=safety_params, snapshot=snapshot),
         )
+
+        params["criticReview"] = review_params.get("criticReview", {})
+        params["safetyReview"] = safety_params.get("safetyReview", {})
+
+        return self._normalize_final_output({
+            "asset": draft["asset"],
+            "criticReview": params["criticReview"],
+            "safetyReview": params["safetyReview"],
+        })
 
     def _tool_generate_outline(
         self,
@@ -273,40 +234,28 @@ class _BaseGenerationAgent(PlaceholderAgent):
         build_params.setdefault("taskId", task_id)
 
         async def operation() -> dict[str, Any]:
-            asset = await self.generation_service.build_asset(
+            asset_or_awaitable = self.generation_service.build_asset(
                 asset_type=self.asset_type,
                 params=build_params,
                 snapshot=snapshot,
             )
+            asset = (
+                await asset_or_awaitable
+                if inspect.isawaitable(asset_or_awaitable)
+                else asset_or_awaitable
+            )
             generated_content = (
                 asset.preview_text
                 if asset.asset_type == "VIDEO"
+                else asset.inline_content
+                if asset.inline_content
                 else Path(asset.local_path).read_text(encoding="utf-8")
             )
             return {
                 "asset": asset.model_dump(by_alias=True),
                 "generatedContent": generated_content,
             }
-
-        async def fallback_operation() -> dict[str, Any]:
-            asset = await self._build_minimal_asset(task_id=task_id, params=params)
-            generated_content = Path(asset.local_path).read_text(encoding="utf-8")
-            payload = {
-                "asset": asset.model_dump(by_alias=True),
-                "generatedContent": generated_content,
-                "degraded": True,
-            }
-            await self.recovery_engine.recover_content_generation_failed(
-                asset_type=self.asset_type,
-                fallback_payload=payload,
-            )
-            return payload
-
-        draft = await self.recovery_engine.call_with_recovery(
-            failure_type=RecoveryFailureType.CONTENT_GENERATION_FAILED,
-            operation=operation,
-            fallback_operation=fallback_operation,
-        )
+        draft = await operation()
         params["generatedAsset"] = draft["asset"]
         params["generatedContent"] = draft["generatedContent"]
         return draft
@@ -387,7 +336,44 @@ class _BaseGenerationAgent(PlaceholderAgent):
             "md",
             {"taskId": task_id},
         )
-        content = f"# {title}\n\n当前进入简化生成模式，请稍后重试。\n"
+        retrieval_result = params.get("retrievalResult", {})
+        documents = retrieval_result.get("documents", []) if isinstance(retrieval_result, dict) else []
+        reference_lines = []
+        for index, item in enumerate(documents[:5], start=1):
+            if not isinstance(item, dict):
+                continue
+            ref_title = str(item.get("title") or item.get("slug") or f"候选来源 {index}")
+            evidence = str(item.get("evidence") or "").strip()
+            reference_lines.append(f"{index}. {ref_title}")
+            if evidence:
+                reference_lines.append(f"   - 要点: {evidence}")
+        if not reference_lines:
+            reference_lines = ["1. 未检索到可用来源，请检查知识库索引或检索配置。"]
+
+        content = "\n".join(
+            [
+                f"# {title}",
+                "",
+                "## 当前状态",
+                "本次生成进入降级模式，已根据当前检索结果整理可读版内容。",
+                "",
+                "## 学习目标",
+                f"- 主题: {params.get('query', '学习主题')}",
+                f"- 资源类型: {self.asset_type}",
+                "",
+                "## 推荐学习提纲",
+                "- 先掌握核心定义与边界条件",
+                "- 再用一个典型案例验证理解",
+                "- 最后对照误区清单进行自测",
+                "",
+                "## 参考来源",
+                *reference_lines,
+                "",
+                "## 下一步建议",
+                "- 可直接基于以上来源继续学习",
+                "- 若需更完整内容，请重试生成任务",
+            ]
+        )
         path = await asyncio.to_thread(self.generation_service._write_text, file_name, content)
         return GeneratedAsset(
             assetType=self.asset_type,
@@ -571,18 +557,7 @@ class VideoGenerationAgent(_BaseGenerationAgent):
                 ),
             )
         except Exception as exc:
-            LOGGER.warning("MiMo TTS failed, using placeholder audio: %s", exc)
-            yield VideoProgressSSEEvent(
-                event="video_gen:speech",
-                taskId=task_id,
-                traceId=trace_id,
-                seq=current_seq,
-                payload=ProgressPayload(
-                    stage="speech_synthesized",
-                    percent=50,
-                    message=f"语音合成降级 (placeholder): {exc}",
-                ),
-            )
+            raise RuntimeError("Video TTS generation failed") from exc
         current_seq += 1
 
         yield VideoProgressSSEEvent(

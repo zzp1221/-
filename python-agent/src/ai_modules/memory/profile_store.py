@@ -4,12 +4,16 @@ from __future__ import annotations
 
 import asyncio
 import json
-from uuid import UUID
+import math
+import os
 from collections.abc import Callable
+from datetime import datetime, timezone
+from uuid import UUID
 from typing import Any, Protocol
 
 from src.ai_modules.config import get_settings
 from src.ai_modules.models import LearnerProfileDimensions, LearnerProfileSnapshot
+from src.ai_modules.models.profile import ErrorPattern, WeakPointDetail
 
 
 class ProfileStore(Protocol):
@@ -26,7 +30,7 @@ class ProfileStore(Protocol):
     ) -> LearnerProfileSnapshot: ...
 
 
-def _adapt_json_payload(payload: dict[str, Any]) -> Any:
+def _adapt_json_payload(payload: Any) -> Any:
     try:
         from psycopg2.extras import Json
 
@@ -70,8 +74,10 @@ class PostgresProfileStore:
         self,
         db_config: dict[str, Any] | None = None,
         connect_fn: Callable[..., Any] | None = None,
+        embedding_fn: Callable[[str], list[float] | None] | None = None,
     ) -> None:
         settings = get_settings()
+        self.settings = settings
         self.db_config = db_config or {
             "host": settings.postgres_host,
             "port": settings.postgres_port,
@@ -80,6 +86,7 @@ class PostgresProfileStore:
             "password": settings.postgres_password,
         }
         self._connect_fn = connect_fn
+        self._embedding_fn = embedding_fn
 
     def _connect(self) -> Any:
         if self._connect_fn is not None:
@@ -125,6 +132,669 @@ class PostgresProfileStore:
                     profile=dimensions,
                 )
 
+    def _ensure_feature_table(self, cur: Any) -> None:
+        cur.execute(
+            """
+            CREATE TABLE IF NOT EXISTS app.learner_feature (
+                id BIGSERIAL PRIMARY KEY,
+                user_id UUID NOT NULL REFERENCES app.users(id) ON DELETE CASCADE,
+                dimension TEXT NOT NULL,
+                feature_key TEXT NOT NULL,
+                feature_value JSONB NOT NULL DEFAULT '{}'::jsonb,
+                confidence REAL NOT NULL DEFAULT 0.5 CHECK (confidence >= 0 AND confidence <= 1),
+                source_type TEXT NOT NULL DEFAULT 'CONVERSATION',
+                source_ref JSONB,
+                reasoning TEXT NOT NULL DEFAULT '',
+                evidence JSONB NOT NULL DEFAULT '[]'::jsonb,
+                verification_count INT NOT NULL DEFAULT 1,
+                decay_enabled BOOLEAN NOT NULL DEFAULT TRUE,
+                stability_period_days INT NOT NULL DEFAULT 30,
+                decay_rate REAL NOT NULL DEFAULT 0.05,
+                is_active BOOLEAN NOT NULL DEFAULT TRUE,
+                inferred BOOLEAN NOT NULL DEFAULT FALSE,
+                created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+                updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+                UNIQUE (user_id, dimension, feature_key)
+            )
+            """
+        )
+        cur.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_learner_feature_user_dim
+            ON app.learner_feature(user_id, dimension, is_active, updated_at DESC)
+            """
+        )
+        cur.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_learner_feature_confidence
+            ON app.learner_feature(user_id, confidence DESC, updated_at DESC)
+            """
+        )
+
+    def _fetch_active_features(self, cur: Any, user_id: str) -> list[dict[str, Any]]:
+        cur.execute(
+            """
+            SELECT id, dimension, feature_key, feature_value, confidence, source_type, source_ref,
+                   reasoning, evidence, verification_count, decay_enabled, stability_period_days,
+                   decay_rate, is_active, inferred, created_at, updated_at
+            FROM app.learner_feature
+            WHERE user_id = %s::uuid AND is_active = TRUE
+            ORDER BY confidence DESC, updated_at DESC
+            """,
+            (user_id,),
+        )
+        if not hasattr(cur, "fetchall"):
+            return []
+        rows = cur.fetchall() or []
+        description = getattr(cur, "description", None)
+        if not description:
+            return []
+        columns = [desc[0] for desc in description]
+        return [dict(zip(columns, row, strict=False)) for row in rows]
+
+    def _apply_decay(self, cur: Any, *, user_id: str) -> None:
+        active_features = self._fetch_active_features(cur, user_id)
+        now = datetime.now(timezone.utc)
+        for feature in active_features:
+            if not feature.get("decay_enabled", True):
+                continue
+            updated_at = feature.get("updated_at")
+            if updated_at is None:
+                continue
+            days_since_update = max(0.0, (now - updated_at).total_seconds() / 86400.0)
+            stability_period = int(feature.get("stability_period_days") or 30)
+            if days_since_update <= stability_period:
+                continue
+            decay_days = days_since_update - stability_period
+            decay_rate = float(feature.get("decay_rate") or 0.05)
+            initial_confidence = float(feature.get("confidence") or 0.5)
+            decayed = initial_confidence - (math.log1p(decay_days * decay_rate) * (initial_confidence - 0.3) * 0.3)
+            decayed = max(0.3, min(initial_confidence, round(decayed, 4)))
+            is_active = decayed >= 0.31
+            cur.execute(
+                """
+                UPDATE app.learner_feature
+                SET confidence = %s,
+                    is_active = %s
+                WHERE id = %s
+                """,
+                (decayed, is_active, feature["id"]),
+            )
+
+    def _singleton_dimensions(self) -> set[str]:
+        return {
+            "knowledge_foundation",
+            "professional_background",
+            "learning_preference",
+            "cognitive_style",
+            "learning_pace",
+            "confidence_level",
+            "current_goal",
+            "learning_habits",
+            "explanation_preference",
+        }
+
+    def _extract_features(self, dimensions: LearnerProfileDimensions) -> list[dict[str, Any]]:
+        base_confidence = max(0.35, min(0.95, float(dimensions.confidence_score or 0.65)))
+        features: list[dict[str, Any]] = [
+            self._feature_record(
+                dimension="knowledge_foundation",
+                feature_key="current",
+                feature_value={"level": dimensions.knowledge_foundation},
+                confidence=base_confidence,
+                source_type=dimensions.source,
+                evidence=dimensions.evidence,
+                stability_period_days=45,
+                decay_rate=0.02,
+            ),
+            self._feature_record(
+                dimension="professional_background",
+                feature_key="current",
+                feature_value={"text": dimensions.professional_background},
+                confidence=max(0.45, base_confidence - 0.05),
+                source_type=dimensions.source,
+                evidence=dimensions.evidence,
+                stability_period_days=90,
+                decay_rate=0.01,
+            ),
+            self._feature_record(
+                dimension="learning_preference",
+                feature_key="overall",
+                feature_value={
+                    "mode": dimensions.learning_preference,
+                    "preferredResourceTypes": dimensions.preferred_resource_types,
+                },
+                confidence=base_confidence,
+                source_type=dimensions.source,
+                evidence=dimensions.evidence,
+                stability_period_days=35,
+                decay_rate=0.03,
+            ),
+            self._feature_record(
+                dimension="cognitive_style",
+                feature_key="overall",
+                feature_value={"style": dimensions.cognitive_style},
+                confidence=base_confidence,
+                source_type=dimensions.source,
+                evidence=dimensions.evidence,
+                stability_period_days=45,
+                decay_rate=0.03,
+            ),
+            self._feature_record(
+                dimension="learning_pace",
+                feature_key="overall",
+                feature_value={"pace": dimensions.learning_pace},
+                confidence=max(0.4, base_confidence - 0.05),
+                source_type=dimensions.source,
+                evidence=dimensions.evidence,
+                stability_period_days=20,
+                decay_rate=0.05,
+            ),
+            self._feature_record(
+                dimension="confidence_level",
+                feature_key="overall",
+                feature_value={
+                    "level": dimensions.confidence_level,
+                    "score": round(base_confidence, 4),
+                },
+                confidence=base_confidence,
+                source_type=dimensions.source,
+                evidence=dimensions.evidence,
+                stability_period_days=20,
+                decay_rate=0.05,
+            ),
+            self._feature_record(
+                dimension="current_goal",
+                feature_key="short_term",
+                feature_value=dimensions.current_goal.model_dump(by_alias=True),
+                confidence=max(0.5, base_confidence),
+                source_type=dimensions.source,
+                evidence=dimensions.evidence,
+                stability_period_days=18,
+                decay_rate=0.06,
+            ),
+            self._feature_record(
+                dimension="learning_habits",
+                feature_key="overall",
+                feature_value=dimensions.learning_habits.model_dump(by_alias=True),
+                confidence=max(0.4, base_confidence - 0.08),
+                source_type=dimensions.source,
+                evidence=dimensions.evidence,
+                stability_period_days=14,
+                decay_rate=0.07,
+            ),
+            self._feature_record(
+                dimension="explanation_preference",
+                feature_key="overall",
+                feature_value={"value": dimensions.explanation_preference},
+                confidence=max(0.45, base_confidence - 0.04),
+                source_type=dimensions.source,
+                evidence=dimensions.evidence,
+                stability_period_days=30,
+                decay_rate=0.03,
+            ),
+        ]
+
+        for topic, score in (dimensions.skill_mastery or {}).items():
+            normalized_topic = str(topic).strip()
+            if not normalized_topic:
+                continue
+            features.append(
+                self._feature_record(
+                    dimension="skill_mastery",
+                    feature_key=normalized_topic,
+                    feature_value={"topic": normalized_topic, "score": max(0.0, min(1.0, float(score)))},
+                    confidence=max(0.45, base_confidence - 0.03),
+                    source_type=dimensions.source,
+                    evidence=dimensions.evidence,
+                    stability_period_days=21,
+                    decay_rate=0.04,
+                )
+            )
+
+        weak_point_details = dimensions.weak_point_details or [
+            WeakPointDetail(topic=topic, severity=0.65)
+            for topic in dimensions.weak_points
+            if str(topic).strip()
+        ]
+        for item in weak_point_details:
+            features.append(
+                self._feature_record(
+                    dimension="weak_points",
+                    feature_key=item.topic.strip(),
+                    feature_value=item.model_dump(by_alias=True),
+                    confidence=max(0.55, min(0.95, item.severity * 0.75 + 0.2)),
+                    source_type=dimensions.source,
+                    evidence=[*dimensions.evidence, item.last_error] if item.last_error else dimensions.evidence,
+                    stability_period_days=20,
+                    decay_rate=0.05,
+                )
+            )
+
+        for item in dimensions.error_patterns:
+            if not item.pattern.strip():
+                continue
+            features.append(
+                self._feature_record(
+                    dimension="error_patterns",
+                    feature_key=item.pattern.strip(),
+                    feature_value=item.model_dump(by_alias=True),
+                    confidence=max(0.45, min(0.92, float(item.frequency) * 0.7 + 0.2)),
+                    source_type=dimensions.source,
+                    evidence=[*dimensions.evidence, *item.examples],
+                    stability_period_days=18,
+                    decay_rate=0.06,
+                )
+            )
+
+        for resource_type in dimensions.preferred_resource_types:
+            normalized_type = str(resource_type).strip().upper()
+            if not normalized_type:
+                continue
+            features.append(
+                self._feature_record(
+                    dimension="preferred_resource_type",
+                    feature_key=normalized_type,
+                    feature_value={"resourceType": normalized_type},
+                    confidence=max(0.45, base_confidence - 0.04),
+                    source_type=dimensions.source,
+                    evidence=dimensions.evidence,
+                    stability_period_days=35,
+                    decay_rate=0.03,
+                )
+            )
+
+        for recommendation in dimensions.inferred_recommendations:
+            normalized = str(recommendation).strip()
+            if not normalized:
+                continue
+            features.append(
+                self._feature_record(
+                    dimension="inferred_recommendation",
+                    feature_key=normalized[:80],
+                    feature_value={"text": normalized},
+                    confidence=max(0.4, base_confidence - 0.12),
+                    source_type="INFERRED",
+                    evidence=dimensions.evidence,
+                    stability_period_days=10,
+                    decay_rate=0.08,
+                    inferred=True,
+                )
+            )
+
+        return [feature for feature in features if self._feature_has_value(feature)]
+
+    def _feature_record(
+        self,
+        *,
+        dimension: str,
+        feature_key: str,
+        feature_value: dict[str, Any],
+        confidence: float,
+        source_type: str,
+        evidence: list[str] | None = None,
+        stability_period_days: int = 30,
+        decay_rate: float = 0.05,
+        inferred: bool = False,
+    ) -> dict[str, Any]:
+        return {
+            "dimension": dimension,
+            "feature_key": feature_key,
+            "feature_value": feature_value,
+            "confidence": max(0.0, min(1.0, round(float(confidence), 4))),
+            "source_type": source_type,
+            "source_ref": {},
+            "reasoning": "",
+            "evidence": list(dict.fromkeys(filter(None, evidence or [])))[:6],
+            "verification_count": 1,
+            "decay_enabled": True,
+            "stability_period_days": stability_period_days,
+            "decay_rate": decay_rate,
+            "is_active": True,
+            "inferred": inferred,
+        }
+
+    def _feature_has_value(self, feature: dict[str, Any]) -> bool:
+        value = feature["feature_value"]
+        if not feature["feature_key"].strip():
+            return False
+        if isinstance(value, dict):
+            return any(
+                item not in ("", None, [], {})
+                for item in value.values()
+            )
+        return value not in ("", None, [], {})
+
+    def _merge_feature_value(self, existing: dict[str, Any], incoming: dict[str, Any]) -> dict[str, Any]:
+        merged = dict(existing)
+        for key, value in incoming.items():
+            if value in ("", None, [], {}):
+                continue
+            if isinstance(value, list):
+                merged[key] = list(dict.fromkeys([*(merged.get(key) or []), *value]))
+                continue
+            merged[key] = value
+        return merged
+
+    def _deactivate_conflicts(self, cur: Any, *, user_id: str, dimension: str, feature_key: str) -> None:
+        if dimension not in self._singleton_dimensions():
+            return
+        cur.execute(
+            """
+            UPDATE app.learner_feature
+            SET is_active = FALSE
+            WHERE user_id = %s::uuid
+              AND dimension = %s
+              AND feature_key <> %s
+              AND is_active = TRUE
+            """,
+            (user_id, dimension, feature_key),
+        )
+
+    def _upsert_features(
+        self,
+        cur: Any,
+        *,
+        user_id: str,
+        features: list[dict[str, Any]],
+        source_session_id: str | None,
+    ) -> None:
+        source_ref = {"sourceSessionId": source_session_id} if source_session_id else {}
+        for feature in features:
+            feature["source_ref"] = source_ref
+            self._deactivate_conflicts(
+                cur,
+                user_id=user_id,
+                dimension=feature["dimension"],
+                feature_key=feature["feature_key"],
+            )
+            cur.execute(
+                """
+                SELECT id, feature_value, confidence, verification_count, evidence
+                FROM app.learner_feature
+                WHERE user_id = %s::uuid AND dimension = %s AND feature_key = %s
+                LIMIT 1
+                """,
+                (user_id, feature["dimension"], feature["feature_key"]),
+            )
+            existing = cur.fetchone()
+            if existing is None:
+                cur.execute(
+                    """
+                    INSERT INTO app.learner_feature(
+                        user_id, dimension, feature_key, feature_value, confidence, source_type,
+                        source_ref, reasoning, evidence, verification_count, decay_enabled,
+                        stability_period_days, decay_rate, is_active, inferred
+                    )
+                    VALUES (%s::uuid, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, TRUE, %s)
+                    """,
+                    (
+                        user_id,
+                        feature["dimension"],
+                        feature["feature_key"],
+                        _adapt_json_payload(feature["feature_value"]),
+                        feature["confidence"],
+                        feature["source_type"],
+                        _adapt_json_payload(feature["source_ref"]),
+                        feature["reasoning"],
+                        _adapt_json_payload(feature["evidence"]),
+                        feature["verification_count"],
+                        feature["decay_enabled"],
+                        feature["stability_period_days"],
+                        feature["decay_rate"],
+                        feature["inferred"],
+                    ),
+                )
+                continue
+
+            existing_id, existing_value, existing_confidence, verification_count, existing_evidence = existing
+            merged_value = self._merge_feature_value(existing_value or {}, feature["feature_value"])
+            merged_evidence = list(
+                dict.fromkeys([*(existing_evidence or []), *feature["evidence"]])
+            )[:8]
+            next_verification_count = int(verification_count or 1) + 1
+            merged_confidence = min(
+                0.98,
+                round(
+                    max(float(existing_confidence or 0.5), feature["confidence"]) * 0.7
+                    + feature["confidence"] * 0.3
+                    + min(0.08, next_verification_count * 0.01),
+                    4,
+                ),
+            )
+            cur.execute(
+                """
+                UPDATE app.learner_feature
+                SET feature_value = %s,
+                    confidence = %s,
+                    source_type = %s,
+                    source_ref = %s,
+                    evidence = %s,
+                    verification_count = %s,
+                    decay_enabled = %s,
+                    stability_period_days = %s,
+                    decay_rate = %s,
+                    is_active = TRUE,
+                    inferred = %s,
+                    updated_at = now()
+                WHERE id = %s
+                """,
+                (
+                    _adapt_json_payload(merged_value),
+                    merged_confidence,
+                    feature["source_type"],
+                    _adapt_json_payload(feature["source_ref"]),
+                    _adapt_json_payload(merged_evidence),
+                    next_verification_count,
+                    feature["decay_enabled"],
+                    feature["stability_period_days"],
+                    feature["decay_rate"],
+                    feature["inferred"],
+                    existing_id,
+                ),
+            )
+
+    def _aggregate_profile(self, features: list[dict[str, Any]], dimensions: LearnerProfileDimensions) -> dict[str, Any]:
+        grouped: dict[str, list[dict[str, Any]]] = {}
+        for feature in features:
+            grouped.setdefault(str(feature["dimension"]), []).append(feature)
+        for feature_list in grouped.values():
+            feature_list.sort(key=lambda item: (-float(item.get("confidence") or 0.0), str(item.get("feature_key") or "")))
+
+        weak_details = [
+            {
+                "topic": feature["feature_key"],
+                "severity": float((feature.get("feature_value") or {}).get("severity") or feature.get("confidence") or 0.6),
+                "lastError": str((feature.get("feature_value") or {}).get("lastError") or ""),
+            }
+            for feature in grouped.get("weak_points", [])
+        ]
+        weak_details.sort(key=lambda item: (-float(item["severity"]), item["topic"]))
+        weak_points = [item["topic"] for item in weak_details]
+
+        skill_mastery = {
+            feature["feature_key"]: max(
+                0.0,
+                min(1.0, float((feature.get("feature_value") or {}).get("score") or 0.0)),
+            )
+            for feature in grouped.get("skill_mastery", [])
+        }
+        preferred_resource_types = [
+            str((feature.get("feature_value") or {}).get("resourceType") or feature["feature_key"]).upper()
+            for feature in grouped.get("preferred_resource_type", [])
+        ]
+        inferred_recommendations = [
+            str((feature.get("feature_value") or {}).get("text") or feature["feature_key"])
+            for feature in grouped.get("inferred_recommendation", [])
+        ]
+        error_patterns = [
+            ErrorPattern.model_validate(feature.get("feature_value") or {"pattern": feature["feature_key"]}).model_dump(by_alias=True)
+            for feature in grouped.get("error_patterns", [])
+        ]
+        learning_habits = (
+            (grouped.get("learning_habits", [{}])[0].get("feature_value") if grouped.get("learning_habits") else {})
+            or dimensions.learning_habits.model_dump(by_alias=True)
+        )
+        current_goal = (
+            (grouped.get("current_goal", [{}])[0].get("feature_value") if grouped.get("current_goal") else {})
+            or dimensions.current_goal.model_dump(by_alias=True)
+        )
+        explanation_preference = str(
+            ((grouped.get("explanation_preference", [{}])[0].get("feature_value") if grouped.get("explanation_preference") else {}) or {}).get("value")
+            or dimensions.explanation_preference
+        )
+        knowledge_foundation = str(
+            ((grouped.get("knowledge_foundation", [{}])[0].get("feature_value") if grouped.get("knowledge_foundation") else {}) or {}).get("level")
+            or dimensions.knowledge_foundation
+        )
+        professional_background = str(
+            ((grouped.get("professional_background", [{}])[0].get("feature_value") if grouped.get("professional_background") else {}) or {}).get("text")
+            or dimensions.professional_background
+        )
+        learning_preference_feature = (
+            (grouped.get("learning_preference", [{}])[0].get("feature_value") if grouped.get("learning_preference") else {})
+            or {}
+        )
+        learning_preference = str(learning_preference_feature.get("mode") or dimensions.learning_preference)
+        cognitive_style = str(
+            ((grouped.get("cognitive_style", [{}])[0].get("feature_value") if grouped.get("cognitive_style") else {}) or {}).get("style")
+            or dimensions.cognitive_style
+        )
+        learning_pace = str(
+            ((grouped.get("learning_pace", [{}])[0].get("feature_value") if grouped.get("learning_pace") else {}) or {}).get("pace")
+            or dimensions.learning_pace
+        )
+        confidence_feature = (grouped.get("confidence_level", [{}])[0].get("feature_value") if grouped.get("confidence_level") else {}) or {}
+        confidence_score = self._compute_snapshot_confidence(features, dimensions)
+        confidence_level = str(confidence_feature.get("level") or self._confidence_score_to_level(confidence_score))
+        summary_text = self._build_profile_summary(
+            knowledge_foundation=knowledge_foundation,
+            learning_goal=str(current_goal.get("shortTerm") or dimensions.learning_goal),
+            weak_points=weak_points,
+            learning_preference=learning_preference,
+            cognitive_style=cognitive_style,
+            preferred_resource_types=preferred_resource_types,
+            skill_mastery=skill_mastery,
+            inferred_recommendations=inferred_recommendations,
+        )
+        recent_mistakes: list[str] = []
+        for item in error_patterns:
+            recent_mistakes.extend(item.get("examples", []))
+        recent_mistakes = list(dict.fromkeys(filter(None, recent_mistakes)))[:6]
+
+        return {
+            "knowledgeFoundation": knowledge_foundation,
+            "studentLevel": knowledge_foundation,
+            "knowledgeBase": knowledge_foundation,
+            "foundationLevel": knowledge_foundation,
+            "learningGoal": str(current_goal.get("shortTerm") or dimensions.learning_goal),
+            "currentGoal": current_goal,
+            "professionalBackground": professional_background,
+            "learningPreference": learning_preference,
+            "preference": preferred_resource_types or [learning_preference],
+            "preferredStyle": explanation_preference or learning_preference or learning_pace,
+            "cognitiveStyle": cognitive_style,
+            "learningPace": learning_pace,
+            "weakPoints": weak_points,
+            "weakPointDetails": weak_details,
+            "knowledgeGaps": weak_points,
+            "skillMastery": skill_mastery,
+            "learningHabits": learning_habits,
+            "errorPatterns": error_patterns,
+            "confidenceLevel": confidence_level,
+            "confidenceScore": round(confidence_score, 4),
+            "preferredResourceTypes": preferred_resource_types,
+            "explanationPreference": explanation_preference,
+            "inferredRecommendations": inferred_recommendations,
+            "recentMistakes": recent_mistakes,
+            "evidence": dimensions.evidence,
+            "summaryText": summary_text,
+        }
+
+    def _build_profile_summary(
+        self,
+        *,
+        knowledge_foundation: str,
+        learning_goal: str,
+        weak_points: list[str],
+        learning_preference: str,
+        cognitive_style: str,
+        preferred_resource_types: list[str],
+        skill_mastery: dict[str, float],
+        inferred_recommendations: list[str],
+    ) -> str:
+        weakest_skills = [
+            name
+            for name, score in sorted(skill_mastery.items(), key=lambda item: item[1])[:2]
+            if score < 0.7
+        ]
+        return (
+            f"当前画像显示学生知识基础为 {knowledge_foundation}，"
+            f"近期目标是“{learning_goal or '巩固当前主题'}”；"
+            f"主要薄弱点集中在 {', '.join(weak_points[:3]) or '暂无明确薄弱点'}，"
+            f"学习偏好偏向 {learning_preference or 'step_by_step'}，认知风格为 {cognitive_style or 'mixed'}。"
+            f"建议优先提供 {', '.join(preferred_resource_types[:3]) or 'DOCUMENT'} 类型资源"
+            + (f'，重点补强 {", ".join(weakest_skills)}' if weakest_skills else '')
+            + (f'；下一步建议：{inferred_recommendations[0]}' if inferred_recommendations else '')
+            + '。'
+        )
+
+    def _compute_snapshot_confidence(
+        self,
+        features: list[dict[str, Any]],
+        dimensions: LearnerProfileDimensions,
+    ) -> float:
+        if features:
+            top_confidences = [float(item.get("confidence") or 0.5) for item in features[:8]]
+            return max(0.35, min(0.96, sum(top_confidences) / len(top_confidences)))
+        return max(0.35, min(0.96, float(dimensions.confidence_score or 0.65)))
+
+    def _confidence_score_to_level(self, score: float) -> str:
+        if score >= 0.78:
+            return "HIGH"
+        if score >= 0.58:
+            return "MEDIUM"
+        return "LOW"
+
+    def _build_embedding_text(self, profile_payload: dict[str, Any], summary_text: str) -> str:
+        pieces = [
+            summary_text,
+            f"knowledgeFoundation={profile_payload.get('knowledgeFoundation', '')}",
+            f"learningGoal={profile_payload.get('learningGoal', '')}",
+            f"weakPoints={','.join(profile_payload.get('weakPoints', []))}",
+            f"cognitiveStyle={profile_payload.get('cognitiveStyle', '')}",
+            f"preferredResourceTypes={','.join(profile_payload.get('preferredResourceTypes', []))}",
+        ]
+        return "\n".join(piece for piece in pieces if piece)
+
+    def _generate_embedding(self, text: str) -> list[float] | None:
+        if self._embedding_fn is not None:
+            return self._embedding_fn(text)
+        api_key = self.settings.bailian_api_key
+        if not api_key or not text.strip():
+            return None
+        os.environ.setdefault("DASHSCOPE_API_KEY", api_key)
+        try:
+            from dashscope import MultiModalEmbedding
+
+            response = MultiModalEmbedding.call(
+                model=self.settings.knowledge_embedding_model_name,
+                input=[{"text": text}],
+                dimension=self.settings.knowledge_embedding_dimension,
+                output_type="dense",
+            )
+            if response.status_code != 200:
+                return None
+            embeddings = response.output.get("embeddings", [])
+            if not embeddings:
+                return None
+            embedding = embeddings[0].get("embedding")
+            if not isinstance(embedding, list):
+                return None
+            return [float(item) for item in embedding]
+        except Exception:
+            return None
+
     def _update_profile_sync(
         self,
         *,
@@ -132,11 +802,22 @@ class PostgresProfileStore:
         dimensions: LearnerProfileDimensions,
         source_session_id: str | None = None,
     ) -> LearnerProfileSnapshot:
-        profile_payload = dimensions.model_dump(by_alias=True)
-        summary_text = dimensions.summary_text
+        raw_payload = dimensions.model_dump(by_alias=True)
         normalized_session_id = _normalize_uuid(source_session_id)
         with self._connect() as conn:
             with conn.cursor() as cur:
+                self._ensure_feature_table(cur)
+                self._apply_decay(cur, user_id=user_id)
+                self._upsert_features(
+                    cur,
+                    user_id=user_id,
+                    features=self._extract_features(dimensions),
+                    source_session_id=normalized_session_id,
+                )
+                active_features = self._fetch_active_features(cur, user_id)
+                profile_payload = self._aggregate_profile(active_features, dimensions)
+                summary_text = str(profile_payload.get("summaryText") or raw_payload.get("summaryText") or dimensions.summary_text)
+                snapshot_confidence = self._compute_snapshot_confidence(active_features, dimensions)
                 cur.execute(
                     """
                     SELECT COALESCE(MAX(version), 0) + 1
@@ -160,7 +841,7 @@ class PostgresProfileStore:
                         version,
                         _adapt_json_payload(profile_payload),
                         summary_text,
-                        0.82,
+                        round(snapshot_confidence, 4),
                     ),
                 )
                 snapshot_id = cur.fetchone()[0]
@@ -182,17 +863,20 @@ class PostgresProfileStore:
                     ),
                 )
 
-                # Keep snapshot/current atomic, but degrade gracefully if pgvector is unavailable.
-                zero_vector = "[" + ",".join(["0"] * 1024) + "]"
+                # Keep snapshot/current atomic, but skip profile vectors when embedding is unavailable.
                 cur.execute("SAVEPOINT profile_vector_insert")
                 try:
+                    embedding = self._generate_embedding(self._build_embedding_text(profile_payload, summary_text))
+                    if embedding is None:
+                        raise RuntimeError("profile embedding unavailable")
+                    embedding_str = "[" + ",".join(str(value) for value in embedding) + "]"
                     cur.execute(
                         """
                         INSERT INTO rag.user_profile_vector(profile_snapshot_id, user_id, version, embedding, is_active)
                         VALUES (%s, %s::uuid, %s, %s::vector, TRUE)
                         ON CONFLICT (user_id, version) DO NOTHING
                         """,
-                        (snapshot_id, user_id, version, zero_vector),
+                        (snapshot_id, user_id, version, embedding_str),
                     )
                 except Exception:
                     cur.execute("ROLLBACK TO SAVEPOINT profile_vector_insert")
@@ -203,7 +887,7 @@ class PostgresProfileStore:
         return LearnerProfileSnapshot(
             userId=user_id,
             version=version,
-            profile=dimensions,
+            profile=LearnerProfileDimensions.model_validate(profile_payload),
         )
 
     async def read_profile(self, user_id: str) -> LearnerProfileSnapshot | None:

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import base64
 import json
 from dataclasses import asdict
 from pathlib import Path
@@ -34,10 +33,13 @@ class GeneratedAsset(BaseModel):
     title: str
     summary: str
     display_mode: str = Field(alias="displayMode")
-    file_name: str = Field(alias="fileName")
-    local_path: str = Field(alias="localPath")
+    file_name: str = Field(default="", alias="fileName")
+    local_path: str | None = Field(default=None, alias="localPath")
     preview_text: str = Field(alias="previewText")
     mime_type: str | None = Field(default=None, alias="mimeType")
+    inline_content: str | None = Field(default=None, alias="inlineContent")
+    language: str | None = None
+    explanation: str | None = None
     thumbnail_path: str | None = Field(default=None, alias="thumbnailPath")
     thumbnail_file_name: str | None = Field(default=None, alias="thumbnailFileName")
     thumbnail_mime_type: str | None = Field(default=None, alias="thumbnailMimeType")
@@ -68,7 +70,6 @@ class ResourceGenerationService:
     ) -> None:
         self.sandbox_root = sandbox_root or get_sandbox_root()
         self.content_chain = content_chain or ContentGenerationChain()
-        self.placeholder_video_bytes = base64.b64decode(_PLACEHOLDER_MP4_BASE64)
 
     def build_asset(
         self,
@@ -94,6 +95,7 @@ class ResourceGenerationService:
         title = f"{params.get('query', '学习资源')}导学文档"
         retrieval = params.get("retrievalResult", {})
         sources = retrieval.get("documents", [])
+        generation_snapshot = self._build_generation_snapshot(params=params, snapshot=snapshot)
         section_plans = self._plan_document_sections(
             params=params,
             snapshot=snapshot,
@@ -102,7 +104,7 @@ class ResourceGenerationService:
         generated_sections = self.content_chain.generate_document_sections(
             title=title,
             topic=str(params.get("rewrittenQuery", params.get("query", "主题"))),
-            snapshot=asdict(snapshot),
+            snapshot=generation_snapshot,
             section_plans=[plan.model_dump(by_alias=True) for plan in section_plans],
             sources=sources,
             fallback_builder=self,
@@ -125,6 +127,8 @@ class ResourceGenerationService:
             fileName=file_name,
             localPath=str(path),
             previewText=self._build_preview_text(section_plans),
+            mimeType="text/markdown; charset=UTF-8",
+            inlineContent=content,
         )
 
     def _plan_document_sections(
@@ -304,14 +308,31 @@ class ResourceGenerationService:
         value = self._snapshot_value(snapshot, key)
         return list(value) if isinstance(value, list) else []
 
+    def _build_generation_snapshot(
+        self,
+        *,
+        params: dict[str, Any],
+        snapshot: SystemSnapshot,
+    ) -> dict[str, Any]:
+        profile = params.get("profile", {}) if isinstance(params.get("profile", {}), dict) else {}
+        base = asdict(snapshot)
+        base["preferred_resource_types"] = list(profile.get("preferredResourceTypes", []))
+        base["learning_goal"] = (
+            profile.get("learningGoal")
+            or (profile.get("currentGoal", {}) or {}).get("shortTerm")
+            or ""
+        )
+        return base
+
     def _build_reading(self, *, params: dict, snapshot: SystemSnapshot) -> GeneratedAsset:
         title = f"{params.get('query', '学习主题')}延伸阅读"
         retrieval = params.get("retrievalResult", {})
         sources = retrieval.get("documents", [])
+        generation_snapshot = self._build_generation_snapshot(params=params, snapshot=snapshot)
         generated_reading = self.content_chain.generate_reading_asset(
             title=title,
             topic=str(params.get("rewrittenQuery", params.get("query", "主题"))),
-            snapshot=asdict(snapshot),
+            snapshot=generation_snapshot,
             sources=sources,
             fallback_builder=self,
         )
@@ -326,6 +347,8 @@ class ResourceGenerationService:
             fileName=file_name,
             localPath=str(path),
             previewText=generated_reading.title,
+            mimeType="text/markdown; charset=UTF-8",
+            inlineContent=content,
         )
 
     def _build_slides(self, *, params: dict, snapshot: SystemSnapshot) -> GeneratedAsset:
@@ -333,6 +356,7 @@ class ResourceGenerationService:
         retrieval = params.get("retrievalResult", {})
         sources = retrieval.get("documents", [])
         topic = str(params.get("rewrittenQuery", params.get("query", "主题")))
+        generation_snapshot = self._build_generation_snapshot(params=params, snapshot=snapshot)
 
         # ── Attempt MiMo-V2-Omni PPTX generation ──
         pptx_bytes = self._generate_pptx_with_omni(
@@ -357,7 +381,7 @@ class ResourceGenerationService:
         generated_slides = self.content_chain.generate_slides_asset(
             title=title,
             topic=topic,
-            snapshot=asdict(snapshot),
+            snapshot=generation_snapshot,
             sources=sources,
             fallback_builder=self,
         )
@@ -546,48 +570,63 @@ class ResourceGenerationService:
         title = f"{params.get('query', '学习主题')}思维导图"
         retrieval = params.get("retrievalResult", {})
         sources = retrieval.get("documents", [])
+        generation_snapshot = self._build_generation_snapshot(params=params, snapshot=snapshot)
         generated_mindmap = self.content_chain.generate_mindmap_asset(
             title=title,
             topic=str(params.get("rewrittenQuery", params.get("query", "主题"))),
-            snapshot=asdict(snapshot),
+            snapshot=generation_snapshot,
             sources=sources,
             fallback_builder=self,
         )
-        payload = generated_mindmap.model_dump(by_alias=True)
-        file_name = self._scoped_file_name("mindmap", "json", params)
-        path = self._write_text(file_name, json.dumps(payload, ensure_ascii=False, indent=2))
+        mermaid = generated_mindmap.mermaid or self._render_mindmap_mermaid(generated_mindmap)
         return GeneratedAsset(
             assetType="MINDMAP",
             title=generated_mindmap.title,
             summary=generated_mindmap.summary,
-            displayMode="MINDMAP_CARD",
-            fileName=file_name,
-            localPath=str(path),
+            displayMode="INLINE_MERMAID",
+            fileName="",
+            localPath=None,
             previewText=generated_mindmap.title,
+            mimeType="text/plain; charset=UTF-8",
+            inlineContent=mermaid,
         )
+
+    def _render_mindmap_mermaid(self, generated_mindmap: GeneratedMindMap) -> str:
+        lines = ["mindmap", f"  root(({generated_mindmap.root}))"]
+
+        def append_nodes(nodes: list[Any], depth: int) -> None:
+            indent = "  " * depth
+            for node in nodes:
+                lines.append(f"{indent}{node.name}")
+                append_nodes(node.children, depth + 1)
+
+        append_nodes(generated_mindmap.children, 2)
+        return "\n".join(lines) + "\n"
 
     def _build_code(self, *, params: dict, snapshot: SystemSnapshot) -> GeneratedAsset:
         title = f"{params.get('query', '学习主题')}代码案例"
         retrieval = params.get("retrievalResult", {})
         sources = retrieval.get("documents", [])
+        generation_snapshot = self._build_generation_snapshot(params=params, snapshot=snapshot)
         generated_code = self.content_chain.generate_code_asset(
             title=title,
             topic=str(params.get("rewrittenQuery", params.get("query", "主题"))),
-            snapshot=asdict(snapshot),
+            snapshot=generation_snapshot,
             sources=sources,
             fallback_builder=self,
         )
-        content = "\n".join([generated_code.code, "", '"""', generated_code.explanation, '"""'])
-        file_name = self._scoped_file_name("code_case", "py", params)
-        path = self._write_text(file_name, content)
         return GeneratedAsset(
             assetType="CODE",
             title=generated_code.title,
             summary=generated_code.summary,
-            displayMode="CODE_CARD",
-            fileName=file_name,
-            localPath=str(path),
+            displayMode="INLINE_CODE",
+            fileName="",
+            localPath=None,
             previewText=generated_code.title,
+            mimeType="text/plain; charset=UTF-8",
+            inlineContent=generated_code.code,
+            language=generated_code.language,
+            explanation=generated_code.explanation,
         )
 
     def _build_video(self, *, params: dict, snapshot: SystemSnapshot) -> GeneratedAsset:
@@ -647,29 +686,27 @@ class ResourceGenerationService:
             encoding="utf-8",
         )
         script_text_path.write_text(script_payload.full_text, encoding="utf-8")
-        # Use real TTS audio when available, else placeholder
-        tts_audio_bytes = params.get("tts_audio_bytes")
-        has_real_audio = tts_audio_bytes and isinstance(tts_audio_bytes, bytes) and len(tts_audio_bytes) > 100
-        if has_real_audio:
-            audio_path.write_bytes(tts_audio_bytes)
-        else:
-            audio_path.write_bytes(b"placeholder-audio")
 
-        # Attempt ffmpeg rendering with real audio; fall back to placeholder video
-        if has_real_audio and self._ffmpeg_available():
-            try:
-                self._render_video_with_ffmpeg(
-                    script=script_payload,
-                    audio_path=audio_path,
-                    video_path=final_video_path,
-                    thumbnail_path=thumbnail_path,
-                    topic=topic,
-                    style=style,
-                )
-            except Exception:
-                final_video_path.write_bytes(self.placeholder_video_bytes)
-        else:
-            final_video_path.write_bytes(self.placeholder_video_bytes)
+        # TTS audio is required — no fallback
+        tts_audio_bytes = params.get("tts_audio_bytes")
+        if not tts_audio_bytes or not isinstance(tts_audio_bytes, bytes) or len(tts_audio_bytes) < 100:
+            raise RuntimeError("TTS audio not available — cannot generate video without speech audio")
+        audio_path.write_bytes(tts_audio_bytes)
+
+        # DH_live digital human rendering
+        from src.ai_modules.generation.video_renderer import VideoRendererService
+
+        settings = get_settings()
+        renderer = VideoRendererService(
+            checkpoint_dir=settings.dh_live_checkpoint_dir,
+            avatar_data_dir=settings.avatar_data_dir,
+        )
+        renderer.render_talking_video(
+            audio_path=audio_path,
+            output_video_path=final_video_path,
+        )
+
+        # Thumbnail
         thumbnail_path.write_text(
             self._build_video_thumbnail_svg(
                 title=script_payload.title,
@@ -689,7 +726,7 @@ class ResourceGenerationService:
             durationSeconds=script_payload.total_duration,
             videoStyle=style,
             previewText=script_payload.full_text[:100],
-            summaryText=f"{topic} 教学视频脚本与占位视频已生成。",
+            summaryText=f"{topic} 教学视频已通过数字人生成。",
         )
         params["videoSandboxArtifact"] = artifact.model_dump(by_alias=True)
         params["videoGenerationTask"] = VideoGenerationTaskPayload(
@@ -699,8 +736,8 @@ class ResourceGenerationService:
             script=script_payload,
             durationSeconds=artifact.duration_seconds,
             videoStyle=style,
-            ttsProvider=get_settings().tts_provider,
-            avatarProvider="sadtalker",
+            ttsProvider=settings.tts_provider,
+            avatarProvider="dh_live_mini",
             generationParams={
                 "durationTarget": script_payload.total_duration,
                 "style": style,
@@ -872,93 +909,6 @@ class ResourceGenerationService:
             explanation="当前为回退代码示例，用于保证链路稳定。",
         )
 
-    @staticmethod
-    def _ffmpeg_available() -> bool:
-        import shutil
-        return shutil.which("ffmpeg") is not None
-
-    def _render_video_with_ffmpeg(
-        self,
-        *,
-        script: Any,
-        audio_path: Path,
-        video_path: Path,
-        thumbnail_path: Path,
-        topic: str,
-        style: str,
-    ) -> None:
-        import subprocess
-        import tempfile
-
-        full_text = getattr(script, "full_text", str(topic))
-        safe_topic = self._escape_svg_text(topic)
-        duration = int(getattr(script, "total_duration", 60))
-
-        # Generate a title frame SVG
-        svg_content = (
-            '<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="720" viewBox="0 0 1280 720">'
-            '<defs><linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">'
-            '<stop offset="0%" stop-color="#1e3a5f"/><stop offset="100%" stop-color="#2563eb"/>'
-            '</linearGradient></defs>'
-            '<rect width="1280" height="720" fill="url(#bg)"/>'
-            '<rect x="80" y="80" width="1120" height="560" rx="40" fill="rgba(15,23,42,0.3)" stroke="#60a5fa" stroke-width="2"/>'
-            '<text x="640" y="300" fill="#ffffff" font-size="52" font-family="sans-serif" text-anchor="middle" font-weight="bold">'
-            f'{safe_topic}</text>'
-            '<text x="640" y="380" fill="#93c5fd" font-size="32" font-family="sans-serif" text-anchor="middle">AI 教学视频</text>'
-            '<text x="640" y="440" fill="#bfdbfe" font-size="24" font-family="sans-serif" text-anchor="middle">'
-            f'风格: {style}</text>'
-            "</svg>"
-        )
-        with tempfile.NamedTemporaryFile(suffix=".svg", delete=False) as tmp_svg:
-            tmp_svg.write(svg_content.encode("utf-8"))
-            svg_frame_path = Path(tmp_svg.name)
-
-        try:
-            # Convert SVG to video frame using ffmpeg
-            frame_video = video_path.with_suffix(".frame.mp4")
-            subprocess.run(
-                [
-                    "ffmpeg", "-y",
-                    "-loop", "1",
-                    "-i", str(svg_frame_path),
-                    "-c:v", "libx264",
-                    "-t", str(duration),
-                    "-pix_fmt", "yuv420p",
-                    "-vf", "scale=1280:720",
-                    str(frame_video),
-                ],
-                capture_output=True,
-                timeout=60,
-                check=True,
-            )
-
-            # Merge frame video with audio
-            subprocess.run(
-                [
-                    "ffmpeg", "-y",
-                    "-i", str(frame_video),
-                    "-i", str(audio_path),
-                    "-c:v", "copy",
-                    "-c:a", "aac",
-                    "-shortest",
-                    str(video_path),
-                ],
-                capture_output=True,
-                timeout=60,
-                check=True,
-            )
-
-            # Clean up frame video
-            try:
-                frame_video.unlink()
-            except OSError:
-                pass
-        finally:
-            try:
-                svg_frame_path.unlink()
-            except OSError:
-                pass
-
     def _write_text(self, file_name: str, content: str) -> Path:
         self.sandbox_root.mkdir(parents=True, exist_ok=True)
         path = self.sandbox_root / file_name
@@ -969,8 +919,3 @@ class ResourceGenerationService:
         task_id = str(params.get("taskId") or "shared")
         safe_task_id = "".join(ch if ch.isalnum() or ch in ("-", "_") else "_" for ch in task_id)
         return f"{prefix}_{safe_task_id}.{suffix}"
-
-
-_PLACEHOLDER_MP4_BASE64 = (
-    "AAAAIGZ0eXBpc29tAAACAGlzb21pc282aXNvMmF2YzFtcDQxAAAC9W1vb3YAAABsbXZoZAAAAAAAAAAAAAAAAAAAA+gAAAPoAAEAAAEAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAQAAAAAAAAAAAAAAAAAAQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAIAAAIVdHJhawAAAFx0a2hkAAAAAwAAAAAAAAAAAAAAAQAAAAAAAAPoAAAAAAAAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAQAAAAAAAAAAAAAAAAAAQAAAAAAABQAAAAKAAACkbWRpYQAAACBtZGhkAAAAAAAAAAAAAAAAAAAyAAAAMgBVxAAAAAAALWhkbHIAAAAAAAAAAHZpZGUAAAAAAAAAAAAAAABWaWRlb0hhbmRsZXIAAAACQW1pbmYAAAAUdm1oZAAAAAEAAAAAAAAAAAAAACRkaW5mAAAAHGRyZWYAAAAAAAAAAQAAAAx1cmwgAAAAAQAAAgFzdGJsAAAArXN0c2QAAAAAAAAAAQAAAJ1hdmMxAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAAAAAUACgBIAAAASAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAGP//AAAAM2F2Y0MBZAAN/+EAGGdkAA2s2UD8H/llhAAAAwAEAAADAMDxgxHgAQAGaOvjyyLA/fj4AAAAABBwYXNwAAAAAQAAAAEAAAAUc3R0cwAAAAAAAAABAAAAAQAAAgAAAAAUc3NjAAAAAAAAAAEAAAABAAAAFHN0c2MAAAAAAAAAAQAAAAEAAAABAAAAAQAAABRzdHN6AAAAAAAAArQAAAABAAABFHN0Y28AAAAAAAAAAQAAADYAAABidWR0YQAAAFptZXRhAAAAAAAAACFoZGxyAAAAAAAAAABtZGlyYXBwbAAAAAAAAAAAAAAAAC1pbHN0AAAAJal0b28AAAAdaGFuZGJyYWtlIDEuMy4zIDIwMjAwNjEzMDA="
-)

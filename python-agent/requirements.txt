@@ -17,3 +17,13 @@ opentelemetry-sdk>=1.26,<2.0
 opentelemetry-sdk>=1.26,<2.0
 opentelemetry-exporter-otlp>=1.26,<2.0
 python-pptx>=0.6,<1.0
+torch>=2.0
+opencv-python>=4.8
+torchaudio>=2.0
+mediapipe>=0.10
+tqdm
+scikit-learn
+pyglm
+glfw
+PyOpenGL
+scipy
