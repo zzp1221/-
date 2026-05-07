@@ -3,7 +3,12 @@ import { smartEngineApi } from '../api/smartEngine';
 import type {
   ConversationStreamEventPayload,
   EngineService,
+  InlineResourceView,
+  ProfileDimensionScore,
   ProfileSnapshot,
+  ProfileTimelinePoint,
+  PracticeJudgeResult,
+  PracticeQuestionBatch,
   RunByApiTaskArgs,
   ServiceFormsPayload,
   SmartEngineStreamEvent,
@@ -13,6 +18,7 @@ import type {
   UserProfileResponse,
   VideoCardStyle,
   VideoResult,
+  WeakPointRank,
 } from './LearningStudioDemoPage.types';
 
 export function normalizeCopyText(input: string): string {
@@ -57,6 +63,9 @@ export async function runByApiTask({
   setTaskSummary,
   setDownloadLinks,
   setVideoResult,
+  setInlineResource,
+  setPracticeBatch,
+  setJudgeResult,
   taskStreamAbortRef,
 }: RunByApiTaskArgs): Promise<'completed' | 'running' | 'failed' | 'aborted' | 'unauthorized'> {
   const handlers: TaskRunHandlers = {
@@ -87,6 +96,18 @@ export async function runByApiTask({
     },
     onVideo: (item) => {
       setVideoResult((prev) => prev ?? item);
+    },
+    onInlineResource: (item) => {
+      setInlineResource(item);
+    },
+    onQuestionBatch: (item) => {
+      setPracticeBatch(item);
+      setJudgeResult(null);
+      setTaskSummary(item.title);
+    },
+    onJudgeResult: (item) => {
+      setJudgeResult(item);
+      setTaskSummary(item.summary);
     },
   };
 
@@ -204,21 +225,52 @@ function consumeTaskStreamEvent(event: SmartEngineStreamEvent, handlers: TaskRun
     const downloadUrl = readString(envelope.payload?.downloadUrl);
     const resourceType = readString(envelope.payload?.assetType);
     const fileName = readString(envelope.payload?.fileName);
+    const inlineResource = readInlineResource(envelope.payload);
     if (downloadUrl) {
+      const summary = readString(envelope.payload?.summary);
+      const sourceName = readString(envelope.payload?.sourceName);
+      if (!isSafeRecommendationContent(title, summary, sourceName, downloadUrl)) {
+        handlers.onLine('已过滤不安全外部资源');
+        return;
+      }
       handlers.onDownload({
-        title,
+        title: truncateRecommendationText(title, 20),
         url: downloadUrl,
         fileName: fileName || undefined,
         expiresHint: formatExpiresHint(envelope.payload),
         resourceType,
+        mimeType: readString(envelope.payload?.mimeType),
+        summary: truncateRecommendationText(summary, 20),
+        sourceName,
         thumbnailUrl: readUrlField(envelope.payload, ['thumbnailUrl', 'thumbnail_url', 'posterUrl', 'coverUrl']),
         duration: readDuration(envelope.payload),
         style: readVideoStyle(envelope.payload),
         knowledgePoint: readString(envelope.payload?.knowledgePoint) || readString(envelope.payload?.topic),
       });
     }
+    if (inlineResource) {
+      handlers.onInlineResource(inlineResource);
+    }
     handlers.onLine(`${title} 已生成`);
     return;
+  }
+
+  if (event.event === 'question_batch') {
+    const batch = readPracticeQuestionBatch(envelope.payload);
+    if (batch) {
+      handlers.onQuestionBatch(batch);
+      handlers.onLine(`${batch.title} 已生成，可直接在页面作答`);
+      return;
+    }
+  }
+
+  if (event.event === 'judge_result') {
+    const result = readPracticeJudgeResult(envelope.payload);
+    if (result) {
+      handlers.onJudgeResult(result);
+      handlers.onLine(result.summary);
+      return;
+    }
   }
 
   if (event.event === 'done') {
@@ -268,6 +320,18 @@ function applyTaskSnapshot(
     if (videoResult) {
       handlers.onVideo(videoResult);
     }
+    const inlineResource = readInlineResource(task.responseSummary);
+    if (inlineResource) {
+      handlers.onInlineResource(inlineResource);
+    }
+    const batch = readPracticeQuestionBatch(task.responseSummary);
+    if (batch) {
+      handlers.onQuestionBatch(batch);
+    }
+    const judgeResult = readPracticeJudgeResult(task.responseSummary);
+    if (judgeResult) {
+      handlers.onJudgeResult(judgeResult);
+    }
     responseSummaryToLines(task.responseSummary, service).forEach((line) => handlers.onLine(line));
   }
 }
@@ -292,7 +356,7 @@ function responseSummaryToLines(summary: Record<string, unknown>, service: Engin
     }
   }
   return Object.entries(summary)
-    .filter(([key]) => !['summary', 'summaryText', 'message'].includes(key))
+    .filter(([key]) => !['summary', 'summaryText', 'message', 'inlineContent', 'questions', 'items'].includes(key))
     .map(([key, value]) => `${labelForSummaryKey(key, service)}：${stringifyCompact(value)}`)
     .filter((line) => !line.endsWith('：'));
 }
@@ -305,6 +369,14 @@ export function readConversationChunk(data: ConversationStreamEventPayload, even
 
   const stage = readString(payload.stage);
   if (eventName === 'progress') {
+    const progressMessage = readString(payload.message);
+    return progressMessage ? `\n[处理中] ${progressMessage}\n` : '';
+  }
+  if (eventName === 'error') {
+    const errorMessage = readString(payload.message) || readString(payload.text);
+    return errorMessage ? `\n[出错] ${errorMessage}\n` : '';
+  }
+  if (eventName === 'done') {
     return '';
   }
   if (eventName === 'result_chunk' && stage && stage !== 'tutoring') {
@@ -315,11 +387,6 @@ export function readConversationChunk(data: ConversationStreamEventPayload, even
   if (text) {
     return sanitizeConversationMessageContent(text);
   }
-
-  if (eventName === 'done') {
-    return '';
-  }
-
   return stringifyCompact(payload);
 }
 
@@ -338,39 +405,414 @@ export function mapProfileResponse(response: UserProfileResponse): ProfileSnapsh
     return null;
   }
 
+  const preferredResourceTypes = readStringArray(raw.preferredResourceTypes, raw.preference, raw.learningPreference)
+    .map(localizeResourceTypeLabel)
+    .filter(Boolean);
+  const learningGoal = readString(raw.learningGoal)
+    || readString(readRecord(raw.currentGoal)?.shortTerm)
+    || readString(raw.goal);
+  const knowledgeBase = localizeKnowledgeFoundation(
+    readString(raw.knowledgeBase)
+    || readString(raw.foundationLevel)
+    || readString(raw.knowledgeFoundation)
+    || readString(raw.studentLevel),
+  );
+  const summaryText = localizeNarrativeText(response.summary || readString(raw.summaryText));
+  const confidenceScore = normalizeConfidenceScore(
+    readNumeric(raw.confidenceScore)
+      ?? readNumeric(raw.confidence)
+      ?? readNumeric(raw.score),
+  );
+  const weakPointRanks = buildWeakPointRanks(raw);
+  const explanationPreference = localizeExplanationPreference(readString(raw.explanationPreference));
+  const dimensionScores = buildProfileDimensionScores({
+    raw,
+    knowledgeBase,
+    learningGoal,
+    confidenceScore,
+    preferredResourceTypes,
+    explanationPreference,
+    weakPointRanks,
+  });
+  const timeline = buildProfileTimeline(response, raw);
+
   return {
     major: readString(raw.major) || readString(raw.courseFocus) || readString(raw.courseDirection),
-    goal: readString(raw.learningGoal) || readString(raw.goal),
-    knowledgeBase: readString(raw.knowledgeBase) || readString(raw.foundationLevel),
-    weakPoints: readStringArray(raw.weakPoints, raw.knownGaps),
-    preference: readStringArray(raw.preference, raw.learningPreference, raw.preferredModes),
-    cognitiveStyle: readString(raw.cognitiveStyle) || readString(raw.learningStyle),
-    confidenceLevel: readString(raw.confidenceLevel) || readString(raw.confidence),
+    goal: learningGoal,
+    knowledgeBase,
+    weakPoints: readStringArray(
+      raw.weakPoints,
+      raw.knownGaps,
+      raw.knowledgeGaps,
+      Array.isArray(raw.weakPointDetails)
+        ? (raw.weakPointDetails as Array<Record<string, unknown>>).map((item) => item.topic)
+        : undefined,
+    ),
+    preference: preferredResourceTypes,
+    cognitiveStyle: localizeCognitiveStyle(readString(raw.cognitiveStyle) || readString(raw.learningStyle)),
+    confidenceLevel: localizeConfidenceLevel(readString(raw.confidenceLevel) || readString(raw.confidence) || readString(raw.confidenceScore)),
+    confidenceScore,
+    explanationPreference,
+    summaryText,
+    dimensionScores,
+    weakPointRanks,
+    timeline,
   };
+}
+
+function buildProfileDimensionScores(input: {
+  raw: Record<string, unknown>;
+  knowledgeBase: string;
+  learningGoal: string;
+  confidenceScore: number;
+  preferredResourceTypes: string[];
+  explanationPreference: string;
+  weakPointRanks: WeakPointRank[];
+}): ProfileDimensionScore[] {
+  const skillMastery = readRecord(input.raw.skillMastery);
+  const skillValues = skillMastery
+    ? Object.values(skillMastery)
+      .map((value) => readNumeric(value))
+      .filter((value): value is number => value !== undefined)
+    : [];
+  const learningHabits = readRecord(input.raw.learningHabits);
+  const currentGoal = readRecord(input.raw.currentGoal);
+  const noteTaking = Boolean(learningHabits?.noteTaking);
+  const selfTesting = Boolean(learningHabits?.selfTesting);
+  const studyFrequency = localizeStudyFrequency(readString(learningHabits?.studyFrequency));
+  const avgSessionDuration = readNumeric(learningHabits?.avgSessionDuration) ?? 0;
+  const cognitiveStyle = localizeCognitiveStyle(readString(input.raw.cognitiveStyle) || readString(input.raw.learningStyle));
+
+  const knowledgeBaseScore = normalizeToPercent(levelToScore(input.knowledgeBase));
+  const skillMasteryScore = normalizeToPercent(
+    skillValues.length > 0
+      ? (skillValues.reduce((sum, value) => sum + value, 0) / skillValues.length) * 100
+      : input.confidenceScore * 0.72,
+  );
+  const goalScore = normalizeToPercent(
+    (input.learningGoal ? 72 : 38)
+      + (readString(currentGoal?.midTerm) ? 10 : 0)
+      + (readString(currentGoal?.context) ? 6 : 0)
+      + (readString(currentGoal?.urgency) === 'HIGH' ? 4 : 0),
+  );
+  const habitScore = normalizeToPercent(
+    35
+      + (studyFrequency.includes('高频') ? 18 : studyFrequency ? 10 : 0)
+      + Math.min(18, Math.round(avgSessionDuration / 2))
+      + (noteTaking ? 12 : 0)
+      + (selfTesting ? 15 : 0),
+  );
+  const weakPointControlScore = normalizeToPercent(
+    input.weakPointRanks.length > 0
+      ? 100 - (input.weakPointRanks.reduce((sum, item) => sum + item.severity, 0) / input.weakPointRanks.length) * 45
+      : 82,
+  );
+  const confidenceMetric = normalizeToPercent(input.confidenceScore);
+  const cognitiveFitScore = normalizeToPercent(
+    42
+      + (cognitiveStyle ? 18 : 0)
+      + (input.explanationPreference ? 18 : 0)
+      + Math.min(22, input.preferredResourceTypes.length * 8),
+  );
+
+  return [
+    { key: 'knowledgeBase', subject: '知识基础', score: knowledgeBaseScore, fullMark: 100, hint: `当前基础：${input.knowledgeBase || '待分析'}` },
+    { key: 'skillMastery', subject: '技能掌握', score: skillMasteryScore, fullMark: 100, hint: skillValues.length > 0 ? `已识别 ${skillValues.length} 个技能掌握度` : '等待更多练习与评估数据' },
+    { key: 'goalClarity', subject: '目标清晰', score: goalScore, fullMark: 100, hint: input.learningGoal || '尚未形成明确目标' },
+    { key: 'learningHabits', subject: '学习习惯', score: habitScore, fullMark: 100, hint: studyFrequency || '当前主要根据会话行为推断' },
+    { key: 'weakPointControl', subject: '薄弱点收敛', score: weakPointControlScore, fullMark: 100, hint: input.weakPointRanks[0]?.topic ? `当前首要薄弱点：${input.weakPointRanks[0].topic}` : '暂无明显薄弱点' },
+    { key: 'confidence', subject: '学习信心', score: confidenceMetric, fullMark: 100, hint: `当前置信分：${Math.round(input.confidenceScore)} / 100` },
+    { key: 'cognitiveFit', subject: '认知适配', score: cognitiveFitScore, fullMark: 100, hint: input.explanationPreference || cognitiveStyle || '等待画像进一步完善' },
+  ];
+}
+
+function buildWeakPointRanks(raw: Record<string, unknown>): WeakPointRank[] {
+  const details = Array.isArray(raw.weakPointDetails) ? raw.weakPointDetails : [];
+  const fromDetails = details
+    .map((item) => readRecord(item))
+    .filter((item): item is Record<string, unknown> => item !== null)
+    .map((item) => ({
+      topic: localizeNarrativeText(readString(item.topic)),
+      severity: normalizeSeverityScore(readNumeric(item.severity)),
+      lastError: localizeNarrativeText(readString(item.lastError)),
+    }))
+    .filter((item) => item.topic);
+  if (fromDetails.length > 0) {
+    return fromDetails.sort((left, right) => right.severity - left.severity);
+  }
+
+  const weakPoints = readStringArray(raw.weakPoints, raw.knowledgeGaps, raw.knownGaps);
+  return weakPoints.map((topic, index) => ({
+    topic: localizeNarrativeText(topic),
+    severity: normalizeSeverityScore(0.76 - index * 0.1),
+    lastError: '',
+  }));
+}
+
+function buildProfileTimeline(
+  response: UserProfileResponse,
+  currentRaw: Record<string, unknown>,
+): ProfileTimelinePoint[] {
+  const history = Array.isArray(response.history) ? response.history : [];
+  const mapped = history
+    .map((item) => {
+      const profile = readRecord(item.profile) ?? {};
+      const weakPointRanks = buildWeakPointRanks(profile);
+      return {
+        version: Math.max(1, Math.round(readNumeric(item.version) ?? 1)),
+        updatedAt: readString(item.updatedAt) || response.updatedAt || '',
+        summary: localizeNarrativeText(readString(item.summary) || readString(profile.summaryText) || ''),
+        confidenceScore: normalizeConfidenceScore(readNumeric(item.confidence) ?? readNumeric(profile.confidenceScore)),
+        knowledgeBase: localizeKnowledgeFoundation(
+          readString(profile.knowledgeBase)
+            || readString(profile.foundationLevel)
+            || readString(profile.knowledgeFoundation)
+            || readString(profile.studentLevel),
+        ),
+        goal: readString(profile.learningGoal)
+          || readString(readRecord(profile.currentGoal)?.shortTerm)
+          || readString(profile.goal),
+        leadWeakPoint: localizeNarrativeText(weakPointRanks[0]?.topic || ''),
+      };
+    })
+    .filter((item) => item.updatedAt || item.summary || item.goal || item.leadWeakPoint);
+
+  if (mapped.length > 0) {
+    return mapped;
+  }
+
+  const currentWeakPoint = buildWeakPointRanks(currentRaw)[0]?.topic || '';
+  return [{
+    version: 1,
+    updatedAt: response.updatedAt || '',
+    summary: localizeNarrativeText(response.summary || readString(currentRaw.summaryText)),
+    confidenceScore: normalizeConfidenceScore(readNumeric(currentRaw.confidenceScore)),
+    knowledgeBase: localizeKnowledgeFoundation(
+      readString(currentRaw.knowledgeBase)
+        || readString(currentRaw.foundationLevel)
+        || readString(currentRaw.knowledgeFoundation)
+        || readString(currentRaw.studentLevel),
+    ),
+    goal: readString(currentRaw.learningGoal)
+      || readString(readRecord(currentRaw.currentGoal)?.shortTerm)
+      || readString(currentRaw.goal),
+    leadWeakPoint: localizeNarrativeText(currentWeakPoint),
+  }];
+}
+
+function levelToScore(level: string): number {
+  const normalized = level.trim().toUpperCase();
+  if (['ADVANCED', '熟练', '高级'].includes(normalized)) {
+    return 88;
+  }
+  if (['INTERMEDIATE', '中级', '进阶'].includes(normalized)) {
+    return 74;
+  }
+  if (['BASIC', '基础'].includes(normalized)) {
+    return 58;
+  }
+  if (['BEGINNER', '入门', '初学'].includes(normalized)) {
+    return 42;
+  }
+  return 50;
+}
+
+function normalizeConfidenceScore(value: number | undefined): number {
+  if (value === undefined) {
+    return 65;
+  }
+  if (value <= 1) {
+    return normalizeToPercent(value * 100);
+  }
+  return normalizeToPercent(value);
+}
+
+function normalizeSeverityScore(value: number | undefined): number {
+  if (value === undefined) {
+    return 70;
+  }
+  if (value <= 1) {
+    return normalizeToPercent(value * 100);
+  }
+  return normalizeToPercent(value);
+}
+
+function normalizeToPercent(value: number): number {
+  return Math.max(0, Math.min(100, Math.round(value)));
+}
+
+function localizeKnowledgeFoundation(value: string): string {
+  const normalized = value.trim().toUpperCase();
+  switch (normalized) {
+    case 'ADVANCED':
+      return '熟练';
+    case 'INTERMEDIATE':
+      return '进阶';
+    case 'BASIC':
+      return '基础';
+    case 'BEGINNER':
+      return '入门';
+    case 'UNKNOWN':
+    case '':
+      return '';
+    default:
+      return value.trim();
+  }
+}
+
+function localizeConfidenceLevel(value: string): string {
+  const normalized = value.trim().toUpperCase();
+  switch (normalized) {
+    case 'HIGH':
+      return '高';
+    case 'MEDIUM':
+      return '中';
+    case 'LOW':
+      return '低';
+    case 'UNKNOWN':
+    case '':
+      return '';
+    default:
+      return value.trim();
+  }
+}
+
+function localizeCognitiveStyle(value: string): string {
+  const normalized = value.trim().toLowerCase();
+  switch (normalized) {
+    case 'reasoning_oriented':
+      return '偏原理推导';
+    case 'procedural_oriented':
+      return '偏步骤实操';
+    case 'mixed':
+      return '混合型';
+    case '':
+    case 'unknown':
+      return '';
+    default:
+      return value.trim();
+  }
+}
+
+function localizeStudyFrequency(value: string): string {
+  const normalized = value.trim().toLowerCase();
+  switch (normalized) {
+    case 'high_frequency':
+      return '高频学习';
+    case 'stage_based':
+      return '阶段性学习';
+    default:
+      return value.trim();
+  }
+}
+
+function localizeExplanationPreference(value: string): string {
+  const normalized = value.trim().toLowerCase();
+  switch (normalized) {
+    case 'step_by_step':
+      return '循序渐进';
+    case 'concept_then_question':
+      return '先概念后练习';
+    case 'example_first':
+      return '先例子后原理';
+    case 'visual_first':
+      return '先图示后讲解';
+    default:
+      return value.trim();
+  }
+}
+
+function localizeResourceTypeLabel(value: string): string {
+  const normalized = value.trim().toUpperCase();
+  switch (normalized) {
+    case 'DOCUMENT':
+    case 'EXPLANATION':
+      return '讲解文档';
+    case 'READING':
+      return '拓展阅读';
+    case 'MINDMAP':
+      return '思维导图';
+    case 'CODE':
+    case 'CODE_CASE':
+      return '代码案例';
+    case 'QUIZ':
+      return '练习题';
+    case 'VIDEO':
+      return '数字人视频';
+    case 'STEP_BY_STEP':
+      return '循序渐进';
+    case 'CONCEPT_THEN_QUESTION':
+      return '先概念后练习';
+    case 'EXAMPLE_FIRST':
+      return '先例子后原理';
+    case 'VISUAL_FIRST':
+      return '先图示后讲解';
+    case 'UNKNOWN':
+    case '':
+      return '';
+    default:
+      return value.trim();
+  }
+}
+
+function localizeNarrativeText(value: string): string {
+  if (!value.trim()) {
+    return '';
+  }
+  const replacements: Array<[RegExp, string]> = [
+    [/\bBEGINNER\b/g, '入门'],
+    [/\bBASIC\b/g, '基础'],
+    [/\bINTERMEDIATE\b/g, '进阶'],
+    [/\bADVANCED\b/g, '熟练'],
+    [/\bUNKNOWN\b/g, '待分析'],
+    [/\bHIGH\b/g, '高'],
+    [/\bMEDIUM\b/g, '中'],
+    [/\bLOW\b/g, '低'],
+    [/\bmixed\b/g, '混合型'],
+    [/\breasoning_oriented\b/g, '偏原理推导'],
+    [/\bprocedural_oriented\b/g, '偏步骤实操'],
+    [/\bconcept_then_question\b/g, '先概念后练习'],
+    [/\bstep_by_step\b/g, '循序渐进'],
+    [/\bexample_first\b/g, '先例子后原理'],
+    [/\bvisual_first\b/g, '先图示后讲解'],
+    [/\bDOCUMENT\b/g, '讲解文档'],
+    [/\bREADING\b/g, '拓展阅读'],
+    [/\bMINDMAP\b/g, '思维导图'],
+    [/\bCODE_CASE\b/g, '代码案例'],
+    [/\bCODE\b/g, '代码案例'],
+    [/\bQUIZ\b/g, '练习题'],
+    [/\bVIDEO\b/g, '数字人视频'],
+  ];
+  let result = value.trim();
+  replacements.forEach(([pattern, replacement]) => {
+    result = result.replace(pattern, replacement);
+  });
+  result = result
+    .replace(/(知识基础|当前知识基础为)\s*待分析/g, '$1尚待分析')
+    .replace(/(置信度|置信分)\s*=\s*待分析/g, '$1尚待分析')
+    .replace(/\s{2,}/g, ' ')
+    .trim();
+  return result;
 }
 
 export function buildServiceParams(service: EngineService, payload: ServiceFormsPayload): Record<string, unknown> {
   if (service === 'resource') {
     const resourceForm = payload.resourceForm;
-    const includeVideo = payload.resourceForm.resourceTypes.includes('VIDEO');
-    const normalizedResourceTypes = payload.resourceForm.resourceTypes.map(normalizeResourceType);
-    const primaryResourceType = includeVideo ? 'VIDEO' : normalizedResourceTypes[0] ?? 'DOCUMENT';
-    const resourceTypeLabels = payload.resourceForm.resourceTypes
-      .map(resourceTypeLabel)
-      .filter(Boolean);
+    const includeVideo = resourceForm.resourceType === 'VIDEO';
+    const normalizedResourceType = normalizeResourceType(resourceForm.resourceType);
+    const resourceTypeLabelText = resourceTypeLabel(resourceForm.resourceType);
     const difficultyLabel = resourceDifficultyLabel(resourceForm.difficulty);
     const query = [
       resourceForm.course,
       resourceForm.keyPoints,
       difficultyLabel,
-      resourceTypeLabels.join('、'),
+      resourceTypeLabelText,
     ]
       .map((item) => item?.trim())
       .filter(Boolean)
       .join(' ');
     return {
-      resourceType: primaryResourceType,
-      resourceTypes: normalizedResourceTypes,
+      resourceType: normalizedResourceType,
       course: resourceForm.course,
       difficulty: resourceForm.difficulty,
       keyPoints: resourceForm.keyPoints,
@@ -380,8 +822,8 @@ export function buildServiceParams(service: EngineService, payload: ServiceForms
         course: resourceForm.course,
         chapter: resourceForm.keyPoints,
       },
-      style: includeVideo ? resourceForm.videoStyle : undefined,
-      duration: includeVideo ? normalizeDurationSeconds(resourceForm.durationSeconds) : undefined,
+      style: includeVideo ? 'talking_head' : undefined,
+      duration: includeVideo ? 60 : undefined,
     };
   }
 
@@ -397,31 +839,27 @@ export function buildServiceParams(service: EngineService, payload: ServiceForms
     const preferredTypeLabelMap: Record<string, string> = {
       CODE_CASE: '代码案例',
       EXPLANATION: '讲解文档',
-      QUIZ: '练习题',
-      MINDMAP: '思维导图',
+      PRACTICAL_CASE: '实操案例',
       READING: '拓展阅读',
-      VIDEO: '教学视频',
+      VIDEO: '视频',
     };
-    const composedQuery = [
-      payload.pushForm.keyword,
-      payload.pushForm.courseScope,
-      preferredTypeLabelMap[payload.pushForm.preferredType] ?? payload.pushForm.preferredType,
-    ]
-      .map((item) => item?.trim())
-      .filter(Boolean)
-      .join(' ');
+    const preferredType = payload.pushForm.preferredType;
+    const composedQuery = `基于学习画像自动推送${preferredTypeLabelMap[preferredType] ?? preferredType}`;
     return {
-      keyword: payload.pushForm.keyword,
-      resourceType: normalizeResourceType(payload.pushForm.preferredType),
-      courseScope: payload.pushForm.courseScope,
+      resourceType: preferredType,
       query: composedQuery,
-      topic: payload.pushForm.keyword,
+      topic: composedQuery,
     };
   }
 
   return {
     range: payload.assessmentForm.range,
     dimensions: payload.assessmentForm.dimensions,
+    assessmentDimension: payload.assessmentForm.dimensions[0] ?? '知识基础',
+    learningContext: {
+      course: payload.resourceForm.course,
+      chapter: payload.resourceForm.keyPoints,
+    },
   };
 }
 
@@ -483,13 +921,68 @@ function readSummary(payload: Record<string, unknown> | undefined): string {
 
   const nestedLearningPath = readRecord(payload.learningPath);
   if (nestedLearningPath) {
-    const learningPathSummary = readString(nestedLearningPath.summaryText);
-    if (learningPathSummary) {
-      return learningPathSummary;
+    const learningPathMarkdown = formatLearningPathMarkdown(nestedLearningPath);
+    if (learningPathMarkdown) {
+      return learningPathMarkdown;
     }
   }
 
   return readString(payload.summaryText) || readString(payload.summary) || readString(payload.message) || readString(payload.text) || '';
+}
+
+function formatLearningPathMarkdown(learningPath: Record<string, unknown>): string {
+  const goal = readString(learningPath.goal);
+  const duration = readString(learningPath.duration);
+  const milestones = readStringArray(learningPath.milestones);
+  const rawSteps = Array.isArray(learningPath.steps) ? learningPath.steps : [];
+  const sections: string[] = [];
+
+  if (goal || duration) {
+    sections.push(
+      [
+        '## 学习路径总览',
+        goal ? `- 学习目标：${goal}` : '',
+        duration ? `- 规划周期：${duration}` : '',
+      ].filter(Boolean).join('\n'),
+    );
+  }
+
+  if (milestones.length > 0) {
+    sections.push(
+      [
+        '## 阶段里程碑',
+        ...milestones.map((milestone, index) => `${index + 1}. ${milestone}`),
+      ].join('\n'),
+    );
+  }
+
+  rawSteps.forEach((step, index) => {
+    const record = readRecord(step);
+    if (!record) {
+      return;
+    }
+    const title = readString(record.title) || `阶段 ${index + 1}`;
+    const objective = readString(record.objective);
+    const activities = readStringArray(record.activities);
+    const successCriteria = readString(record.successCriteria);
+    sections.push(
+      [
+        `## ${title}`,
+        objective ? `### 核心目标\n- ${objective}` : '',
+        activities.length > 0
+          ? ['### 必做内容', ...activities.map((activity) => `- ${activity}`)].join('\n')
+          : '',
+        successCriteria ? `### 完成标准\n- ${successCriteria}` : '',
+      ].filter(Boolean).join('\n\n'),
+    );
+  });
+
+  const summaryText = readString(learningPath.summaryText);
+  if (summaryText) {
+    sections.push(`## 路径说明\n${summaryText}`);
+  }
+
+  return sections.filter(Boolean).join('\n\n');
 }
 
 function formatLearningPathLines(learningPath: Record<string, unknown>): string[] {
@@ -590,14 +1083,6 @@ function labelForSummaryKey(key: string, service: EngineService): string {
   }
 
   return key;
-}
-
-function normalizeDurationSeconds(value: string): number {
-  const parsed = Number(value);
-  if (!Number.isFinite(parsed)) {
-    return 60;
-  }
-  return Math.max(15, Math.min(180, Math.round(parsed)));
 }
 
 function resourceDifficultyLabel(difficulty: string): string {
@@ -702,7 +1187,16 @@ function readUrlField(payload: Record<string, unknown> | undefined, keys: string
 }
 
 function isVideoLink(item: TempDownloadLink): boolean {
-  return item.resourceType === 'VIDEO' || /\.mp4($|\?)/i.test(item.url);
+  if (item.resourceType !== 'VIDEO') {
+    return false;
+  }
+  const mimeType = (item.mimeType || '').toLowerCase();
+  const fileName = (item.fileName || '').toLowerCase();
+  const url = item.url.toLowerCase();
+  if (mimeType.startsWith('video/')) {
+    return true;
+  }
+  return ['.mp4', '.webm', '.mov', '.m4v', '.m3u8'].some((ext) => fileName.endsWith(ext) || url.includes(ext));
 }
 
 function mapDownloadToVideoResult(item: TempDownloadLink): VideoResult {
@@ -717,8 +1211,51 @@ function mapDownloadToVideoResult(item: TempDownloadLink): VideoResult {
   };
 }
 
+function isSafeRecommendationContent(title: string, summary: string, sourceName: string, url: string): boolean {
+  const combined = `${title} ${summary} ${sourceName} ${url}`.toLowerCase();
+  const blockedTokens = [
+    'china-dictatorship',
+    'anti chinese',
+    'anti-china',
+    'anti china',
+    'anti ccp',
+    '反共',
+    '反华',
+    '政治宣传',
+    '宣传库',
+    'propaganda',
+    'dictatorship',
+    'falun',
+    'falun gong',
+    '法轮功',
+    '六四',
+    '天安门',
+    '疆独',
+    '港独',
+    '台独',
+    '邪教',
+    '习近平',
+    'xijinping',
+    'ccp',
+    '共产党',
+  ];
+  return !blockedTokens.some((token) => combined.includes(token));
+}
+
+function truncateRecommendationText(value: string, limit: number): string {
+  const normalized = value.trim();
+  if (normalized.length <= limit) {
+    return normalized;
+  }
+  return normalized.slice(0, limit);
+}
+
 function readVideoResult(payload: Record<string, unknown> | undefined): VideoResult | null {
   if (!payload) {
+    return null;
+  }
+  const assetType = readString(payload.assetType);
+  if (assetType && assetType !== 'VIDEO') {
     return null;
   }
   const videoUrl =
@@ -727,7 +1264,11 @@ function readVideoResult(payload: Record<string, unknown> | undefined): VideoRes
   if (!videoUrl) {
     return null;
   }
-  const isVideoUrl = /\.mp4($|\?)/i.test(videoUrl) || videoUrl.startsWith('/api/assets/download/');
+  const mimeType = readString(payload.mimeType).toLowerCase();
+  const fileName = readString(payload.fileName).toLowerCase();
+  const normalizedUrl = videoUrl.toLowerCase();
+  const isVideoUrl = mimeType.startsWith('video/')
+    || ['.mp4', '.webm', '.mov', '.m4v', '.m3u8'].some((ext) => fileName.endsWith(ext) || normalizedUrl.includes(ext));
   if (!isVideoUrl) {
     return null;
   }
@@ -749,6 +1290,106 @@ function readNestedVideoUrl(value: unknown): string {
   }
   const payload = value as Record<string, unknown>;
   return readUrlField(payload, ['videoUrl', 'finalVideoUrl', 'final_video_url', 'downloadUrl', 'resourceUrl']);
+}
+
+function readInlineResource(payload: Record<string, unknown> | undefined): InlineResourceView | null {
+  if (!payload) {
+    return null;
+  }
+  const displayMode = readString(payload.displayMode).toUpperCase();
+  const inlineContent = readString(payload.inlineContent);
+  if (!inlineContent) {
+    return null;
+  }
+  const title = readString(payload.title) || '内嵌资源';
+  const summary = readString(payload.summary);
+  if (displayMode === 'INLINE_CODE') {
+    return {
+      kind: 'code',
+      title,
+      summary,
+      content: inlineContent,
+      language: readString(payload.language) || 'text',
+      explanation: readString(payload.explanation),
+    };
+  }
+  if (displayMode === 'INLINE_MERMAID') {
+    return {
+      kind: 'mermaid',
+      title,
+      summary,
+      content: inlineContent,
+    };
+  }
+  if (displayMode === 'MARKDOWN_CARD') {
+    return {
+      kind: 'markdown',
+      title,
+      summary,
+      content: inlineContent,
+    };
+  }
+  return null;
+}
+
+function readPracticeQuestionBatch(payload: Record<string, unknown> | undefined): PracticeQuestionBatch | null {
+  const record = readRecord(payload);
+  const questions = Array.isArray(record?.questions) ? record.questions : null;
+  if (!record || !questions) {
+    return null;
+  }
+  return {
+    title: readString(record.title) || '练习题',
+    topic: readString(record.topic),
+    difficulty: readString(record.difficulty),
+    description: readString(record.description),
+    assessmentDimension: readString(record.assessmentDimension),
+    submitLabel: readString(record.submitLabel),
+    questions: questions
+      .map((item) => readRecord(item))
+      .filter((item): item is Record<string, unknown> => Boolean(item))
+      .map((item) => ({
+        questionId: readString(item.questionId),
+        questionType: readString(item.questionType) || 'SHORT_ANSWER',
+        stem: readString(item.stem),
+        options: Array.isArray(item.options) ? item.options.map((option) => readString(option)).filter(Boolean) : undefined,
+        answer: readString(item.answer),
+        knowledgeTags: Array.isArray(item.knowledgeTags) ? item.knowledgeTags.map((tag) => readString(tag)).filter(Boolean) : undefined,
+        difficultyLevel: readString(item.difficultyLevel),
+        explanation: readString(item.explanation),
+      })),
+  };
+}
+
+function readPracticeJudgeResult(payload: Record<string, unknown> | undefined): PracticeJudgeResult | null {
+  const record = readRecord(payload);
+  const items = Array.isArray(record?.items) ? record.items : null;
+  if (!record || !items) {
+    return null;
+  }
+  return {
+    title: readString(record.title) || '判题结果',
+    summary: readString(record.summary),
+    totalScore: readNumericRaw(record.totalScore) ?? 0,
+    accuracy: readNumericRaw(record.accuracy) ?? 0,
+    weakKnowledgeTags: Array.isArray(record.weakKnowledgeTags)
+      ? record.weakKnowledgeTags.map((tag) => readString(tag)).filter(Boolean)
+      : undefined,
+    items: items
+      .map((item) => readRecord(item))
+      .filter((item): item is Record<string, unknown> => Boolean(item))
+      .map((item) => ({
+        questionId: readString(item.questionId),
+        questionType: readString(item.questionType),
+        learnerAnswer: readString(item.learnerAnswer),
+        correctAnswer: readString(item.correctAnswer),
+        isCorrect: Boolean(item.isCorrect),
+        score: readNumericRaw(item.score) ?? 0,
+        knowledgeTags: Array.isArray(item.knowledgeTags) ? item.knowledgeTags.map((tag) => readString(tag)).filter(Boolean) : undefined,
+        reason: readString(item.reason),
+        feedback: readString(item.feedback),
+      })),
+  };
 }
 
 function readNumericRaw(value: unknown): number | undefined {

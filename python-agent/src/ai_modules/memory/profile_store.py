@@ -728,16 +728,65 @@ class PostgresProfileStore:
             for name, score in sorted(skill_mastery.items(), key=lambda item: item[1])[:2]
             if score < 0.7
         ]
+        localized_knowledge_foundation = self._localize_knowledge_foundation(knowledge_foundation)
+        localized_learning_preference = self._localize_learning_preference(learning_preference or "step_by_step")
+        localized_cognitive_style = self._localize_cognitive_style(cognitive_style or "mixed")
+        localized_resource_types = [
+            self._localize_resource_type(item) for item in preferred_resource_types[:3]
+        ]
         return (
-            f"当前画像显示学生知识基础为 {knowledge_foundation}，"
+            f"当前画像显示学生知识基础为 {localized_knowledge_foundation}，"
             f"近期目标是“{learning_goal or '巩固当前主题'}”；"
             f"主要薄弱点集中在 {', '.join(weak_points[:3]) or '暂无明确薄弱点'}，"
-            f"学习偏好偏向 {learning_preference or 'step_by_step'}，认知风格为 {cognitive_style or 'mixed'}。"
-            f"建议优先提供 {', '.join(preferred_resource_types[:3]) or 'DOCUMENT'} 类型资源"
+            f"学习偏好偏向 {localized_learning_preference}，认知风格为 {localized_cognitive_style}。"
+            f"建议优先提供 {', '.join(localized_resource_types) or '讲解文档'} 类型资源"
             + (f'，重点补强 {", ".join(weakest_skills)}' if weakest_skills else '')
             + (f'；下一步建议：{inferred_recommendations[0]}' if inferred_recommendations else '')
             + '。'
         )
+
+    def _localize_knowledge_foundation(self, value: str) -> str:
+        mapping = {
+            "BEGINNER": "入门",
+            "BASIC": "基础",
+            "INTERMEDIATE": "进阶",
+            "ADVANCED": "熟练",
+            "UNKNOWN": "待分析",
+        }
+        normalized = str(value or "").strip().upper()
+        return mapping.get(normalized, str(value or "").strip() or "待分析")
+
+    def _localize_learning_preference(self, value: str) -> str:
+        mapping = {
+            "step_by_step": "循序渐进",
+            "concept_then_question": "先概念后练习",
+            "example_first": "先例子后原理",
+            "visual_first": "先图示后讲解",
+        }
+        normalized = str(value or "").strip()
+        return mapping.get(normalized, normalized or "循序渐进")
+
+    def _localize_cognitive_style(self, value: str) -> str:
+        mapping = {
+            "reasoning_oriented": "偏原理推导",
+            "procedural_oriented": "偏步骤实操",
+            "mixed": "混合型",
+        }
+        normalized = str(value or "").strip()
+        return mapping.get(normalized, normalized or "混合型")
+
+    def _localize_resource_type(self, value: str) -> str:
+        mapping = {
+            "DOCUMENT": "讲解文档",
+            "READING": "拓展阅读",
+            "MINDMAP": "思维导图",
+            "CODE": "代码案例",
+            "CODE_CASE": "代码案例",
+            "QUIZ": "练习题",
+            "VIDEO": "数字人视频",
+        }
+        normalized = str(value or "").strip().upper()
+        return mapping.get(normalized, str(value or "").strip())
 
     def _compute_snapshot_confidence(
         self,

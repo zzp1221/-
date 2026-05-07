@@ -91,21 +91,13 @@ class CriticAgent(PlaceholderAgent):
         snapshot: SystemSnapshot,
         system_prompt: str,
     ) -> CriticReviewPayload:
-        try:
-            # Step 1-3: Deterministic checks (no LLM)
-            review_signals = self._collect_critic_signals(params=params, snapshot=snapshot)
-
-            # Step 4: LLM review (1 LLM call)
-            return await self._safe_review(
-                params=params,
-                snapshot=snapshot,
-                system_prompt=system_prompt,
-                review_signals=review_signals,
-            )
-        except Exception:
-            LOGGER.warning("Critic review failed, falling back to deterministic review.", exc_info=True)
-            fallback_signals = self._collect_critic_signals(params=params, snapshot=snapshot)
-            return self._fallback_review(review_signals=fallback_signals)
+        review_signals = self._collect_critic_signals(params=params, snapshot=snapshot)
+        return await self._safe_review(
+            params=params,
+            snapshot=snapshot,
+            system_prompt=system_prompt,
+            review_signals=review_signals,
+        )
 
     def _tool_check_fact_consistency(
         self,
@@ -214,8 +206,9 @@ class CriticAgent(PlaceholderAgent):
                     review_signals=review_signals,
                 ),
             )
-        except Exception:
-            return self._fallback_review(review_signals=review_signals)
+        except Exception as exc:
+            LOGGER.exception("Critic review LLM failed")
+            raise RuntimeError("Critic review LLM failed") from exc
 
     def _build_critic_context(
         self,
@@ -361,21 +354,13 @@ class SafetyAgent(PlaceholderAgent):
         snapshot: SystemSnapshot,
         system_prompt: str,
     ) -> SafetyReviewPayload:
-        try:
-            # Step 1-3: Deterministic checks (no LLM)
-            risk_signals = self._collect_safety_signals(params=params)
-
-            # Step 4: LLM review (1 LLM call)
-            return await self._safe_review(
-                params=params,
-                snapshot=snapshot,
-                system_prompt=system_prompt,
-                review_signals=risk_signals,
-            )
-        except Exception:
-            LOGGER.warning("Safety review failed, falling back to deterministic review.", exc_info=True)
-            fallback_signals = self._collect_safety_signals(params=params)
-            return self._fallback_review(review_signals=fallback_signals)
+        risk_signals = self._collect_safety_signals(params=params)
+        return await self._safe_review(
+            params=params,
+            snapshot=snapshot,
+            system_prompt=system_prompt,
+            review_signals=risk_signals,
+        )
 
     def _tool_classify_content(
         self,
@@ -458,8 +443,9 @@ class SafetyAgent(PlaceholderAgent):
                     review_signals=review_signals,
                 ),
             )
-        except Exception:
-            return self._fallback_review(review_signals=review_signals)
+        except Exception as exc:
+            LOGGER.exception("Safety review LLM failed")
+            raise RuntimeError("Safety review LLM failed") from exc
 
     def _build_safety_context(
         self,

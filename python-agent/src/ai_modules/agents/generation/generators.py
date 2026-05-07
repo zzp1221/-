@@ -526,38 +526,17 @@ class VideoGenerationAgent(_BaseGenerationAgent):
             )
             current_seq += 1
 
-        # ── Real TTS synthesis via MiMo-V2.5-TTS ──
-        tts_audio_bytes: bytes | None = None
-        try:
-            from src.ai_modules.llms.mimo_client import MiMoClient
-            mimo_client = MiMoClient()
-            script_text = str(params.get("query") or topic)
-            retrieval = params.get("retrievalResult", {})
-            if isinstance(retrieval, dict):
-                docs = retrieval.get("documents", [])
-                if docs:
-                    snippets = [d.get("evidence", d.get("title", "")) for d in docs[:3] if d]
-                    script_text = f"{topic}。{'。'.join(s for s in snippets if s)}"
-            tts_audio_bytes = await mimo_client.synthesize_speech(
-                text=f"今天我们来学习{topic}。{script_text[:800]}",
-                style_description="用清晰自然的语速播报，声音沉稳专业，适合教学场景",
-                voice="mimo_default",
-                audio_format="mp3",
-            )
-            params["tts_audio_bytes"] = tts_audio_bytes
-            yield VideoProgressSSEEvent(
-                event="video_gen:speech",
-                taskId=task_id,
-                traceId=trace_id,
-                seq=current_seq,
-                payload=ProgressPayload(
-                    stage="speech_synthesized",
-                    percent=50,
-                    message=f"MiMo-V2.5-TTS 语音合成完成 ({len(tts_audio_bytes)} bytes)",
-                ),
-            )
-        except Exception as exc:
-            raise RuntimeError("Video TTS generation failed") from exc
+        yield VideoProgressSSEEvent(
+            event="video_gen:speech",
+            taskId=task_id,
+            traceId=trace_id,
+            seq=current_seq,
+            payload=ProgressPayload(
+                stage="speech_generating",
+                percent=45,
+                message="正在根据最终视频脚本生成语音",
+            ),
+        )
         current_seq += 1
 
         yield VideoProgressSSEEvent(

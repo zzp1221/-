@@ -312,6 +312,7 @@ class HybridRetrievalService:
             slug = str(item[0])
             title = str(item[1])
             base_score = float(item[2])
+            snippet = self._extract_snippet(item)
             phrase_score, match_type = self._score_phrase_precision(
                 title=title,
                 phrase_anchor=phrase_anchor,
@@ -339,6 +340,7 @@ class HybridRetrievalService:
                             f"短语锚点 `{phrase_anchor}` 命中，关键词覆盖: "
                             f"{', '.join(self._matched_keywords(title, keywords)) or '无'}"
                         ),
+                        snippet=snippet,
                     ),
                 )
             )
@@ -348,6 +350,24 @@ class HybridRetrievalService:
 
     def _phrase_anchor(self, keywords: list[str]) -> str:
         return keywords[-1] if keywords else ""
+
+    def _extract_snippet(self, item: Any) -> str | None:
+        if isinstance(item, dict):
+            for key in ("snippet", "content", "text", "summary"):
+                value = item.get(key)
+                if isinstance(value, str) and value.strip():
+                    return value.strip()[:400]
+            return None
+        if isinstance(item, (list, tuple)):
+            for extra in item[3:]:
+                if isinstance(extra, str) and extra.strip():
+                    return extra.strip()[:400]
+                if isinstance(extra, dict):
+                    for key in ("snippet", "content", "text", "summary"):
+                        value = extra.get(key)
+                        if isinstance(value, str) and value.strip():
+                            return value.strip()[:400]
+        return None
 
     def _score_phrase_precision(
         self,

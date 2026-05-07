@@ -93,37 +93,24 @@ class PathPlanningAgent(PlaceholderAgent):
         snapshot: SystemSnapshot,
         system_prompt: str,
     ) -> dict[str, Any]:
-        try:
-            # Step 1: Analyze profile (deterministic)
-            planning_context = self._tool_analyze_profile(tool_input={}, params=params, snapshot=snapshot)
-
-            # Step 2: Generate path (1 LLM call)
-            plan = await self._safe_plan(
-                params=params, snapshot=snapshot, system_prompt=system_prompt,
-                planning_context=planning_context,
-            )
-
-            # Step 3: Save to store (deterministic)
-            metadata = await self._safe_save_learning_plan(
-                user_id=user_id, course_id=self._resolve_course_id(params),
-                plan=plan, trigger_source=self._resolve_trigger_source(params),
-            )
-            return {
-                "learningPath": plan.model_dump(by_alias=True),
-                "persistence": metadata,
-                "summaryText": plan.summary_text,
-            }
-        except Exception:
-            fallback_plan = self._fallback_plan(params=params, snapshot=snapshot)
-            fallback_metadata = await self._safe_save_learning_plan(
-                user_id=user_id, course_id=self._resolve_course_id(params),
-                plan=fallback_plan, trigger_source=self._resolve_trigger_source(params),
-            )
-            return {
-                "learningPath": fallback_plan.model_dump(by_alias=True),
-                "persistence": fallback_metadata,
-                "summaryText": fallback_plan.summary_text,
-            }
+        planning_context = self._tool_analyze_profile(tool_input={}, params=params, snapshot=snapshot)
+        plan = await self._safe_plan(
+            params=params,
+            snapshot=snapshot,
+            system_prompt=system_prompt,
+            planning_context=planning_context,
+        )
+        metadata = await self._safe_save_learning_plan(
+            user_id=user_id,
+            course_id=self._resolve_course_id(params),
+            plan=plan,
+            trigger_source=self._resolve_trigger_source(params),
+        )
+        return {
+            "learningPath": plan.model_dump(by_alias=True),
+            "persistence": metadata,
+            "summaryText": plan.summary_text,
+        }
 
     def _tool_analyze_profile(
         self,
@@ -136,14 +123,22 @@ class PathPlanningAgent(PlaceholderAgent):
         evaluation = params.get("evaluationResult", {})
         profile = params.get("profile", {})
         judge_result = params.get("judgeResult", {})
+        weak_point_details = [
+            item for item in profile.get("weakPointDetails", [])
+            if isinstance(item, dict)
+        ]
+        skill_mastery = profile.get("skillMastery", {})
+        current_goal = profile.get("currentGoal", {})
         focus = self._unique_items(
             [
                 *list(evaluation.get("nextFocus", [])),
                 *list(judge_result.get("weakKnowledgeTags", [])),
                 *list(profile.get("knowledgeGaps", [])),
+                *[str(item.get("topic", "")) for item in weak_point_details],
                 *list(snapshot.knowledge_gaps),
             ]
         )
+        weakest_skills = self._lowest_mastery_skills(skill_mastery)
         context = {
             "goal": self._resolve_goal(params),
             "targetPeriod": str(params.get("targetPeriod") or "").strip() or "7天",
@@ -151,6 +146,7 @@ class PathPlanningAgent(PlaceholderAgent):
             "currentProgress": str(params.get("currentProgress") or "").strip() or "已完成基础概念，准备进入案例训练",
             "studentLevel": str(
                 profile.get("studentLevel")
+                or profile.get("knowledgeFoundation")
                 or evaluation.get("overallLevel")
                 or snapshot.student_level
                 or "BASIC"
@@ -159,15 +155,23 @@ class PathPlanningAgent(PlaceholderAgent):
                 [
                     *list(evaluation.get("weaknesses", [])),
                     *list(profile.get("knowledgeGaps", [])),
+                    *[str(item.get("topic", "")) for item in weak_point_details],
                     *list(snapshot.knowledge_gaps),
                 ]
             ),
             "nextFocus": focus or ["核心概念", "适用条件"],
             "preferredStyle": str(
                 profile.get("learningPreference")
+                or profile.get("preferredStyle")
                 or snapshot.preferred_style
                 or "step_by_step"
             ),
+            "explanationPreference": str(profile.get("explanationPreference") or ""),
+            "preferredResourceTypes": list(profile.get("preferredResourceTypes", [])),
+            "skillMastery": skill_mastery if isinstance(skill_mastery, dict) else {},
+            "weakPointDetails": weak_point_details,
+            "currentGoal": current_goal if isinstance(current_goal, dict) else {},
+            "weakestSkills": weakest_skills,
             "recentMistakes": list(snapshot.recent_mistakes),
             "triggerSource": self._resolve_trigger_source(params),
         }
@@ -222,8 +226,8 @@ class PathPlanningAgent(PlaceholderAgent):
         system_prompt: str,
         planning_context: dict[str, Any],
     ) -> LearningPlanPayload:
+        generator = self.generator or LearningPathGenerator()
         try:
-            generator = self.generator or LearningPathGenerator()
             return await generator.plan(
                 system_prompt=system_prompt,
                 context_payload=self._build_context_payload(
@@ -232,12 +236,8 @@ class PathPlanningAgent(PlaceholderAgent):
                     planning_context=planning_context,
                 ),
             )
-        except Exception:
-            return self._fallback_plan(
-                params=params,
-                snapshot=snapshot,
-                planning_context=planning_context,
-            )
+        except Exception as exc:
+            raise RuntimeError("Path planning LLM failed") from exc
 
     def _build_context_payload(
         self,
@@ -288,24 +288,43 @@ class PathPlanningAgent(PlaceholderAgent):
             ]
         )
         goal = str(planning_context.get("goal") or self._resolve_goal(params))
+        weakest_skills = self._lowest_mastery_skills(planning_context.get("skillMastery", {}))
+        preferred_style = str(planning_context.get("preferredStyle") or snapshot.preferred_style or "step_by_step")
+        explanation_preference = str(planning_context.get("explanationPreference") or preferred_style)
+        focus_items = planning_context.get("nextFocus", [])[:3] if planning_context else []
         steps = [
             LearningPlanStep(
-                title="阶段 1：梳理概念与案例入口",
-                objective=f"结合当前进度“{current_progress}”，先补齐 {weaknesses[0] if weaknesses else '核心概念'}，为进入案例训练做准备",
-                activities=["阅读核心讲义", "整理概念与适用条件", "挑选 1 个典型案例做拆解"],
-                successCriteria="能独立说出定义、条件和一个反例",
+                title="阶段 1：优先补齐核心薄弱点",
+                objective=f"结合当前进度“{current_progress}”，先攻克 {weaknesses[0] if weaknesses else '核心概念'}，建立后续训练基础",
+                activities=[
+                    f"围绕 {weaknesses[0] if weaknesses else '核心概念'} 做一次 {explanation_preference} 的系统梳理",
+                    "把定义、适用条件、典型误区写成对照表",
+                    "完成 1-2 道基础辨析题验证是否真正理解",
+                ],
+                successCriteria="能独立解释概念、说出边界，并纠正一个常见误区",
             ),
             LearningPlanStep(
-                title="阶段 2：案例迁移训练",
-                objective=f"按每周约 {weekly_hours} 小时的投入，把知识点迁移到 3-5 个典型案例中",
-                activities=["先口头分析案例", "再动手实现关键步骤", "记录错误与修正策略"],
-                successCriteria="连续 3 个案例能先讲清判断依据，再完成实现",
+                title="阶段 2：专项训练与技能补强",
+                objective=(
+                    f"按每周约 {weekly_hours} 小时推进，重点补强 "
+                    f"{'、'.join(weakest_skills) if weakest_skills else (weaknesses[1] if len(weaknesses) > 1 else '问题迁移能力')}"
+                ),
+                activities=[
+                    "围绕薄弱技能安排 3-5 个由浅入深的练习",
+                    "每题先口头说明判断依据，再动手实现或作答",
+                    "把错误回流到错因清单，归纳触发条件",
+                ],
+                successCriteria="连续完成 3 个相近场景时，能够稳定给出判断依据与解法步骤",
             ),
             LearningPlanStep(
-                title="阶段 3：总结与复盘",
-                objective=f"在 {target_period} 内形成可复用的解题与实现模板，完成一次阶段复盘",
-                activities=["复盘错题/错例", "总结通用模板", "输出一份学习笔记或讲解"],
-                successCriteria="能独立解释一个完整场景，并给出可迁移的解决步骤",
+                title="阶段 3：路径闭环与阶段复盘",
+                objective=f"在 {target_period} 内形成围绕“{goal}”的可复用模板，并完成一次阶段复盘",
+                activities=[
+                    f"回顾 {', '.join(focus_items) or '本周期重点'} 对应的题目和资料",
+                    "总结一份自己的判断模板或错因清单",
+                    "输出一份讲解笔记，并据此规划下一轮学习重点",
+                ],
+                successCriteria="能独立完成一个完整场景解释，并明确下一轮最该投入的知识点",
             ),
         ]
         return LearningPlanPayload(
@@ -357,9 +376,13 @@ class PathPlanningAgent(PlaceholderAgent):
 
     def _resolve_goal(self, params: dict[str, Any]) -> str:
         evaluation = params.get("evaluationResult", {})
+        profile = params.get("profile", {})
+        current_goal = profile.get("currentGoal", {}) if isinstance(profile.get("currentGoal", {}), dict) else {}
         return str(
             params.get("goal")
             or params.get("currentProgress")
+            or current_goal.get("shortTerm")
+            or profile.get("learningGoal")
             or (params.get("pathPlanningContext") or {}).get("goal")
             or (evaluation.get("nextFocus") or ["提升当前薄弱点"])[0]
             or "提升当前薄弱点"
@@ -389,3 +412,16 @@ class PathPlanningAgent(PlaceholderAgent):
             seen.add(text)
             normalized.append(text)
         return normalized
+
+    def _lowest_mastery_skills(self, skill_mastery: Any) -> list[str]:
+        if not isinstance(skill_mastery, dict):
+            return []
+        normalized: list[tuple[str, float]] = []
+        for key, value in skill_mastery.items():
+            try:
+                normalized.append((str(key).strip(), float(value)))
+            except (TypeError, ValueError):
+                continue
+        normalized = [item for item in normalized if item[0]]
+        normalized.sort(key=lambda item: item[1])
+        return [name for name, score in normalized[:3] if score < 0.75]

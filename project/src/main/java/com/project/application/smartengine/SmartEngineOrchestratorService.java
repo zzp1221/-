@@ -6,6 +6,7 @@ import com.project.api.smartengine.dto.TaskStatusResponse;
 import com.project.application.audit.AuditService;
 import com.project.application.common.ApplicationException;
 import com.project.application.idempotency.IdempotencyService;
+import com.project.domain.profile.UserProfileCurrentRepository;
 import com.project.domain.task.SmartEngineTask;
 import com.project.security.JwtAuthenticatedUser;
 import org.slf4j.Logger;
@@ -34,6 +35,7 @@ public class SmartEngineOrchestratorService {
     private final TaskExecutor smartEngineTaskExecutor;
     private final IdempotencyService idempotencyService;
     private final AuditService auditService;
+    private final UserProfileCurrentRepository userProfileCurrentRepository;
     private final ConcurrentHashMap<UUID, Thread> runningThreads = new ConcurrentHashMap<>();
 
     public SmartEngineOrchestratorService(
@@ -42,7 +44,8 @@ public class SmartEngineOrchestratorService {
         SseEmitterService sseEmitterService,
         TaskExecutor smartEngineTaskExecutor,
         IdempotencyService idempotencyService,
-        AuditService auditService
+        AuditService auditService,
+        UserProfileCurrentRepository userProfileCurrentRepository
     ) {
         this.taskStateMachineService = taskStateMachineService;
         this.pythonAgentClient = pythonAgentClient;
@@ -50,6 +53,7 @@ public class SmartEngineOrchestratorService {
         this.smartEngineTaskExecutor = smartEngineTaskExecutor;
         this.idempotencyService = idempotencyService;
         this.auditService = auditService;
+        this.userProfileCurrentRepository = userProfileCurrentRepository;
     }
 
     public SubmitTaskAcceptance submit(JwtAuthenticatedUser currentUser, SubmitTaskRequest request) {
@@ -115,13 +119,20 @@ public class SmartEngineOrchestratorService {
 
         auditService.log("TASK", "INFO", "创建智能任务", currentUser.userId(), task.getId(), Map.of("serviceType", request.serviceType()));
 
+        Map<String, Object> invocationParams = new LinkedHashMap<>(request.safeParams());
+        userProfileCurrentRepository.findById(currentUser.userId())
+            .ifPresent(profile -> {
+                invocationParams.put("profile", new LinkedHashMap<>(profile.getProfileJson()));
+                invocationParams.put("profileSummary", profile.getSummaryText());
+            });
+
         SmartEngineInvocation invocation = new SmartEngineInvocation(
             currentUser.userId(),
             task.getId(),
             traceId,
             request.conversationId(),
             request.serviceType(),
-            request.safeParams()
+            invocationParams
         );
 
         smartEngineTaskExecutor.execute(() -> {

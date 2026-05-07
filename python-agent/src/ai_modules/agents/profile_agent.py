@@ -17,7 +17,13 @@ from src.ai_modules.models import (
     ResultChunkSSEEvent,
     SSEEvent,
 )
-from src.ai_modules.models.profile import LearnerProfileDimensions
+from src.ai_modules.models.profile import (
+    CurrentGoalProfile,
+    ErrorPattern,
+    LearnerProfileDimensions,
+    LearningHabitsProfile,
+    WeakPointDetail,
+)
 from src.ai_modules.prompts import build_profile_system_prompt
 from src.ai_modules.runtime import (
     RecoveryEngine,
@@ -156,6 +162,7 @@ class ProfileAgent(PlaceholderAgent):
         structured_summary = params.get("structuredConversationSummary", {})
         profile_context = params.get("profile", {})
         judge_result = params.get("judgeResult", {})
+        evaluation_result = params.get("evaluationResult", {})
         practice_batch = params.get("practiceQuestionBatch", {})
         joined_user_content = " ".join(
             str(item.get("content", ""))
@@ -172,43 +179,24 @@ class ProfileAgent(PlaceholderAgent):
             "structuredConversationSummary": structured_summary,
             "profile": profile_context,
             "judgeResult": judge_result,
+            "evaluationResult": evaluation_result,
             "practiceQuestionBatch": practice_batch,
             "combinedUserText": combined_text,
             "profileSource": str(params.get("profileSource") or "CONVERSATION"),
         }
         try:
             dimensions = await self.profile_analyzer.analyze(context_payload=context_payload)
-        except Exception:
-            learning_goal = self._infer_learning_goal(structured_summary, combined_text)
-            if judge_result and not structured_summary.get("learnerGoal"):
-                topic = practice_batch.get("topic") or "当前主题"
-                learning_goal = f"掌握{topic}相关知识点"
-            weak_points = self._infer_weak_points(structured_summary, combined_text)
-            practice_weak_tags = list(judge_result.get("weakKnowledgeTags", []))
-            if practice_weak_tags:
-                weak_points = practice_weak_tags
-            confidence_level = self._infer_confidence(combined_text)
-            if judge_result:
-                accuracy = float(judge_result.get("accuracy", 0.0))
-                if accuracy >= 0.8:
-                    confidence_level = "MEDIUM"
-                elif accuracy < 0.5:
-                    confidence_level = "LOW"
-
-            dimensions = LearnerProfileDimensions(
-                knowledgeFoundation=self._infer_knowledge_foundation(combined_text, profile_context),
-                learningGoal=learning_goal,
-                professionalBackground=str(profile_context.get("professionalBackground") or "未提供"),
-                learningPreference=self._infer_learning_preference(structured_summary, combined_text),
-                cognitiveStyle=self._infer_cognitive_style(combined_text),
-                weakPoints=weak_points,
-                learningPace=self._infer_learning_pace(combined_text),
-                confidenceLevel=confidence_level,
-                source=str(params.get("profileSource") or "CONVERSATION"),
-                summaryText="",
-            )
-            summary_text = self._build_summary_text(dimensions)
-            dimensions.summary_text = summary_text
+        except Exception as exc:
+            raise RuntimeError("Profile LLM analysis failed") from exc
+        dimensions = self._finalize_dimensions(
+            dimensions=dimensions,
+            messages=messages,
+            structured_summary=structured_summary,
+            profile_context=profile_context,
+            judge_result=judge_result,
+            practice_batch=practice_batch,
+            combined_text=combined_text,
+        )
         serialized_dimensions = dimensions.model_dump(by_alias=True)
         params["analyzedProfileDimensions"] = serialized_dimensions
         return serialized_dimensions
@@ -249,6 +237,89 @@ class ProfileAgent(PlaceholderAgent):
         summary = str(judge_result.get("summary") or "")
         weak_tags = ", ".join(str(tag) for tag in judge_result.get("weakKnowledgeTags", []))
         return " ".join(part for part in [topic, summary, weak_tags] if part)
+
+    def _finalize_dimensions(
+        self,
+        *,
+        dimensions: LearnerProfileDimensions,
+        messages: list[dict[str, Any]],
+        structured_summary: dict[str, Any],
+        profile_context: dict[str, Any],
+        judge_result: dict[str, Any],
+        practice_batch: dict[str, Any],
+        combined_text: str,
+    ) -> LearnerProfileDimensions:
+        weak_point_details = self._build_weak_point_details(
+            dimensions=dimensions,
+            judge_result=judge_result,
+        )
+        confidence_score = self._derive_confidence_score(
+            dimensions=dimensions,
+            judge_result=judge_result,
+            weak_point_details=weak_point_details,
+        )
+        professional_background = (
+            dimensions.professional_background
+            or str(profile_context.get("professionalBackground") or profile_context.get("major") or "").strip()
+        )
+        current_goal = self._derive_current_goal(
+            dimensions=dimensions,
+            structured_summary=structured_summary,
+            practice_batch=practice_batch,
+            combined_text=combined_text,
+        )
+        learning_habits = self._derive_learning_habits(
+            messages=messages,
+            combined_text=combined_text,
+        )
+        error_patterns = self._derive_error_patterns(
+            weak_point_details=weak_point_details,
+            judge_result=judge_result,
+            combined_text=combined_text,
+        )
+        preferred_resource_types = self._derive_preferred_resource_types(
+            dimensions=dimensions,
+            combined_text=combined_text,
+        )
+        explanation_preference = (
+            dimensions.explanation_preference or self._derive_explanation_preference(combined_text)
+        )
+        skill_mastery = self._derive_skill_mastery(
+            dimensions=dimensions,
+            judge_result=judge_result,
+            practice_batch=practice_batch,
+            weak_point_details=weak_point_details,
+        )
+        evidence = self._derive_evidence(
+            structured_summary=structured_summary,
+            judge_result=judge_result,
+            weak_point_details=weak_point_details,
+            combined_text=combined_text,
+        )
+        dimensions = dimensions.model_copy(
+            update={
+                "professional_background": professional_background,
+                "weak_points": [item.topic for item in weak_point_details] or dimensions.weak_points,
+                "weak_point_details": weak_point_details,
+                "confidence_score": confidence_score,
+                "learning_habits": learning_habits,
+                "error_patterns": error_patterns,
+                "current_goal": current_goal,
+                "preferred_resource_types": preferred_resource_types,
+                "explanation_preference": explanation_preference,
+                "skill_mastery": skill_mastery,
+                "evidence": evidence,
+                "inferred_recommendations": dimensions.inferred_recommendations
+                or self._infer_recommendations(
+                    weak_point_details=weak_point_details,
+                    preferred_resource_types=preferred_resource_types,
+                    explanation_preference=explanation_preference,
+                ),
+            }
+        )
+        if not dimensions.summary_text.strip():
+            dimensions.summary_text = self._build_summary_text(dimensions)
+        return dimensions
 
     async def _safe_read_profile(self, user_id: str) -> LearnerProfileSnapshot | None:
         try:
@@ -309,7 +380,7 @@ class ProfileAgent(PlaceholderAgent):
         for keyword in ("掌握", "复习", "理解", "提高"):
             if keyword in text:
                 return text[:32]
-        return "待补充学习目标"
+        return "夯实当前主题的核心概念与应用"
 
     def _infer_learning_preference(self, structured_summary: dict[str, Any], text: str) -> str:
         preferred = structured_summary.get("preferredHelpStyle")
@@ -319,6 +390,8 @@ class ProfileAgent(PlaceholderAgent):
             return "example_first"
         if "一步步" in text or "详细" in text:
             return "step_by_step"
+        if "画个图" in text or "导图" in text:
+            return "visual_first"
         return "concept_then_question"
 
     def _infer_cognitive_style(self, text: str) -> str:
@@ -336,6 +409,8 @@ class ProfileAgent(PlaceholderAgent):
             return ["概念区分不清"]
         if "总错" in text:
             return ["题目条件判断不稳"]
+        if "不会" in text:
+            return ["关键步骤不会落地"]
         return []
 
     def _infer_learning_pace(self, text: str) -> str:
@@ -350,14 +425,270 @@ class ProfileAgent(PlaceholderAgent):
             return "LOW"
         if any(keyword in text for keyword in ("会", "熟悉", "掌握")):
             return "MEDIUM"
-        return "UNKNOWN"
+        return "MEDIUM"
 
     def _build_summary_text(self, dimensions: LearnerProfileDimensions) -> str:
-        return (
-            f"画像更新完成：知识基础={dimensions.knowledge_foundation}，"
-            f"学习目标={dimensions.learning_goal}，"
-            f"学习偏好={dimensions.learning_preference}，"
-            f"认知风格={dimensions.cognitive_style}，"
-            f"薄弱点={', '.join(dimensions.weak_points) or '暂无'}，"
-            f"信心度={dimensions.confidence_level}。"
+        weak_topics = [item.topic for item in dimensions.weak_point_details] or dimensions.weak_points
+        skill_mastery = sorted(
+            dimensions.skill_mastery.items(),
+            key=lambda item: item[1],
         )
+        weakest_skills = "、".join(name for name, score in skill_mastery[:2] if score < 0.65)
+        preferred_resources = "、".join(
+            self._localize_resource_type(item) for item in dimensions.preferred_resource_types[:3]
+        ) or "讲解文档"
+        short_goal = dimensions.current_goal.short_term or dimensions.learning_goal
+        return (
+            f"画像更新完成：当前知识基础为 {self._localize_knowledge_foundation(dimensions.knowledge_foundation)}，"
+            f"短期目标聚焦“{short_goal}”；"
+            f"主要薄弱点为 {', '.join(weak_topics[:3]) or '暂无明确薄弱点'}，"
+            f"高频易错模式为 {dimensions.error_patterns[0].pattern if dimensions.error_patterns else '概念理解待巩固'}；"
+            f"学习偏好偏向 {self._localize_learning_preference(dimensions.learning_preference or dimensions.explanation_preference or 'step_by_step')}，"
+            f"认知风格为 {self._localize_cognitive_style(dimensions.cognitive_style)}，"
+            f"建议优先生成 {preferred_resources} 类型资源"
+            f"{f'，并优先补强 {weakest_skills}' if weakest_skills else ''}。"
+        )
+
+    def _localize_knowledge_foundation(self, value: str) -> str:
+        mapping = {
+            "BEGINNER": "入门",
+            "BASIC": "基础",
+            "INTERMEDIATE": "进阶",
+            "ADVANCED": "熟练",
+            "UNKNOWN": "待分析",
+        }
+        return mapping.get(str(value or "").strip().upper(), str(value or "").strip() or "待分析")
+
+    def _localize_learning_preference(self, value: str) -> str:
+        mapping = {
+            "step_by_step": "循序渐进",
+            "concept_then_question": "先概念后练习",
+            "example_first": "先例子后原理",
+            "visual_first": "先图示后讲解",
+        }
+        normalized = str(value or "").strip()
+        return mapping.get(normalized, normalized or "循序渐进")
+
+    def _localize_cognitive_style(self, value: str) -> str:
+        mapping = {
+            "reasoning_oriented": "偏原理推导",
+            "procedural_oriented": "偏步骤实操",
+            "mixed": "混合型",
+        }
+        normalized = str(value or "").strip()
+        return mapping.get(normalized, normalized or "混合型")
+
+    def _localize_resource_type(self, value: str) -> str:
+        mapping = {
+            "DOCUMENT": "讲解文档",
+            "READING": "拓展阅读",
+            "MINDMAP": "思维导图",
+            "CODE": "代码案例",
+            "CODE_CASE": "代码案例",
+            "QUIZ": "练习题",
+            "VIDEO": "数字人视频",
+        }
+        normalized = str(value or "").strip().upper()
+        return mapping.get(normalized, str(value or "").strip())
+
+    def _derive_confidence_score(
+        self,
+        *,
+        dimensions: LearnerProfileDimensions,
+        judge_result: dict[str, Any],
+        weak_point_details: list[WeakPointDetail],
+    ) -> float:
+        score = float(dimensions.confidence_score or 0.0)
+        if score > 0:
+            return max(0.35, min(0.95, score))
+        accuracy = float(judge_result.get("accuracy", 0.0) or 0.0)
+        if accuracy > 0:
+            return max(0.35, min(0.95, 0.45 + accuracy * 0.4))
+        if dimensions.confidence_level == "HIGH":
+            return 0.82
+        if dimensions.confidence_level == "LOW":
+            return 0.48
+        if weak_point_details:
+            return 0.58
+        return 0.65
+
+    def _build_weak_point_details(
+        self,
+        *,
+        dimensions: LearnerProfileDimensions,
+        judge_result: dict[str, Any],
+    ) -> list[WeakPointDetail]:
+        if dimensions.weak_point_details:
+            return dimensions.weak_point_details
+        details: list[WeakPointDetail] = []
+        for topic in dimensions.weak_points:
+            details.append(
+                WeakPointDetail(
+                    topic=str(topic).strip(),
+                    severity=0.72,
+                    lastError=str(judge_result.get("summary") or ""),
+                )
+            )
+        for topic in judge_result.get("weakKnowledgeTags", []):
+            normalized = str(topic).strip()
+            if normalized and all(item.topic != normalized for item in details):
+                details.append(
+                    WeakPointDetail(
+                        topic=normalized,
+                        severity=0.8,
+                        lastError=str(judge_result.get("summary") or ""),
+                    )
+                )
+        return details
+
+    def _derive_skill_mastery(
+        self,
+        *,
+        dimensions: LearnerProfileDimensions,
+        judge_result: dict[str, Any],
+        practice_batch: dict[str, Any],
+        weak_point_details: list[WeakPointDetail],
+    ) -> dict[str, float]:
+        if dimensions.skill_mastery:
+            return {name: max(0.0, min(1.0, float(score))) for name, score in dimensions.skill_mastery.items()}
+        topic = str(practice_batch.get("topic") or "当前主题").strip() or "当前主题"
+        accuracy = float(judge_result.get("accuracy", 0.0) or 0.0)
+        mastery = 0.42 if not judge_result else max(0.2, min(0.92, accuracy))
+        skills = {topic: mastery}
+        for item in weak_point_details[:3]:
+            skills.setdefault(item.topic, max(0.2, round(1 - item.severity * 0.55, 2)))
+        return skills
+
+    def _derive_learning_habits(
+        self,
+        *,
+        messages: list[dict[str, Any]],
+        combined_text: str,
+    ) -> LearningHabitsProfile:
+        user_messages = [
+            str(item.get("content", ""))
+            for item in messages
+            if isinstance(item, dict) and item.get("role") == "user"
+        ]
+        avg_len = 0
+        if user_messages:
+            avg_len = int(sum(len(msg) for msg in user_messages) / len(user_messages))
+        return LearningHabitsProfile(
+            studyFrequency="高频互动" if len(user_messages) >= 4 else "阶段性学习",
+            preferredTime="晚上" if "晚上" in combined_text or "今晚" in combined_text else "",
+            avgSessionDuration=max(10, min(45, avg_len // 3 if avg_len else 20)),
+            noteTaking=("总结" in combined_text or "记一下" in combined_text),
+            selfTesting=("出题" in combined_text or "测一下" in combined_text or "练习" in combined_text),
+        )
+
+    def _derive_error_patterns(
+        self,
+        *,
+        weak_point_details: list[WeakPointDetail],
+        judge_result: dict[str, Any],
+        combined_text: str,
+    ) -> list[ErrorPattern]:
+        patterns: list[ErrorPattern] = []
+        if any(keyword in combined_text for keyword in ("分不清", "混淆", "区别")):
+            patterns.append(
+                ErrorPattern(pattern="概念混淆", frequency=0.72, examples=[item.topic for item in weak_point_details[:2]])
+            )
+        if any(keyword in combined_text for keyword in ("条件", "适用", "边界")):
+            patterns.append(
+                ErrorPattern(
+                    pattern="条件遗漏",
+                    frequency=0.58,
+                    examples=list(judge_result.get("weakKnowledgeTags", []))[:2],
+                )
+            )
+        if not patterns and weak_point_details:
+            patterns.append(
+                ErrorPattern(pattern="知识点掌握不稳", frequency=0.52, examples=[weak_point_details[0].topic])
+            )
+        return patterns
+
+    def _derive_current_goal(
+        self,
+        *,
+        dimensions: LearnerProfileDimensions,
+        structured_summary: dict[str, Any],
+        practice_batch: dict[str, Any],
+        combined_text: str,
+    ) -> CurrentGoalProfile:
+        current_goal = dimensions.current_goal
+        if current_goal.short_term:
+            return current_goal
+        short_term = (
+            structured_summary.get("learnerGoal")
+            or dimensions.learning_goal
+            or f"掌握{practice_batch.get('topic')}" if practice_batch.get("topic") else ""
+        )
+        urgency = "HIGH" if any(keyword in combined_text for keyword in ("考试", "尽快", "马上", "冲刺")) else "MEDIUM"
+        return CurrentGoalProfile(
+            shortTerm=str(short_term or "掌握当前主题核心概念"),
+            midTerm=f"完成{practice_batch.get('topic')}相关迁移练习" if practice_batch.get("topic") else "",
+            context="对话学习目标抽取",
+            urgency=urgency,
+        )
+
+    def _derive_preferred_resource_types(
+        self,
+        *,
+        dimensions: LearnerProfileDimensions,
+        combined_text: str,
+    ) -> list[str]:
+        if dimensions.preferred_resource_types:
+            return dimensions.preferred_resource_types
+        resource_types: list[str] = []
+        if any(keyword in combined_text for keyword in ("画个图", "导图", "图示", "流程图")):
+            resource_types.append("MINDMAP")
+        if any(keyword in combined_text for keyword in ("代码", "案例", "示例")):
+            resource_types.append("CODE")
+        if any(keyword in combined_text for keyword in ("阅读", "资料", "讲义")):
+            resource_types.append("READING")
+        if "视频" in combined_text:
+            resource_types.append("VIDEO")
+        resource_types.append("DOCUMENT")
+        return list(dict.fromkeys(resource_types))
+
+    def _derive_explanation_preference(self, text: str) -> str:
+        if "为什么" in text or "原理" in text:
+            return "先原理后例子"
+        if "例子" in text or "案例" in text:
+            return "先例子后原理"
+        return "step_by_step"
+
+    def _derive_evidence(
+        self,
+        *,
+        structured_summary: dict[str, Any],
+        judge_result: dict[str, Any],
+        weak_point_details: list[WeakPointDetail],
+        combined_text: str,
+    ) -> list[str]:
+        evidence: list[str] = []
+        last_user_message = str(structured_summary.get("lastUserMessage") or "").strip()
+        if last_user_message:
+            evidence.append(last_user_message[:120])
+        summary = str(judge_result.get("summary") or "").strip()
+        if summary:
+            evidence.append(summary[:120])
+        evidence.extend(item.last_error[:120] for item in weak_point_details if item.last_error)
+        if not evidence and combined_text:
+            evidence.append(combined_text[:120])
+        return list(dict.fromkeys(filter(None, evidence)))[:5]
+
+    def _infer_recommendations(
+        self,
+        *,
+        weak_point_details: list[WeakPointDetail],
+        preferred_resource_types: list[str],
+        explanation_preference: str,
+    ) -> list[str]:
+        recommendations: list[str] = []
+        if weak_point_details:
+            recommendations.append(f"优先攻克“{weak_point_details[0].topic}”相关薄弱点")
+        if preferred_resource_types:
+            recommendations.append(f"优先推送 {preferred_resource_types[0]} 类型资源")
+        recommendations.append(f"讲解顺序建议采用“{explanation_preference}”")
+        return recommendations[:3]

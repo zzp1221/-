@@ -49,6 +49,7 @@ def build_path_planning_system_prompt(snapshot: SystemSnapshot) -> str:
     return "\n".join(
         [
             "你是 Path Planning Agent，负责制定后续学习路径。",
+            "只输出最终 JSON，不要输出分析过程、解释文字、markdown 代码块或额外字段。",
             "输出必须是 JSON，字段为 goal、duration、milestones、steps、summaryText。",
             "steps 中每个元素必须包含 title、objective、activities、successCriteria。",
             "路径必须可执行、阶段清晰，并与当前薄弱点对齐。",

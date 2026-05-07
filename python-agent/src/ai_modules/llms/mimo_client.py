@@ -1,4 +1,4 @@
-"""Async + sync MiMo platform client — TTS + Omni multimodal via api-key auth."""
+"""Async + sync MiMo platform client for TTS + Omni multimodal requests."""
 
 from __future__ import annotations
 
@@ -16,19 +16,17 @@ from src.ai_modules.config import get_settings
 LOGGER = logging.getLogger(__name__)
 TRACER = trace.get_tracer(__name__)
 
-MIMO_BASE_URL = "https://api.xiaomimimo.com/v1"
-
-
 class MiMoClient:
-    """Async HTTP client for Xiaomi MiMo platform (api-key auth)."""
+    """Async HTTP client for Xiaomi MiMo platform."""
 
     _shared: ClassVar[dict[str, httpx.AsyncClient]] = {}
     _sync_client: ClassVar[httpx.Client | None] = None
 
     def __init__(self, *, api_key: str | None = None, timeout_seconds: float = 60.0) -> None:
         settings = get_settings()
-        self.api_key = api_key or settings.mimo_api_key
-        self.base_url = MIMO_BASE_URL
+        resolved_api_key = api_key or settings.mimo_api_key or settings.openai_compatible_api_key
+        self.api_key = resolved_api_key
+        self.base_url = self._resolve_base_url(settings, resolved_api_key)
         self.timeout_seconds = timeout_seconds
 
     async def _get_client(self) -> httpx.AsyncClient:
@@ -49,9 +47,20 @@ class MiMoClient:
 
     def _headers(self) -> dict[str, str]:
         return {
-            "api-key": self.api_key,
+            "Authorization": f"Bearer {self.api_key}",
             "Content-Type": "application/json",
         }
+
+    @staticmethod
+    def _resolve_base_url(settings, api_key: str) -> str:
+        # Token Plan keys must stay on their regional cluster instead of the public API host.
+        if api_key.startswith("tp-") and settings.openai_compatible_base_url:
+            return settings.openai_compatible_base_url.rstrip("/")
+        if settings.mimo_base_url:
+            return settings.mimo_base_url.rstrip("/")
+        if settings.openai_compatible_base_url:
+            return settings.openai_compatible_base_url.rstrip("/")
+        return "https://api.xiaomimimo.com/v1"
 
     # ── TTS ──────────────────────────────────────────────────────
 
@@ -79,6 +88,45 @@ class MiMoClient:
         with TRACER.start_as_current_span("mimo.tts.synthesize"):
             client = await self._get_client()
             response = await client.post(
+                f"{self.base_url}/chat/completions",
+                headers=self._headers(),
+                json=payload,
+            )
+            response.raise_for_status()
+            data = response.json()
+
+        choices = data.get("choices", [])
+        if not choices:
+            raise RuntimeError("mimo tts response missing choices")
+        audio_b64 = choices[0].get("message", {}).get("audio", {}).get("data", "")
+        if not audio_b64:
+            raise RuntimeError("mimo tts response missing audio.data")
+        return base64.b64decode(audio_b64)
+
+    def synthesize_speech_sync(
+        self,
+        *,
+        text: str,
+        style_description: str = "用清晰自然的语速播报，声音沉稳专业",
+        voice: str = "mimo_default",
+        audio_format: str = "mp3",
+    ) -> bytes:
+        """Call MiMo-V2.5-TTS synchronously and return raw audio bytes."""
+        if not self.api_key:
+            raise RuntimeError("missing mimo api key for tts")
+
+        payload: dict[str, Any] = {
+            "model": "mimo-v2.5-tts",
+            "messages": [
+                {"role": "user", "content": style_description},
+                {"role": "assistant", "content": text},
+            ],
+            "audio": {"format": audio_format, "voice": voice},
+        }
+
+        with TRACER.start_as_current_span("mimo.tts.synthesize_sync"):
+            client = self._get_sync_client()
+            response = client.post(
                 f"{self.base_url}/chat/completions",
                 headers=self._headers(),
                 json=payload,

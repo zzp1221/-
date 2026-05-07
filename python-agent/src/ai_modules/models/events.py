@@ -95,18 +95,23 @@ class ResourceFilePayload(BaseModel):
     title: str
     summary: str
     display_mode: str = Field(alias="displayMode")
-    file_name: str = Field(alias="fileName")
+    file_name: str = Field(default="", alias="fileName")
     local_path: str | None = Field(default=None, alias="localPath")
     mime_type: str | None = Field(default=None, alias="mimeType")
+    inline_content: str | None = Field(default=None, alias="inlineContent")
+    language: str | None = None
+    explanation: str | None = None
     download_url: str | None = Field(default=None, alias="downloadUrl")
     expires_in_sec: int | None = Field(default=None, alias="expiresInSec")
     expires_at: str | None = Field(default=None, alias="expiresAt")
+    thumbnail_url: str | None = Field(default=None, alias="thumbnailUrl")
     thumbnail_path: str | None = Field(default=None, alias="thumbnailPath")
     thumbnail_file_name: str | None = Field(default=None, alias="thumbnailFileName")
     thumbnail_mime_type: str | None = Field(default=None, alias="thumbnailMimeType")
     duration_seconds: int | None = Field(default=None, alias="durationSeconds")
     video_style: str | None = Field(default=None, alias="videoStyle")
     knowledge_point: str | None = Field(default=None, alias="knowledgePoint")
+    source_name: str | None = Field(default=None, alias="sourceName")
 
     model_config = ConfigDict(populate_by_name=True)
 

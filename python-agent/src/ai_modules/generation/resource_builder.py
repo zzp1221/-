@@ -634,43 +634,17 @@ class ResourceGenerationService:
         task_id = str(params.get("taskId") or "video-task")
         style = str(params.get("style") or "hybrid")
         duration_target = self._normalize_duration_seconds(params.get("duration") or params.get("durationTarget"))
-        script_payload = VideoScriptPayload.model_validate(
-            {
-                "title": f"{topic}教学视频",
-                "totalDuration": duration_target,
-                "segments": [
-                    {
-                        "id": 1,
-                        "type": "intro",
-                        "text": f"今天我们来学习 {topic}。",
-                        "duration": max(5, duration_target // 5),
-                        "visualHint": "show_title_card",
-                    },
-                    {
-                        "id": 2,
-                        "type": "explanation",
-                        "text": (
-                            f"结合 {snapshot.current_course} 和当前检索证据，"
-                            f"我们一步步讲清 {topic} 的核心概念与使用场景。"
-                        ),
-                        "duration": max(10, duration_target // 2),
-                        "visualHint": "show_concept_explanation",
-                    },
-                    {
-                        "id": 3,
-                        "type": "summary",
-                        "text": "最后回顾重点，并给出下一步练习建议。",
-                        "duration": max(5, duration_target // 4),
-                        "visualHint": "show_summary_card",
-                    },
-                ],
-                "fullText": (
-                    f"今天我们来学习 {topic}。"
-                    f" 我们会结合 {snapshot.current_course} 的上下文说明关键概念、"
-                    "典型误区和练习建议。"
-                ),
-                "videoStyle": style,
-            }
+        retrieval = params.get("retrievalResult", {})
+        sources = retrieval.get("documents", []) if isinstance(retrieval, dict) else []
+        generation_snapshot = self._build_generation_snapshot(params=params, snapshot=snapshot)
+        script_payload = self.content_chain.generate_video_script(
+            title=f"{topic}教学视频",
+            topic=topic,
+            snapshot=generation_snapshot,
+            sources=sources,
+            duration_seconds=duration_target,
+            style=style,
+            fallback_builder=self,
         )
         task_dir = self.sandbox_root / f"video_{self._safe_task_id(task_id)}"
         task_dir.mkdir(parents=True, exist_ok=True)
@@ -687,10 +661,22 @@ class ResourceGenerationService:
         )
         script_text_path.write_text(script_payload.full_text, encoding="utf-8")
 
-        # TTS audio is required — no fallback
+        # TTS must narrate the finalized script instead of raw retrieval evidence.
         tts_audio_bytes = params.get("tts_audio_bytes")
         if not tts_audio_bytes or not isinstance(tts_audio_bytes, bytes) or len(tts_audio_bytes) < 100:
-            raise RuntimeError("TTS audio not available — cannot generate video without speech audio")
+            from src.ai_modules.llms.mimo_client import MiMoClient
+
+            try:
+                mimo_client = MiMoClient()
+                tts_audio_bytes = mimo_client.synthesize_speech_sync(
+                    text=script_payload.full_text[:1600],
+                    style_description="用清晰自然的语速播报，声音沉稳专业，适合教学场景",
+                    voice="mimo_default",
+                    audio_format="mp3",
+                )
+            except Exception as exc:
+                raise RuntimeError("Video TTS generation failed") from exc
+            params["tts_audio_bytes"] = tts_audio_bytes
         audio_path.write_bytes(tts_audio_bytes)
 
         # DH_live digital human rendering

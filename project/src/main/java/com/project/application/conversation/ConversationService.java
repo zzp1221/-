@@ -11,6 +11,7 @@ import com.project.application.smartengine.SmartEngineInvocation;
 import com.project.domain.conversation.ConversationMode;
 import com.project.domain.conversation.QnaSession;
 import com.project.domain.conversation.QnaSessionRepository;
+import com.project.domain.profile.UserProfileCurrentRepository;
 import com.project.security.JwtAuthenticatedUser;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -41,17 +42,20 @@ public class ConversationService {
     private final PythonAgentClient pythonAgentClient;
     private final PythonConversationMessageClient pythonConversationMessageClient;
     private final TaskExecutor smartEngineTaskExecutor;
+    private final UserProfileCurrentRepository userProfileCurrentRepository;
 
     public ConversationService(
         QnaSessionRepository qnaSessionRepository,
         PythonAgentClient pythonAgentClient,
         PythonConversationMessageClient pythonConversationMessageClient,
-        TaskExecutor smartEngineTaskExecutor
+        TaskExecutor smartEngineTaskExecutor,
+        UserProfileCurrentRepository userProfileCurrentRepository
     ) {
         this.qnaSessionRepository = qnaSessionRepository;
         this.pythonAgentClient = pythonAgentClient;
         this.pythonConversationMessageClient = pythonConversationMessageClient;
         this.smartEngineTaskExecutor = smartEngineTaskExecutor;
+        this.userProfileCurrentRepository = userProfileCurrentRepository;
     }
 
     @Transactional
@@ -310,6 +314,11 @@ public class ConversationService {
             messages.add(Map.of("role", msg.role(), "content", msg.content()));
         }
         params.put("messages", messages);
+        userProfileCurrentRepository.findById(currentUser.userId())
+            .ifPresent(profile -> {
+                params.put("profile", new LinkedHashMap<>(profile.getProfileJson()));
+                params.put("profileSummary", profile.getSummaryText());
+            });
         return params;
     }
 

@@ -24,6 +24,7 @@ class RetrievalDocument(BaseModel):
     channel: str
     match_type: str = Field(default="ranked", alias="matchType")
     evidence: str | None = None
+    snippet: str | None = None
 
     model_config = ConfigDict(populate_by_name=True)
 

@@ -26,16 +26,6 @@ class PostgresRuntimeConfig(BaseModel):
     port: int
 
 
-class MinioRuntimeConfig(BaseModel):
-    """Validated MinIO connection settings."""
-
-    endpoint: str
-    access_key: str
-    secret_key: str
-    secure: bool
-    bucket: str
-
-
 class KnowledgeRuntimeConfig(BaseModel):
     """Validated runtime configuration for knowledge scripts."""
 
@@ -44,7 +34,6 @@ class KnowledgeRuntimeConfig(BaseModel):
     embedding_dimension: int = Field(gt=0)
     retrieval_domain: str = Field(min_length=1)
     postgres: PostgresRuntimeConfig
-    minio: MinioRuntimeConfig
 
 
 def load_knowledge_runtime_config() -> KnowledgeRuntimeConfig:
@@ -57,10 +46,6 @@ def load_knowledge_runtime_config() -> KnowledgeRuntimeConfig:
         embedding_dimension=settings.knowledge_embedding_dimension,
         retrieval_domain=settings.retrieval_domain,
         postgres=PostgresRuntimeConfig.model_validate(settings.postgres_connect_kwargs()),
-        minio=MinioRuntimeConfig(
-            **settings.minio_connect_kwargs(),
-            bucket=settings.minio_bucket,
-        ),
     )
 
 

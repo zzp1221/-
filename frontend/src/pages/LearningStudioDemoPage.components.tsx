@@ -1,24 +1,34 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ArrowDown, BookOpen, FileText, LoaderCircle, SendHorizontal, Sparkles } from 'lucide-react';
+import { Activity, ArrowDown, Brain, BookOpen, CheckCircle2, Clock3, ExternalLink, FileText, LoaderCircle, SendHorizontal, Sparkles, Target, TrendingUp, TriangleAlert, XCircle } from 'lucide-react';
+import CodeBlock from '../components/CodeBlock';
+import RadarChart from '../components/RadarChart';
+import ScoreProgressBar from '../components/ScoreProgressBar';
 import VideoCard from '../components/VideoCard';
 import MarkdownRenderer from '../components/MarkdownRenderer';
+import MermaidDiagram from '../components/MermaidDiagram';
 import {
   EMPTY_VALUE,
   assessmentDimensionOptions,
+  pushResourceTypeOptions,
   resourceTypeButtons,
   type AssessmentForm,
   type ChatMessage,
   type EngineService,
   type EngineState,
+  type InlineResourceView,
+  type ProfileDimensionScore,
   type PathForm,
   type ProfileSnapshot,
+  type ProfileTimelinePoint,
   type ProfileUpdateSource,
+  type PracticeJudgeResult,
+  type PracticeQuestionBatch,
   type PushForm,
   type ResourceForm,
-  type ResourceType,
   type TempDownloadLink,
   type VideoResult,
+  type WeakPointRank,
 } from './LearningStudioDemoPage.types';
 import { request } from '../api/request';
 import { normalizeCopyText } from './LearningStudioDemoPage.utils';
@@ -57,20 +67,15 @@ export function ServiceDynamicForm(props: {
     return (
       <div className="rounded-2xl border border-slate-200 bg-slate-50/50 p-4 dark:border-slate-700 dark:bg-slate-900/50 md:p-5">
         <div className="mb-3 text-sm font-semibold text-slate-700 dark:text-slate-300">资源生成参数</div>
-        <div className="mb-3 flex flex-wrap gap-2">
+        <div className="mb-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
           {resourceTypeButtons.map((item) => {
-            const active = props.resourceForm.resourceTypes.includes(item.type);
+            const active = props.resourceForm.resourceType === item.type;
             return (
               <button
                 key={item.type}
                 type="button"
-                onClick={() => {
-                  const nextTypes = active
-                    ? props.resourceForm.resourceTypes.filter((x) => x !== item.type)
-                    : [...props.resourceForm.resourceTypes, item.type];
-                  props.onResourceChange({ ...props.resourceForm, resourceTypes: nextTypes });
-                }}
-                className={chipButton(active)}
+                onClick={() => props.onResourceChange({ ...props.resourceForm, resourceType: item.type })}
+                className={`${chipButton(active)} w-full justify-center py-2 text-sm`}
               >
                 {item.label}
               </button>
@@ -106,34 +111,9 @@ export function ServiceDynamicForm(props: {
           placeholder="重点知识点（如：并发编程、线程池）"
           className={`${baseInputClass} mt-3`}
         />
-        {props.resourceForm.resourceTypes.includes('VIDEO') ? (
-          <div className="mt-4 rounded-2xl border border-indigo-200 bg-white p-4 dark:border-indigo-700 dark:bg-slate-900">
-            <div className="mb-3 flex items-center gap-2 text-sm font-medium text-slate-700 dark:text-slate-300">
-              <Sparkles className="h-4 w-4 text-indigo-500" />
-              教学视频参数
-            </div>
-            <div className="grid gap-3 md:grid-cols-2">
-              <select
-                value={props.resourceForm.videoStyle}
-                onChange={(e) =>
-                  props.onResourceChange({
-                    ...props.resourceForm,
-                    videoStyle: e.target.value as ResourceForm['videoStyle'],
-                  })
-                }
-                className={baseSelectClass}
-              >
-                <option value="talking_head">数字人讲解</option>
-                <option value="animation">动画演示</option>
-                <option value="hybrid">混合模式</option>
-              </select>
-              <input
-                value={props.resourceForm.durationSeconds}
-                onChange={(e) => props.onResourceChange({ ...props.resourceForm, durationSeconds: e.target.value })}
-                placeholder="目标时长（秒）"
-                className={baseInputClass}
-              />
-            </div>
+        {props.resourceForm.resourceType === 'VIDEO' ? (
+          <div className="mt-4 rounded-2xl border border-indigo-200 bg-indigo-50/70 px-4 py-3 text-sm text-indigo-700 dark:border-indigo-700 dark:bg-indigo-500/10 dark:text-indigo-200">
+            已固定为数字人视频生成，系统将按默认时长自动完成脚本、TTS 和数字人渲染。
           </div>
         ) : null}
       </div>
@@ -173,31 +153,20 @@ export function ServiceDynamicForm(props: {
     return (
       <div className="rounded-2xl border border-slate-200 bg-slate-50/50 p-4 dark:border-slate-700 dark:bg-slate-900/50 md:p-5">
         <div className="mb-3 text-sm font-semibold text-slate-700 dark:text-slate-300">资源推送参数</div>
-        <div className="grid gap-3 md:grid-cols-2">
-          <input
-            value={props.pushForm.keyword}
-            onChange={(e) => props.onPushChange({ ...props.pushForm, keyword: e.target.value })}
-            placeholder="关键词"
-            className={baseInputClass}
-          />
-          <select
-            value={props.pushForm.preferredType}
-            onChange={(e) => props.onPushChange({ ...props.pushForm, preferredType: e.target.value as ResourceType })}
-            className={baseSelectClass}
-          >
-            {resourceTypeButtons.map((item) => (
-              <option key={item.type} value={item.type}>
-                {item.label}
-              </option>
-            ))}
-          </select>
+        <select
+          value={props.pushForm.preferredType}
+          onChange={(e) => props.onPushChange({ ...props.pushForm, preferredType: e.target.value as typeof props.pushForm.preferredType })}
+          className={baseSelectClass}
+        >
+          {pushResourceTypeOptions.map((item) => (
+            <option key={item.type} value={item.type}>
+              {item.label}
+            </option>
+          ))}
+        </select>
+        <div className="mt-3 rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-500 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-400">
+          具体推送内容将结合当前画像、薄弱点和学习方向自动筛选，不再手动输入关键词和课程范围。
         </div>
-        <input
-          value={props.pushForm.courseScope}
-          onChange={(e) => props.onPushChange({ ...props.pushForm, courseScope: e.target.value })}
-          placeholder="课程范围"
-          className={`${baseInputClass} mt-3`}
-        />
       </div>
     );
   }
@@ -223,8 +192,7 @@ export function ServiceDynamicForm(props: {
               key={item}
               type="button"
               onClick={() => {
-                const merged = checked ? nextDimensions.filter((x) => x !== item) : [...nextDimensions, item];
-                props.onAssessmentChange({ ...props.assessmentForm, dimensions: merged });
+                props.onAssessmentChange({ ...props.assessmentForm, dimensions: [item] });
               }}
               className={chipButton(checked)}
             >
@@ -305,34 +273,216 @@ export function ServiceSubmitPanel(props: {
   );
 }
 
+function InlineResourcePanel(props: { resource: InlineResourceView }) {
+  if (props.resource.kind === 'code') {
+    return (
+      <div className="mb-4 rounded-xl border border-slate-100 bg-slate-50/50 p-4 dark:border-slate-800 dark:bg-slate-900/50">
+        <div className="mb-3">
+          <div className="text-sm font-semibold text-slate-700 dark:text-slate-300">{props.resource.title}</div>
+          {props.resource.summary ? (
+            <div className="mt-1 text-xs text-slate-500 dark:text-slate-400">{props.resource.summary}</div>
+          ) : null}
+        </div>
+        <CodeBlock language={props.resource.language || 'text'}>{props.resource.content}</CodeBlock>
+        {props.resource.explanation ? (
+          <div className="mt-4 rounded-xl border border-indigo-100 bg-white p-4 dark:border-indigo-900 dark:bg-slate-950">
+            <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-indigo-600 dark:text-indigo-400">讲解</div>
+            <MarkdownRenderer content={props.resource.explanation} />
+          </div>
+        ) : null}
+      </div>
+    );
+  }
+
+  if (props.resource.kind === 'mermaid') {
+    return (
+      <div className="mb-4 rounded-xl border border-slate-100 bg-slate-50/50 p-4 dark:border-slate-800 dark:bg-slate-900/50">
+        <div className="mb-3">
+          <div className="text-sm font-semibold text-slate-700 dark:text-slate-300">{props.resource.title}</div>
+          {props.resource.summary ? (
+            <div className="mt-1 text-xs text-slate-500 dark:text-slate-400">{props.resource.summary}</div>
+          ) : null}
+        </div>
+        <MermaidDiagram chart={props.resource.content} />
+      </div>
+    );
+  }
+
+  return (
+    <div className="mb-4 rounded-xl border border-slate-100 bg-slate-50/50 p-4 text-sm leading-7 text-slate-700 dark:border-slate-800 dark:bg-slate-900/50 dark:text-slate-300">
+      <MarkdownRenderer content={props.resource.content} />
+    </div>
+  );
+}
+
+function PracticeQuestionPanel(props: {
+  batch: PracticeQuestionBatch;
+  judgeResult: PracticeJudgeResult | null;
+  canSubmit: boolean;
+  onSubmitAnswers: (batch: PracticeQuestionBatch, answers: Record<string, string>) => void;
+}) {
+  const [answers, setAnswers] = useState<Record<string, string>>({});
+
+  return (
+    <div className="mb-4 rounded-xl border border-slate-100 bg-slate-50/50 p-4 dark:border-slate-800 dark:bg-slate-900/50">
+      <div className="mb-4 flex items-start justify-between gap-3">
+        <div>
+          <div className="text-sm font-semibold text-slate-700 dark:text-slate-300">{props.batch.title}</div>
+          <div className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+            主题：{props.batch.topic || '未指定'} · 难度：{props.batch.difficulty || '未指定'}
+          </div>
+          {props.batch.description ? (
+            <div className="mt-3 rounded-xl border border-indigo-100 bg-indigo-50/70 px-3 py-2 text-sm leading-6 text-indigo-700 dark:border-indigo-900 dark:bg-indigo-500/10 dark:text-indigo-200">
+              {props.batch.description}
+            </div>
+          ) : null}
+        </div>
+        <button
+          type="button"
+          disabled={!props.canSubmit}
+          onClick={() => props.onSubmitAnswers(props.batch, answers)}
+          className="shrink-0 rounded-lg bg-indigo-600 px-3 py-2 text-xs font-medium text-white transition-colors hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-40"
+        >
+          {props.batch.submitLabel || '提交答案并判题'}
+        </button>
+      </div>
+
+      <div className="space-y-4">
+        {props.batch.questions.map((question, index) => (
+          <div key={question.questionId} className="rounded-xl border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-950">
+            <div className="text-sm font-medium text-slate-700 dark:text-slate-300">
+              {index + 1}. {question.stem}
+            </div>
+            {question.options && question.options.length > 0 ? (
+              <div className="mt-3 space-y-2">
+                {question.options.map((option, optionIndex) => {
+                  const optionLabel = String.fromCharCode(65 + optionIndex);
+                  const checked = answers[question.questionId] === optionLabel;
+                  return (
+                    <label
+                      key={`${question.questionId}-${optionLabel}`}
+                      className="flex cursor-pointer items-start gap-2 rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-600 transition-colors hover:border-indigo-300 dark:border-slate-700 dark:text-slate-400 dark:hover:border-indigo-700"
+                    >
+                      <input
+                        type="radio"
+                        name={question.questionId}
+                        checked={checked}
+                        onChange={() => setAnswers((prev) => ({ ...prev, [question.questionId]: optionLabel }))}
+                        className="mt-1"
+                      />
+                      <span>{optionLabel}. {option}</span>
+                    </label>
+                  );
+                })}
+              </div>
+            ) : (
+              <textarea
+                value={answers[question.questionId] || ''}
+                onChange={(event) => setAnswers((prev) => ({ ...prev, [question.questionId]: event.target.value }))}
+                rows={4}
+                className="mt-3 w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-sm outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-500/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200"
+                placeholder="请输入你的答案"
+              />
+            )}
+          </div>
+        ))}
+      </div>
+
+      {props.judgeResult ? (
+        <div className="mt-5 rounded-xl border border-emerald-200 bg-emerald-50/60 p-4 dark:border-emerald-900 dark:bg-emerald-500/10">
+          <div className="text-sm font-semibold text-emerald-700 dark:text-emerald-300">{props.judgeResult.title}</div>
+          <div className="mt-1 text-sm text-emerald-700/90 dark:text-emerald-200">{props.judgeResult.summary}</div>
+          <div className="mt-3 text-xs text-emerald-700/80 dark:text-emerald-300">
+            总分：{props.judgeResult.totalScore} · 正确率：{Math.round((props.judgeResult.accuracy || 0) * 100)}%
+          </div>
+          <div className="mt-4 space-y-3">
+            {props.judgeResult.items.map((item) => (
+              <div key={item.questionId} className="rounded-lg border border-emerald-200 bg-white px-3 py-3 dark:border-emerald-900 dark:bg-slate-950">
+                <div className="flex items-center gap-2 text-sm font-medium text-slate-700 dark:text-slate-300">
+                  {item.isCorrect ? <CheckCircle2 className="h-4 w-4 text-emerald-500" /> : <XCircle className="h-4 w-4 text-rose-500" />}
+                  {item.questionId} · 得分 {item.score}
+                </div>
+                <div className="mt-2 text-sm text-slate-600 dark:text-slate-400">你的答案：{item.learnerAnswer || '未作答'}</div>
+                {item.correctAnswer ? (
+                  <div className="mt-1 text-sm text-slate-600 dark:text-slate-400">参考答案：{item.correctAnswer}</div>
+                ) : null}
+                {item.reason ? <div className="mt-2 text-sm text-slate-600 dark:text-slate-400">判定依据：{item.reason}</div> : null}
+                {item.feedback ? <div className="mt-1 text-sm text-slate-600 dark:text-slate-400">反馈建议：{item.feedback}</div> : null}
+              </div>
+            ))}
+          </div>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 export function TaskResultPanel(props: {
   service: EngineService | null;
   taskSummary: string;
   serviceResultLines: string[];
   downloadLinks: TempDownloadLink[];
   videoResult: VideoResult | null;
+  inlineResource: InlineResourceView | null;
+  practiceBatch: PracticeQuestionBatch | null;
+  judgeResult: PracticeJudgeResult | null;
+  canSubmitPractice: boolean;
+  onSubmitPracticeAnswers: (batch: PracticeQuestionBatch, answers: Record<string, string>) => void;
 }) {
+  const externalRecommendations = props.service === 'push'
+    ? props.downloadLinks.filter(isExternalRecommendation)
+    : [];
+  const fileDownloads = props.service === 'push'
+    ? []
+    : props.downloadLinks.filter((item) => !isExternalRecommendation(item));
+
   const handleDownload = async (item: TempDownloadLink) => {
     const absoluteUrl = /^https?:\/\//i.test(item.url) ? item.url : `${window.location.origin}${item.url.startsWith('/') ? item.url : `/${item.url}`}`;
-    const response = await request.getInstance().get(absoluteUrl, {
-      responseType: 'blob',
-    });
-    const blobUrl = window.URL.createObjectURL(response.data as Blob);
-    const anchor = document.createElement('a');
-    anchor.href = blobUrl;
-    anchor.download = item.fileName || extractFileName(item.url, item.title);
-    anchor.target = '_blank';
-    document.body.appendChild(anchor);
-    anchor.click();
-    document.body.removeChild(anchor);
-    window.URL.revokeObjectURL(blobUrl);
+    const sameOrigin = absoluteUrl.startsWith(window.location.origin);
+    const fallbackOpen = () => {
+      const anchor = document.createElement('a');
+      anchor.href = absoluteUrl;
+      anchor.target = '_blank';
+      anchor.rel = 'noopener noreferrer';
+      document.body.appendChild(anchor);
+      anchor.click();
+      document.body.removeChild(anchor);
+    };
+
+    if (!sameOrigin) {
+      fallbackOpen();
+      return;
+    }
+
+    try {
+      const response = await request.getInstance().get(absoluteUrl, {
+        responseType: 'blob',
+      });
+      const blobUrl = window.URL.createObjectURL(response.data as Blob);
+      const anchor = document.createElement('a');
+      anchor.href = blobUrl;
+      anchor.download = item.fileName || extractFileName(item.url, item.title);
+      anchor.target = '_blank';
+      document.body.appendChild(anchor);
+      anchor.click();
+      document.body.removeChild(anchor);
+      window.URL.revokeObjectURL(blobUrl);
+    } catch {
+      fallbackOpen();
+    }
   };
 
   if (!props.service) {
     return null;
   }
 
-  const hasContent = Boolean(props.taskSummary) || props.serviceResultLines.length > 0 || props.downloadLinks.length > 0 || Boolean(props.videoResult);
+  const hasContent = Boolean(props.taskSummary)
+    || props.serviceResultLines.length > 0
+    || props.downloadLinks.length > 0
+    || Boolean(props.videoResult)
+    || Boolean(props.inlineResource)
+    || Boolean(props.practiceBatch)
+    || Boolean(props.judgeResult);
   if (!hasContent) {
     return null;
   }
@@ -359,12 +509,45 @@ export function TaskResultPanel(props: {
         </div>
       ) : null}
 
+      {externalRecommendations.length > 0 ? (
+        <div className="modern-card overflow-hidden">
+          <div className="flex items-center gap-2 border-b border-slate-100 px-4 py-3 dark:border-slate-800">
+            <Sparkles className="h-4 w-4 text-indigo-500" />
+            <span className="text-sm font-semibold text-slate-700 dark:text-slate-300">推荐资源</span>
+          </div>
+          <div className="grid gap-3 p-4 md:grid-cols-2">
+            {externalRecommendations.map((item) => (
+              <ExternalResourceRecommendationCard key={`${item.title}-${item.url}`} item={item} />
+            ))}
+          </div>
+        </div>
+      ) : null}
+
       <div className="modern-card overflow-hidden">
         <div className="flex items-center gap-2 border-b border-slate-100 px-4 py-3 dark:border-slate-800">
           <BookOpen className="h-4 w-4 text-indigo-500" />
           <span className="text-sm font-semibold text-slate-700 dark:text-slate-300">任务结果</span>
         </div>
         <div className="p-4">
+          {props.service === 'assessment' && props.practiceBatch ? (
+            <PracticeQuestionPanel
+              batch={props.practiceBatch}
+              judgeResult={props.judgeResult}
+              canSubmit={props.canSubmitPractice}
+              onSubmitAnswers={props.onSubmitPracticeAnswers}
+            />
+          ) : null}
+          {props.inlineResource ? (
+            <InlineResourcePanel resource={props.inlineResource} />
+          ) : null}
+          {props.service !== 'assessment' && props.practiceBatch ? (
+            <PracticeQuestionPanel
+              batch={props.practiceBatch}
+              judgeResult={props.judgeResult}
+              canSubmit={props.canSubmitPractice}
+              onSubmitAnswers={props.onSubmitPracticeAnswers}
+            />
+          ) : null}
           {props.taskSummary ? (
             <div className="mb-4 rounded-xl border border-slate-100 bg-slate-50/50 p-4 text-sm leading-7 text-slate-700 dark:border-slate-800 dark:bg-slate-900/50 dark:text-slate-300">
               <MarkdownRenderer content={props.taskSummary} />
@@ -383,7 +566,7 @@ export function TaskResultPanel(props: {
         </div>
       </div>
 
-      {props.downloadLinks.length > 0 ? (
+      {fileDownloads.length > 0 ? (
         <div className="modern-card overflow-hidden">
           <div className="flex items-center gap-2 border-b border-slate-100 px-4 py-3 dark:border-slate-800">
             <FileText className="h-4 w-4 text-indigo-500" />
@@ -391,7 +574,7 @@ export function TaskResultPanel(props: {
           </div>
           <div className="p-4">
             <div className="grid gap-2 md:grid-cols-2">
-              {props.downloadLinks.map((item) => (
+              {fileDownloads.map((item) => (
                 <div
                   key={`${item.title}-${item.url}`}
                   className="flex items-center justify-between gap-3 rounded-xl border border-slate-200 bg-slate-50/50 px-4 py-3 transition-all hover:border-indigo-200 hover:bg-white dark:border-slate-700 dark:bg-slate-900/50 dark:hover:border-indigo-700"
@@ -418,6 +601,92 @@ export function TaskResultPanel(props: {
       ) : null}
     </div>
   );
+}
+
+function ExternalResourceRecommendationCard(props: { item: TempDownloadLink }) {
+  const actionLabel = recommendationActionLabel(props.item.resourceType);
+  const typeLabel = recommendationTypeLabel(props.item.resourceType);
+  const isVideo = props.item.resourceType === 'VIDEO';
+  return (
+    <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-700 dark:bg-slate-900">
+      <div className={`relative ${isVideo ? 'aspect-video' : 'aspect-[16/10]'} bg-slate-100 dark:bg-slate-800`}>
+        {props.item.thumbnailUrl ? (
+          <img
+            src={props.item.thumbnailUrl}
+            alt={props.item.title}
+            className="h-full w-full object-cover"
+            loading="lazy"
+            referrerPolicy="no-referrer"
+          />
+        ) : (
+          <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-slate-100 to-indigo-100 text-sm text-slate-500 dark:from-slate-800 dark:to-slate-900 dark:text-slate-400">
+            {typeLabel}
+          </div>
+        )}
+      </div>
+      <div className="space-y-3 p-4">
+        <div>
+          <div className="text-base font-semibold text-slate-800 dark:text-slate-100">{props.item.title}</div>
+          {props.item.knowledgePoint ? (
+            <div className="mt-1 text-sm text-slate-500 dark:text-slate-400">知识点：{props.item.knowledgePoint}</div>
+          ) : null}
+          {props.item.summary ? (
+            <p className="mt-2 line-clamp-3 text-sm leading-6 text-slate-600 dark:text-slate-300">{props.item.summary}</p>
+          ) : null}
+        </div>
+        <div className="flex flex-wrap gap-2 text-xs text-slate-500 dark:text-slate-400">
+          {props.item.sourceName ? (
+            <span className="rounded-full bg-slate-100 px-2.5 py-1 dark:bg-slate-800">{props.item.sourceName}</span>
+          ) : null}
+          <span className="rounded-full bg-indigo-50 px-2.5 py-1 text-indigo-600 dark:bg-indigo-500/10 dark:text-indigo-300">{typeLabel}</span>
+        </div>
+        <div className="flex items-center justify-between gap-3 border-t border-slate-100 pt-3 dark:border-slate-800">
+          <span className="text-xs text-slate-400 dark:text-slate-500">{props.item.expiresHint || '点击后将在新窗口打开资源'}</span>
+          <a
+            href={props.item.url}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-1 text-sm font-medium text-indigo-600 transition-colors hover:text-indigo-700 dark:text-indigo-400 dark:hover:text-indigo-300"
+          >
+            {actionLabel}
+            <ExternalLink className="h-3.5 w-3.5" />
+          </a>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function isExternalRecommendation(item: TempDownloadLink): boolean {
+  return /^https?:\/\//i.test(item.url);
+}
+
+function recommendationActionLabel(resourceType?: string): string {
+  switch (resourceType) {
+    case 'VIDEO':
+      return '打开视频';
+    case 'CODE_CASE':
+      return '查看案例';
+    case 'PRACTICAL_CASE':
+      return '开始实操';
+    default:
+      return '打开资源';
+  }
+}
+
+function recommendationTypeLabel(resourceType?: string): string {
+  switch (resourceType) {
+    case 'VIDEO':
+      return '外部视频';
+    case 'CODE_CASE':
+      return '代码案例';
+    case 'PRACTICAL_CASE':
+      return '实操案例';
+    case 'READING':
+      return '拓展阅读';
+    default:
+      return '讲解文档';
+  }
 }
 
 function extractFileName(url: string, fallbackTitle: string): string {
@@ -466,42 +735,216 @@ export function RealtimeProfile(props: {
           {props.source === 'BACKEND' ? '系统分析' : '实时更新'}
         </span>
       </div>
-      <div className="p-5">
-        <div className="grid gap-3 md:grid-cols-2">
-          <ProfileCell label="课程方向" value={props.profile.major || EMPTY_VALUE} />
-          <ProfileCell label="学习目标" value={props.profile.goal || EMPTY_VALUE} />
-          <ProfileCell label="知识基础" value={props.profile.knowledgeBase || EMPTY_VALUE} />
-          <ProfileCell
-            label="薄弱知识点"
-            value={
-              weakPoints.length > 0 ? (
-                <div className="space-y-1.5">
-                  {weakPoints.map((item) => (
-                    <div key={item} className="flex items-center gap-2">
-                      <span className="h-1.5 w-1.5 rounded-full bg-amber-400" />
-                      {item}
-                    </div>
-                  ))}
-                  {allWeakPoints.length > 3 ? (
-                    <button type="button" onClick={props.onToggleWeakPoints} className="text-xs font-medium text-indigo-600 hover:text-indigo-700 dark:text-indigo-400">
-                      {props.showAllWeakPoints ? '收起' : `展开全部 (${allWeakPoints.length}项)`}
-                    </button>
-                  ) : null}
-                </div>
-              ) : (
-                EMPTY_VALUE
-              )
-            }
-          />
-          <ProfileCell label="偏好学习方式" value={props.profile.preference?.join('、') || EMPTY_VALUE} />
-          <ProfileCell label="认知风格" value={props.profile.cognitiveStyle || EMPTY_VALUE} />
-          <ProfileCell label="置信等级" value={props.profile.confidenceLevel || EMPTY_VALUE} />
-          <ProfileCell label="画像摘要" value={props.summary || EMPTY_VALUE} />
+      <div className="space-y-5 p-5">
+        <div className="grid gap-3 xl:grid-cols-4">
+          <ProfileStatCard icon={<Target className="h-4 w-4" />} label="学习目标" value={props.profile.goal || EMPTY_VALUE} accent="indigo" />
+          <ProfileStatCard icon={<Brain className="h-4 w-4" />} label="知识基础" value={props.profile.knowledgeBase || EMPTY_VALUE} accent="violet" />
+          <ProfileStatCard icon={<Activity className="h-4 w-4" />} label="置信分" value={`${props.profile.confidenceScore}/100`} accent="emerald" />
+          <ProfileStatCard icon={<Sparkles className="h-4 w-4" />} label="认知偏好" value={props.profile.explanationPreference || props.profile.cognitiveStyle || EMPTY_VALUE} accent="amber" />
         </div>
-        <div className="mt-4 flex items-center gap-4 border-t border-slate-100 pt-4 text-[11px] text-slate-400 dark:border-slate-800 dark:text-slate-500">
+
+        <div className="grid gap-5 xl:grid-cols-[1.15fr_0.85fr]">
+          <section className="rounded-2xl border border-slate-100 bg-slate-50/60 p-4 dark:border-slate-800 dark:bg-slate-900/40">
+            <div className="mb-3 flex items-center justify-between">
+              <div>
+                <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-300">7维画像可视化</h3>
+                <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">从当前画像自动计算 7 个核心学习维度</p>
+              </div>
+              <span className="rounded-full bg-indigo-50 px-2.5 py-1 text-[11px] font-medium text-indigo-600 dark:bg-indigo-500/10 dark:text-indigo-400">
+                实时画像
+              </span>
+            </div>
+            <div className="grid gap-4 lg:grid-cols-[0.95fr_1.05fr]">
+              <RadarChart
+                data={props.profile.dimensionScores.map((item) => ({
+                  subject: item.subject,
+                  score: item.score,
+                  fullMark: item.fullMark,
+                }))}
+                height={320}
+                className="min-h-[320px]"
+              />
+              <div className="space-y-2.5">
+                {props.profile.dimensionScores.map((item, index) => (
+                  <DimensionProgressRow key={item.key} item={item} delay={index * 0.06} />
+                ))}
+              </div>
+            </div>
+          </section>
+
+          <section className="rounded-2xl border border-slate-100 bg-slate-50/60 p-4 dark:border-slate-800 dark:bg-slate-900/40">
+            <div className="mb-3 flex items-center justify-between">
+              <div>
+                <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-300">薄弱点排序</h3>
+                <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">按当前薄弱强度由高到低排序，优先展示最该补的内容</p>
+              </div>
+              <TriangleAlert className="h-4 w-4 text-amber-500" />
+            </div>
+            <div className="space-y-3">
+              {props.profile.weakPointRanks.length > 0 ? (
+                props.profile.weakPointRanks
+                  .slice(0, props.showAllWeakPoints ? props.profile.weakPointRanks.length : 5)
+                  .map((item, index) => (
+                    <WeakPointRankCard key={`${item.topic}-${index}`} item={item} rank={index + 1} />
+                  ))
+              ) : (
+                <div className="rounded-2xl border border-dashed border-slate-200 px-4 py-6 text-sm text-slate-400 dark:border-slate-700 dark:text-slate-500">
+                  暂无可排序的薄弱点，继续对话、练习或评估后会自动补齐。
+                </div>
+              )}
+              {props.profile.weakPointRanks.length > 5 || allWeakPoints.length > 3 ? (
+                <button
+                  type="button"
+                  onClick={props.onToggleWeakPoints}
+                  className="text-xs font-medium text-indigo-600 hover:text-indigo-700 dark:text-indigo-400"
+                >
+                  {props.showAllWeakPoints ? '收起薄弱点列表' : `展开全部 (${props.profile.weakPointRanks.length || allWeakPoints.length}项)`}
+                </button>
+              ) : null}
+            </div>
+          </section>
+        </div>
+
+        <div className="grid gap-5 xl:grid-cols-[0.9fr_1.1fr]">
+          <section className="rounded-2xl border border-slate-100 bg-slate-50/60 p-4 dark:border-slate-800 dark:bg-slate-900/40">
+            <div className="mb-3 flex items-center justify-between">
+              <div>
+                <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-300">画像摘要</h3>
+                <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">当前学习阶段、重点弱项与推荐方向</p>
+              </div>
+              <TrendingUp className="h-4 w-4 text-emerald-500" />
+            </div>
+            <div className="space-y-3">
+              <div className="rounded-2xl bg-white/90 px-4 py-3 text-sm leading-7 text-slate-600 dark:bg-slate-950/40 dark:text-slate-300">
+                {props.summary || props.profile.summaryText || EMPTY_VALUE}
+              </div>
+              <div className="grid gap-3 md:grid-cols-2">
+                <ProfileCell label="课程方向" value={props.profile.major || EMPTY_VALUE} />
+                <ProfileCell label="偏好学习方式" value={props.profile.preference?.join('、') || EMPTY_VALUE} />
+                <ProfileCell label="认知风格" value={props.profile.cognitiveStyle || EMPTY_VALUE} />
+                <ProfileCell label="当前薄弱点" value={weakPoints.length > 0 ? weakPoints.join('、') : EMPTY_VALUE} />
+              </div>
+            </div>
+          </section>
+
+          <section className="rounded-2xl border border-slate-100 bg-slate-50/60 p-4 dark:border-slate-800 dark:bg-slate-900/40">
+            <div className="mb-3 flex items-center justify-between">
+              <div>
+                <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-300">时间线演化</h3>
+                <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">展示最近几次画像快照的目标、基础和关键弱点变化</p>
+              </div>
+              <Clock3 className="h-4 w-4 text-slate-500" />
+            </div>
+            <ProfileTimeline timeline={props.profile.timeline} />
+          </section>
+        </div>
+
+        <div className="flex items-center gap-4 border-t border-slate-100 pt-4 text-[11px] text-slate-400 dark:border-slate-800 dark:text-slate-500">
           <span>更新于 {props.updatedAt ? new Date(props.updatedAt).toLocaleString('zh-CN') : EMPTY_VALUE}</span>
         </div>
       </div>
+    </div>
+  );
+}
+
+function ProfileStatCard(props: {
+  icon: ReactNode;
+  label: string;
+  value: string;
+  accent: 'indigo' | 'violet' | 'emerald' | 'amber';
+}) {
+  const accentMap: Record<typeof props.accent, string> = {
+    indigo: 'bg-indigo-50 text-indigo-600 dark:bg-indigo-500/10 dark:text-indigo-400',
+    violet: 'bg-violet-50 text-violet-600 dark:bg-violet-500/10 dark:text-violet-400',
+    emerald: 'bg-emerald-50 text-emerald-600 dark:bg-emerald-500/10 dark:text-emerald-400',
+    amber: 'bg-amber-50 text-amber-600 dark:bg-amber-500/10 dark:text-amber-400',
+  };
+  return (
+    <div className="rounded-2xl border border-slate-100 bg-slate-50/60 p-4 dark:border-slate-800 dark:bg-slate-900/40">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <div className="text-xs font-medium text-slate-500 dark:text-slate-400">{props.label}</div>
+          <div className="mt-2 text-sm font-semibold leading-6 text-slate-700 dark:text-slate-200">{props.value || EMPTY_VALUE}</div>
+        </div>
+        <div className={`rounded-xl p-2 ${accentMap[props.accent]}`}>{props.icon}</div>
+      </div>
+    </div>
+  );
+}
+
+function DimensionProgressRow(props: { item: ProfileDimensionScore; delay: number }) {
+  return (
+    <div className="rounded-2xl border border-slate-100 bg-white/90 p-3 dark:border-slate-800 dark:bg-slate-950/40">
+      <ScoreProgressBar
+        label={`${props.item.subject} · ${props.item.hint}`}
+        score={props.item.score}
+        maxScore={props.item.fullMark}
+        color="bg-indigo-500"
+        delay={props.delay}
+      />
+    </div>
+  );
+}
+
+function WeakPointRankCard(props: { item: WeakPointRank; rank: number }) {
+  return (
+    <div className="rounded-2xl border border-slate-100 bg-white/90 p-3 dark:border-slate-800 dark:bg-slate-950/40">
+      <div className="mb-2 flex items-center justify-between gap-3">
+        <div className="flex items-center gap-3">
+          <div className="flex h-7 w-7 items-center justify-center rounded-full bg-amber-50 text-xs font-semibold text-amber-600 dark:bg-amber-500/10 dark:text-amber-400">
+            {props.rank}
+          </div>
+          <div>
+            <div className="text-sm font-medium text-slate-700 dark:text-slate-200">{props.item.topic}</div>
+            <div className="text-xs text-slate-400 dark:text-slate-500">
+              {props.item.lastError || '等待更多练习或评估错误样本'}
+            </div>
+          </div>
+        </div>
+        <div className="text-sm font-semibold text-amber-600 dark:text-amber-400">{props.item.severity}/100</div>
+      </div>
+      <div className="h-2 overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800">
+        <div
+          className="h-full rounded-full bg-gradient-to-r from-amber-400 to-rose-500"
+          style={{ width: `${Math.max(8, Math.min(100, props.item.severity))}%` }}
+        />
+      </div>
+    </div>
+  );
+}
+
+function ProfileTimeline(props: { timeline: ProfileTimelinePoint[] }) {
+  if (props.timeline.length === 0) {
+    return (
+      <div className="rounded-2xl border border-dashed border-slate-200 px-4 py-6 text-sm text-slate-400 dark:border-slate-700 dark:text-slate-500">
+        暂无历史画像快照，继续学习后会自动累积演化记录。
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-3">
+      {props.timeline.map((item, index) => (
+        <div key={`${item.version}-${item.updatedAt}-${index}`} className="relative rounded-2xl border border-slate-100 bg-white/90 p-4 dark:border-slate-800 dark:bg-slate-950/40">
+          <div className="mb-2 flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2">
+              <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-medium text-slate-600 dark:bg-slate-800 dark:text-slate-300">
+                V{item.version}
+              </span>
+              <span className="text-xs text-slate-400 dark:text-slate-500">
+                {item.updatedAt ? new Date(item.updatedAt).toLocaleString('zh-CN') : '时间未知'}
+              </span>
+            </div>
+            <span className="text-xs font-medium text-emerald-600 dark:text-emerald-400">置信 {item.confidenceScore}/100</span>
+          </div>
+          <div className="grid gap-2 text-sm text-slate-600 dark:text-slate-300 md:grid-cols-3">
+            <div><span className="text-slate-400 dark:text-slate-500">知识基础：</span>{item.knowledgeBase || EMPTY_VALUE}</div>
+            <div><span className="text-slate-400 dark:text-slate-500">目标：</span>{item.goal || EMPTY_VALUE}</div>
+            <div><span className="text-slate-400 dark:text-slate-500">首要薄弱点：</span>{item.leadWeakPoint || EMPTY_VALUE}</div>
+          </div>
+          <div className="mt-2 text-sm leading-6 text-slate-500 dark:text-slate-400">{item.summary || '该版本暂无摘要'}</div>
+        </div>
+      ))}
     </div>
   );
 }
@@ -513,12 +956,22 @@ export function ChatPanel({ messages }: { messages: ChatMessage[] }) {
 
   const isStreaming = messages.length > 0 && messages[messages.length - 1]?.role === 'assistant' && !messages[messages.length - 1]?.content;
 
+  // Scroll to bottom on mount
   useEffect(() => {
     const container = containerRef.current;
-    if (!container || !autoFollow) {
-      return;
-    }
-    container.scrollTop = container.scrollHeight;
+    if (!container) return;
+    requestAnimationFrame(() => {
+      container.scrollTop = container.scrollHeight;
+    });
+  }, []);
+
+  // Scroll to bottom when messages change (new message / streaming)
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container || !autoFollow) return;
+    requestAnimationFrame(() => {
+      container.scrollTop = container.scrollHeight;
+    });
   }, [autoFollow, messages]);
 
   const handleScroll = () => {

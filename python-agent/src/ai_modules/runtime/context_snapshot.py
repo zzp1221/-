@@ -38,16 +38,42 @@ class SnapshotBuilder:
     ) -> SystemSnapshot:
         profile = params.get("profile", {})
         learning_context = params.get("learningContext", {})
+        weak_points = list(
+            profile.get("knowledgeGaps")
+            or profile.get("weakPoints")
+            or [
+                item.get("topic", "")
+                for item in profile.get("weakPointDetails", [])
+                if isinstance(item, dict)
+            ]
+        )
+        preferred_style = (
+            profile.get("preferredStyle")
+            or profile.get("learningPreference")
+            or profile.get("explanationPreference")
+            or "step_by_step"
+        )
+        student_level = (
+            profile.get("studentLevel")
+            or profile.get("knowledgeFoundation")
+            or profile.get("knowledgeBase")
+            or "UNKNOWN"
+        )
+        recent_mistakes = list(profile.get("recentMistakes", []))
+        if not recent_mistakes:
+            for item in profile.get("errorPatterns", []):
+                if isinstance(item, dict):
+                    recent_mistakes.extend(item.get("examples", []))
 
         return SystemSnapshot(
             current_course=learning_context.get("course", "未指定课程"),
             current_chapter=learning_context.get("chapter", "未指定章节"),
             course_progress=float(learning_context.get("progress", 0.0)),
             student_name=profile.get("studentName", user_id or "匿名学生"),
-            student_level=profile.get("studentLevel", "UNKNOWN"),
-            knowledge_gaps=list(profile.get("knowledgeGaps", [])),
-            preferred_style=profile.get("preferredStyle", "step_by_step"),
-            recent_mistakes=list(profile.get("recentMistakes", [])),
+            student_level=student_level,
+            knowledge_gaps=[item for item in weak_points if str(item).strip()],
+            preferred_style=str(preferred_style),
+            recent_mistakes=[item for item in recent_mistakes if str(item).strip()],
             session_id=conversation_id or task_id,
             conversation_length=int(params.get("conversationLength", 0)),
             total_tokens_used=int(params.get("totalTokensUsed", 0)),

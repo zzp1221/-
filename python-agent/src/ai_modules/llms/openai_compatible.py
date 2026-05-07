@@ -17,6 +17,48 @@ LOGGER = logging.getLogger(__name__)
 TRACER = trace.get_tracer(__name__)
 
 
+def extract_json_object_from_text(content: str) -> dict[str, Any]:
+    """Extract the last valid JSON object from mixed model output."""
+
+    stripped = content.strip()
+    if stripped:
+        try:
+            payload = json.loads(stripped)
+        except json.JSONDecodeError:
+            pass
+        else:
+            if isinstance(payload, dict):
+                return payload
+
+    fenced_match = re.search(r"```(?:json)?\s*(\{[\s\S]*?\})\s*```", content, re.IGNORECASE)
+    if fenced_match:
+        return json.loads(fenced_match.group(1))
+
+    decoder = json.JSONDecoder()
+    best_object: dict[str, Any] | None = None
+    best_span = -1
+    start = 0
+    while True:
+        brace_index = content.find("{", start)
+        if brace_index == -1:
+            break
+        try:
+            candidate, consumed = decoder.raw_decode(content[brace_index:])
+        except json.JSONDecodeError:
+            start = brace_index + 1
+            continue
+        if isinstance(candidate, dict):
+            span = consumed
+            if span > best_span:
+                best_object = candidate
+                best_span = span
+        start = brace_index + 1
+
+    if best_object is None:
+        raise ValueError("no json object found")
+    return best_object
+
+
 class OpenAICompatibleClient:
     """Small async client for OpenAI-compatible chat completions."""
 
@@ -167,13 +209,7 @@ class OpenAICompatibleClient:
         return calls
 
     def parse_json_text(self, content: str) -> dict[str, Any]:
-        fenced_match = re.search(r"```json\s*(\{[\s\S]*\})\s*```", content)
-        raw_json = fenced_match.group(1) if fenced_match else content.strip()
-        start = raw_json.find("{")
-        end = raw_json.rfind("}")
-        if start == -1 or end == -1:
-            raise ValueError("no json object found")
-        return json.loads(raw_json[start : end + 1])
+        return extract_json_object_from_text(content)
 
 
 class OpenAICompatibleToolCallingLLM:

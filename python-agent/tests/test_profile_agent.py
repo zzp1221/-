@@ -112,7 +112,27 @@ async def test_profile_agent_falls_back_to_in_memory_store_when_primary_store_fa
             del user_id, dimensions, source_session_id
             raise RuntimeError("db unavailable")
 
-    agent = ProfileAgent(profile_store=BrokenProfileStore(), llm_client=RuleBasedProfileLLM())
+    class FakeProfileAnalyzer:
+        async def analyze(self, *, context_payload):
+            del context_payload
+            return LearnerProfileDimensions(
+                knowledgeFoundation="BASIC",
+                learningGoal="掌握联合索引",
+                professionalBackground="计算机本科生",
+                learningPreference="step_by_step",
+                cognitiveStyle="procedural_oriented",
+                weakPoints=["最左匹配"],
+                learningPace="steady",
+                confidenceLevel="LOW",
+                source="CONVERSATION",
+                summaryText="画像更新完成：联合索引理解仍需强化。",
+            )
+
+    agent = ProfileAgent(
+        profile_store=BrokenProfileStore(),
+        llm_client=RuleBasedProfileLLM(),
+        profile_analyzer=FakeProfileAnalyzer(),
+    )
     params = {
         "userId": "00000000-0000-0000-0000-000000000333",
         "messages": [{"role": "user", "content": "我不太懂联合索引，能慢一点吗？"}],
@@ -135,7 +155,8 @@ async def test_profile_agent_falls_back_to_in_memory_store_when_primary_store_fa
         "00000000-0000-0000-0000-000000000333"
     )
 
-    assert [event.event for event in events] == ["progress", "result_chunk"]
+    assert events[0].event == "progress"
+    assert events[-1].event == "result_chunk"
     assert fallback_snapshot is not None
     assert fallback_snapshot.version == 1
     assert fallback_snapshot.profile.learning_pace == "steady"

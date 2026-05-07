@@ -1,4 +1,4 @@
-﻿﻿﻿﻿﻿﻿﻿﻿﻿-- =========================================================
+﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿-- =========================================================
 -- 智学系统数据库初始化脚本（优化版）
 -- PostgreSQL: 关系型 + 向量
 -- MongoDB: 对话正文与流式事件
@@ -253,6 +253,34 @@ CREATE TABLE IF NOT EXISTS app.user_profile_current (
   summary_text        TEXT NOT NULL DEFAULT '',
   updated_at          TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+CREATE TABLE IF NOT EXISTS app.learner_feature (
+  id                    BIGSERIAL PRIMARY KEY,
+  user_id               UUID NOT NULL REFERENCES app.users(id) ON DELETE CASCADE,
+  dimension             TEXT NOT NULL,
+  feature_key           TEXT NOT NULL,
+  feature_value         JSONB NOT NULL DEFAULT '{}'::jsonb,
+  confidence            REAL NOT NULL DEFAULT 0.5 CHECK (confidence >= 0 AND confidence <= 1),
+  source_type           TEXT NOT NULL DEFAULT 'CONVERSATION',
+  source_ref            JSONB,
+  reasoning             TEXT NOT NULL DEFAULT '',
+  evidence              JSONB NOT NULL DEFAULT '[]'::jsonb,
+  verification_count    INT NOT NULL DEFAULT 1,
+  decay_enabled         BOOLEAN NOT NULL DEFAULT TRUE,
+  stability_period_days INT NOT NULL DEFAULT 30,
+  decay_rate            REAL NOT NULL DEFAULT 0.05,
+  is_active             BOOLEAN NOT NULL DEFAULT TRUE,
+  inferred              BOOLEAN NOT NULL DEFAULT FALSE,
+  created_at            TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at            TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (user_id, dimension, feature_key)
+);
+
+CREATE INDEX IF NOT EXISTS idx_learner_feature_user_dim
+ON app.learner_feature(user_id, dimension, is_active, updated_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_learner_feature_confidence
+ON app.learner_feature(user_id, confidence DESC, updated_at DESC);
 
 CREATE TABLE IF NOT EXISTS rag.user_profile_vector (
   id                  BIGSERIAL PRIMARY KEY,

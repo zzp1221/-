@@ -7,7 +7,7 @@ from typing import Optional
 class RRFFusion:
     """Weighted RRF with phrase-priority boost."""
 
-    def __init__(self, k: int = 60, grep_weight: float = 0.0,
+    def __init__(self, k: int = 60, grep_weight: float = 3.0,
                  vector_weight: float = 5.0, graph_weight: float = 0.5):
         self.k = k
         self.grep_weight = grep_weight

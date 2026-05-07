@@ -150,7 +150,7 @@ async def test_document_generator_runs_reviews_before_emitting_resource_file(
 
             return [_Section()]
 
-        def build_asset(self, *, asset_type, params, snapshot):
+        async def build_asset(self, *, asset_type, params, snapshot):
             del params, snapshot
             return GeneratedAsset(
                 assetType=asset_type,
@@ -232,7 +232,17 @@ async def test_document_generator_stops_output_when_safety_blocks(tmp_path: Path
     asset_path.write_text("代写答案", encoding="utf-8")
 
     class FakeGenerationService:
-        def build_asset(self, *, asset_type, params, snapshot):
+        def _plan_document_sections(self, *, params, snapshot, sources):
+            del params, snapshot, sources
+
+            class _Section:
+                def model_dump(self, *, by_alias):
+                    del by_alias
+                    return {"title": "一、风险提示", "objective": "识别违规内容"}
+
+            return [_Section()]
+
+        async def build_asset(self, *, asset_type, params, snapshot):
             del params, snapshot
             return GeneratedAsset(
                 assetType=asset_type,
@@ -298,5 +308,6 @@ async def test_document_generator_stops_output_when_safety_blocks(tmp_path: Path
         )
     ]
 
-    assert [event.event for event in events] == ["result_chunk"]
+    assert [event.event for event in events] == ["result_chunk", "done"]
     assert events[0].payload.text == "Safety 拦截"
+    assert events[1].payload.status == "FAILED"

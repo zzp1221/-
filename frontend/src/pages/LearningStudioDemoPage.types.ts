@@ -6,6 +6,7 @@ import type { VideoCardStyle } from '../components/VideoCard';
 
 export type EngineService = 'resource' | 'path' | 'push' | 'assessment';
 export type ResourceType = 'EXPLANATION' | 'CODE_CASE' | 'QUIZ' | 'MINDMAP' | 'READING' | 'VIDEO';
+export type PushResourceType = 'EXPLANATION' | 'CODE_CASE' | 'PRACTICAL_CASE' | 'READING' | 'VIDEO';
 export type QnaState = 'QNA_IDLE' | 'QNA_STREAMING';
 export type EngineState =
   | 'ENGINE_IDLE'
@@ -29,6 +30,9 @@ export interface TempDownloadLink {
   fileName?: string;
   expiresHint: string;
   resourceType?: string;
+  mimeType?: string;
+  summary?: string;
+  sourceName?: string;
   thumbnailUrl?: string;
   duration?: number;
   style?: VideoCardStyle;
@@ -45,6 +49,57 @@ export interface VideoResult {
   expiresHint?: string;
 }
 
+export interface InlineResourceView {
+  kind: 'markdown' | 'code' | 'mermaid';
+  title: string;
+  summary?: string;
+  content: string;
+  language?: string;
+  explanation?: string;
+}
+
+export interface PracticeQuestion {
+  questionId: string;
+  questionType: 'SINGLE_CHOICE' | 'SHORT_ANSWER' | string;
+  stem: string;
+  options?: string[];
+  answer?: string;
+  knowledgeTags?: string[];
+  difficultyLevel?: string;
+  explanation?: string;
+}
+
+export interface PracticeQuestionBatch {
+  title: string;
+  topic: string;
+  difficulty: string;
+  description?: string;
+  assessmentDimension?: string;
+  submitLabel?: string;
+  questions: PracticeQuestion[];
+}
+
+export interface JudgeItemResult {
+  questionId: string;
+  questionType: string;
+  learnerAnswer: string;
+  correctAnswer?: string;
+  isCorrect: boolean;
+  score: number;
+  knowledgeTags?: string[];
+  reason: string;
+  feedback: string;
+}
+
+export interface PracticeJudgeResult {
+  title: string;
+  summary: string;
+  totalScore: number;
+  accuracy: number;
+  weakKnowledgeTags?: string[];
+  items: JudgeItemResult[];
+}
+
 export interface EngineTaskSnapshot {
   engineState: EngineState;
   taskId: string;
@@ -54,15 +109,16 @@ export interface EngineTaskSnapshot {
   serviceResultLines: string[];
   downloadLinks: TempDownloadLink[];
   videoResult: VideoResult | null;
+  inlineResource: InlineResourceView | null;
+  practiceBatch: PracticeQuestionBatch | null;
+  judgeResult: PracticeJudgeResult | null;
 }
 
 export interface ResourceForm {
-  resourceTypes: ResourceType[];
+  resourceType: ResourceType;
   course: string;
   difficulty: 'basic' | 'intermediate' | 'advanced';
   keyPoints: string;
-  videoStyle: VideoCardStyle;
-  durationSeconds: string;
 }
 
 export interface PathForm {
@@ -72,9 +128,7 @@ export interface PathForm {
 }
 
 export interface PushForm {
-  keyword: string;
-  preferredType: ResourceType;
-  courseScope: string;
+  preferredType: PushResourceType;
 }
 
 export interface AssessmentForm {
@@ -90,6 +144,36 @@ export interface ProfileSnapshot {
   preference: string[];
   cognitiveStyle: string;
   confidenceLevel: string;
+  confidenceScore: number;
+  explanationPreference: string;
+  summaryText: string;
+  dimensionScores: ProfileDimensionScore[];
+  weakPointRanks: WeakPointRank[];
+  timeline: ProfileTimelinePoint[];
+}
+
+export interface ProfileDimensionScore {
+  key: string;
+  subject: string;
+  score: number;
+  fullMark: number;
+  hint: string;
+}
+
+export interface WeakPointRank {
+  topic: string;
+  severity: number;
+  lastError: string;
+}
+
+export interface ProfileTimelinePoint {
+  version: number;
+  updatedAt: string;
+  summary: string;
+  confidenceScore: number;
+  knowledgeBase: string;
+  goal: string;
+  leadWeakPoint: string;
 }
 
 export interface TaskRunHandlers {
@@ -98,6 +182,9 @@ export interface TaskRunHandlers {
   onSummary: (summary: string) => void;
   onDownload: (item: TempDownloadLink) => void;
   onVideo: (item: VideoResult) => void;
+  onInlineResource: (item: InlineResourceView) => void;
+  onQuestionBatch: (item: PracticeQuestionBatch) => void;
+  onJudgeResult: (item: PracticeJudgeResult) => void;
 }
 
 export interface RunByApiTaskArgs {
@@ -112,6 +199,9 @@ export interface RunByApiTaskArgs {
   setTaskSummary: (value: React.SetStateAction<string>) => void;
   setDownloadLinks: (value: React.SetStateAction<TempDownloadLink[]>) => void;
   setVideoResult: (value: React.SetStateAction<VideoResult | null>) => void;
+  setInlineResource: (value: React.SetStateAction<InlineResourceView | null>) => void;
+  setPracticeBatch: (value: React.SetStateAction<PracticeQuestionBatch | null>) => void;
+  setJudgeResult: (value: React.SetStateAction<PracticeJudgeResult | null>) => void;
   taskStreamAbortRef: React.MutableRefObject<AbortController | null>;
 }
 
@@ -133,6 +223,11 @@ export interface ResourceTypeButtonConfig {
   label: string;
 }
 
+export interface PushResourceTypeButtonConfig {
+  type: PushResourceType;
+  label: string;
+}
+
 export type {
   ConversationStreamEventPayload,
   SmartEngineServiceType,
@@ -144,7 +239,7 @@ export type {
 
 export const QNA_GREETING = '你好。你现在有什么要求？';
 export const EMPTY_VALUE = '--';
-export const defaultAssessmentDimensions = ['知识基础', '案例迁移', '练习掌握'];
+export const defaultAssessmentDimensions = ['知识基础'];
 export const assessmentDimensionOptions = ['知识基础', '案例迁移', '练习掌握', '学习主动性', '复盘闭环'];
 
 export const serviceButtons: ServiceButtonConfig[] = [
@@ -160,7 +255,15 @@ export const resourceTypeButtons: ResourceTypeButtonConfig[] = [
   { type: 'QUIZ', label: '练习题' },
   { type: 'MINDMAP', label: '思维导图' },
   { type: 'READING', label: '拓展阅读' },
-  { type: 'VIDEO', label: '教学视频/动画' },
+  { type: 'VIDEO', label: '数字人视频' },
+];
+
+export const pushResourceTypeOptions: PushResourceTypeButtonConfig[] = [
+  { type: 'EXPLANATION', label: '讲解文档' },
+  { type: 'CODE_CASE', label: '代码案例' },
+  { type: 'PRACTICAL_CASE', label: '实操案例' },
+  { type: 'READING', label: '拓展阅读' },
+  { type: 'VIDEO', label: '视频' },
 ];
 
 export const serviceTypeMap: Record<EngineService, SmartEngineServiceType> = {
@@ -171,10 +274,8 @@ export const serviceTypeMap: Record<EngineService, SmartEngineServiceType> = {
 };
 
 export const defaultResourceForm: ResourceForm = {
-  resourceTypes: ['EXPLANATION', 'CODE_CASE', 'QUIZ', 'VIDEO'],
+  resourceType: 'EXPLANATION',
   course: 'Java 程序设计',
   difficulty: 'intermediate',
   keyPoints: '并发编程',
-  videoStyle: 'hybrid',
-  durationSeconds: '60',
 };

@@ -26,6 +26,9 @@ class QuestionBatchPayload(BaseModel):
     title: str
     topic: str
     difficulty: str
+    description: str = ""
+    assessment_dimension: str | None = Field(default=None, alias="assessmentDimension")
+    submit_label: str | None = Field(default=None, alias="submitLabel")
     questions: list[PracticeQuestion]
 
     model_config = ConfigDict(populate_by_name=True)

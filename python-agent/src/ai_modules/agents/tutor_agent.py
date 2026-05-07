@@ -207,11 +207,13 @@ class TutorAgent(PlaceholderAgent):
         )
         context_data = self._tool_read_compacted_context(tool_input={}, params=params)
         evidence_data = self._tool_read_retrieval_evidence(tool_input={}, params=params)
+        profile_data = self._tool_read_profile_context(tool_input={}, params=params)
         enriched_message = self._build_enriched_message(
             user_query=user_query,
             memory=memory_data,
             context=context_data,
             evidence=evidence_data,
+            profile=profile_data,
         )
         response = await client.chat_completion(
             messages=[
@@ -243,11 +245,13 @@ class TutorAgent(PlaceholderAgent):
         )
         context_data = self._tool_read_compacted_context(tool_input={}, params=params)
         evidence_data = self._tool_read_retrieval_evidence(tool_input={}, params=params)
+        profile_data = self._tool_read_profile_context(tool_input={}, params=params)
         enriched_message = self._build_enriched_message(
             user_query=user_query,
             memory=memory_data,
             context=context_data,
             evidence=evidence_data,
+            profile=profile_data,
         )
 
         # Accumulate tokens in batches of 3 for smoother UI updates
@@ -272,12 +276,23 @@ class TutorAgent(PlaceholderAgent):
         memory: dict[str, Any],
         context: dict[str, Any],
         evidence: dict[str, Any],
+        profile: dict[str, Any],
     ) -> str:
         parts: list[str] = []
         topic_focus = memory.get("topicFocus") or context.get("topicFocus") or []
         learner_goal = memory.get("learnerGoal") or context.get("learnerGoal") or ""
         known_gaps = memory.get("knownGaps") or context.get("knownGaps") or []
         unresolved = memory.get("unresolvedQuestions") or context.get("unresolvedQuestions") or []
+        if profile:
+            if profile.get("studentLevel"):
+                parts.append(f"学生水平：{profile['studentLevel']}")
+            if profile.get("learningPreference"):
+                parts.append(f"讲解偏好：{profile['learningPreference']}")
+            if profile.get("cognitiveStyle"):
+                parts.append(f"认知风格：{profile['cognitiveStyle']}")
+            preferred_resource_types = profile.get("preferredResourceTypes") or []
+            if preferred_resource_types:
+                parts.append(f"偏好资源类型：{', '.join(preferred_resource_types[:3])}")
         if topic_focus:
             parts.append(f"对话主题：{', '.join(topic_focus) if isinstance(topic_focus, list) else topic_focus}")
         if learner_goal:
@@ -294,7 +309,7 @@ class TutorAgent(PlaceholderAgent):
                 snippet = str(doc.get("evidence") or doc.get("snippet") or "")[:200]
                 parts.append(f"  {i}. {title}: {snippet}")
         parts.append(f"用户问题：{user_query}")
-        parts.append("请基于以上上下文给出一段辅导回答，并在结尾提出一个追问。")
+        parts.append("请基于以上上下文给出一段个性化辅导回答：先解释，再纠偏，再给下一步建议，并在结尾提出一个追问。")
         return "\n\n".join(parts)
 
     async def _run_with_agent_core_loop(
@@ -439,4 +454,21 @@ class TutorAgent(PlaceholderAgent):
             "rewrittenQuery": params.get("rewrittenQuery"),
             "documents": retrieval_result.get("documents", []),
             "sourcesSummary": retrieval_result.get("sourcesSummary", ""),
+        }
+
+    def _tool_read_profile_context(
+        self,
+        *,
+        tool_input: dict[str, Any],
+        params: dict[str, Any],
+    ) -> dict[str, Any]:
+        del tool_input
+        profile = params.get("profile", {})
+        if not isinstance(profile, dict):
+            return {}
+        return {
+            "studentLevel": profile.get("studentLevel") or profile.get("knowledgeFoundation"),
+            "learningPreference": profile.get("learningPreference") or profile.get("preferredStyle"),
+            "cognitiveStyle": profile.get("cognitiveStyle"),
+            "preferredResourceTypes": profile.get("preferredResourceTypes", []),
         }

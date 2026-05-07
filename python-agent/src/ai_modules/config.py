@@ -3,8 +3,6 @@
 from functools import lru_cache
 from pathlib import Path
 from typing import Any
-from urllib.parse import urlparse
-
 from pydantic import AliasChoices, BaseModel, ConfigDict, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -188,13 +186,9 @@ class Settings(BaseSettings):
         default=1024,
         alias="KNOWLEDGE_EMBEDDING_DIMENSION",
     )
-    minio_endpoint: str = Field(default="localhost:9000", alias="MINIO_ENDPOINT")
-    minio_public_endpoint: str = Field(default="", alias="MINIO_PUBLIC_ENDPOINT")
-    minio_access_key: str = Field(default="minioadmin", alias="MINIO_ACCESS_KEY")
-    minio_secret_key: str = Field(default="minioadmin123", alias="MINIO_SECRET_KEY")
-    minio_secure: bool = Field(default=False, alias="MINIO_SECURE")
-    minio_bucket: str = Field(default="zhixue-resources", alias="MINIO_BUCKET")
     sandbox_root: str = Field(default="sandbox-temp", alias="SANDBOX_ROOT")
+    tavily_api_key: str = Field(default="", alias="TAVILY_API_KEY")
+    tavily_base_url: str = Field(default="https://api.tavily.com/search", alias="TAVILY_BASE_URL")
 
     avatar_data_dir: str = Field(
         default="/data/sandbox-temp/avatar_data",
@@ -459,42 +453,6 @@ class Settings(BaseSettings):
             "host": self.postgres_host,
             "port": self.postgres_port,
         }
-
-    def minio_connect_kwargs(self) -> dict[str, Any]:
-        """Return MinIO connection kwargs for the Minio client."""
-
-        return {
-            "endpoint": self.minio_endpoint,
-            "access_key": self.minio_access_key,
-            "secret_key": self.minio_secret_key,
-            "secure": self.minio_secure,
-        }
-
-    def minio_presign_kwargs(self) -> dict[str, Any]:
-        """Return MinIO kwargs for creating externally reachable presigned URLs."""
-
-        endpoint, secure = self._normalize_minio_endpoint(
-            self.minio_public_endpoint or self.minio_endpoint,
-            default_secure=self.minio_secure,
-        )
-        return {
-            "endpoint": endpoint,
-            "access_key": self.minio_access_key,
-            "secret_key": self.minio_secret_key,
-            "secure": secure,
-        }
-
-    @staticmethod
-    def _normalize_minio_endpoint(endpoint: str, *, default_secure: bool) -> tuple[str, bool]:
-        raw = endpoint.strip()
-        if "://" not in raw:
-            return raw, default_secure
-
-        parsed = urlparse(raw)
-        normalized = parsed.netloc or parsed.path or raw
-        secure = parsed.scheme.lower() == "https" if parsed.scheme else default_secure
-        return normalized, secure
-
 
 @lru_cache(maxsize=1)
 def get_settings() -> Settings:

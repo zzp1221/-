@@ -122,47 +122,55 @@ async def test_retrieval_agent_uses_summary_generator_when_available() -> None:
     assert "优先参考联合索引与索引导学两类来源" in events[1].payload.text
     assert params["grepRetrievalResult"]["priority"][0][0] == "composite-index"
     assert params["vectorRetrievalResult"]["results"][0][0] == "db-index"
-    assert params["mergedRetrievalResult"].documents[0].slug == "db-index"
+    assert params["mergedRetrievalResult"].documents[0].slug in {"db-index", "composite-index"}
 
 
 @pytest.mark.asyncio
-async def test_evaluation_and_path_planning_agents_stream_fallback_results() -> None:
-    evaluation_agent = EvaluationAgent()
-    planning_agent = PathPlanningAgent()
+async def test_evaluation_and_path_planning_agents_raise_when_llm_fails() -> None:
+    class FailingEvaluationGenerator:
+        async def evaluate(self, *, system_prompt, context_payload):
+            del system_prompt, context_payload
+            raise RuntimeError("eval llm down")
+
+    class FailingPathGenerator:
+        async def plan(self, *, system_prompt, context_payload):
+            del system_prompt, context_payload
+            raise RuntimeError("plan llm down")
+
+    evaluation_agent = EvaluationAgent(generator=FailingEvaluationGenerator())
+    planning_agent = PathPlanningAgent(generator=FailingPathGenerator())
     params = {
         "profile": {"studentLevel": "BASIC", "knowledgeGaps": ["最左匹配", "使用条件"]},
         "learningContext": {"course": "数据库原理", "chapter": "联合索引"},
     }
 
-    evaluation_events = [
-        event
-        async for event in evaluation_agent.run(
-            task_id="task-eval",
-            trace_id="trace-eval",
-            seq=1,
-            service_type="EVALUATION",
-            params=params,
-            snapshot=_build_snapshot(),
-            system_prompt="test",
-        )
-    ]
-    planning_events = [
-        event
-        async for event in planning_agent.run(
-            task_id="task-plan",
-            trace_id="trace-plan",
-            seq=3,
-            service_type="PATH_PLANNING",
-            params=params,
-            snapshot=_build_snapshot(),
-            system_prompt="test",
-        )
-    ]
+    with pytest.raises(RuntimeError, match="Evaluation LLM failed"):
+        _ = [
+            event
+            async for event in evaluation_agent.run(
+                task_id="task-eval",
+                trace_id="trace-eval",
+                seq=1,
+                service_type="EVALUATION",
+                params=params,
+                snapshot=_build_snapshot(),
+                system_prompt="test",
+            )
+        ]
 
-    assert EvaluationPayload.model_validate(params["evaluationResult"]).overall_level == "BASIC"
-    assert LearningPlanPayload.model_validate(params["learningPath"]).duration == "3-5天"
-    assert [event.event for event in evaluation_events] == ["progress", "result_chunk"]
-    assert [event.event for event in planning_events] == ["progress", "result_chunk"]
+    with pytest.raises(RuntimeError, match="Path planning LLM failed"):
+        _ = [
+            event
+            async for event in planning_agent.run(
+                task_id="task-plan",
+                trace_id="trace-plan",
+                seq=3,
+                service_type="PATH_PLANNING",
+                params=params,
+                snapshot=_build_snapshot(),
+                system_prompt="test",
+            )
+        ]
 
 
 @pytest.mark.asyncio

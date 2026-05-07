@@ -28,6 +28,7 @@ import {
   type PathForm,
   type ProfileSnapshot,
   type ProfileUpdateSource,
+  type PracticeQuestionBatch,
   type PushForm,
   type QnaState,
   type ResourceForm,
@@ -121,6 +122,9 @@ function createEmptyEngineTaskSnapshot(baseState: EngineState = 'ENGINE_IDLE'): 
     serviceResultLines: [],
     downloadLinks: [],
     videoResult: null,
+    inlineResource: null,
+    practiceBatch: null,
+    judgeResult: null,
   };
 }
 
@@ -235,9 +239,7 @@ export default function LearningStudioDemoPage({ mode }: { mode: 'qna' | 'engine
     currentProgress: '已完成基础概念，准备进入案例训练',
   });
   const [pushForm, setPushForm] = useState<PushForm>({
-    keyword: '线程池参数调优',
     preferredType: 'CODE_CASE',
-    courseScope: 'Java 程序设计 / 并发编程',
   });
   const [assessmentForm, setAssessmentForm] = useState<AssessmentForm>({
     range: '30d',
@@ -623,6 +625,10 @@ export default function LearningStudioDemoPage({ mode }: { mode: 'qna' | 'engine
   }, [currentUser, isAuthenticated, loadCurrentProfile]);
 
   useEffect(() => {
+    setShowAllWeakPoints(false);
+  }, [profile]);
+
+  useEffect(() => {
     if (isAuthenticated && pendingActionRef.current) {
       const action = pendingActionRef.current;
       pendingActionRef.current = null;
@@ -714,6 +720,24 @@ export default function LearningStudioDemoPage({ mode }: { mode: 'qna' | 'engine
           updateServiceSnapshot(service, (current) => ({
             ...current,
             videoResult: typeof value === 'function' ? value(current.videoResult) : value,
+          }));
+        },
+        setInlineResource: (value) => {
+          updateServiceSnapshot(service, (current) => ({
+            ...current,
+            inlineResource: typeof value === 'function' ? value(current.inlineResource) : value,
+          }));
+        },
+        setPracticeBatch: (value) => {
+          updateServiceSnapshot(service, (current) => ({
+            ...current,
+            practiceBatch: typeof value === 'function' ? value(current.practiceBatch) : value,
+          }));
+        },
+        setJudgeResult: (value) => {
+          updateServiceSnapshot(service, (current) => ({
+            ...current,
+            judgeResult: typeof value === 'function' ? value(current.judgeResult) : value,
           }));
         },
         taskStreamAbortRef: refs.taskStreamAbortRef,
@@ -879,6 +903,35 @@ export default function LearningStudioDemoPage({ mode }: { mode: 'qna' | 'engine
     }
   };
 
+  const ensureEngineConversationId = useCallback(async () => {
+    const currentConversationId = conversationIdRef.current.trim();
+    if (currentConversationId) {
+      return currentConversationId;
+    }
+
+    if (typeof window !== 'undefined') {
+      const activeConversationId = window.sessionStorage.getItem(ACTIVE_CONVERSATION_ID_STORAGE_KEY)?.trim() ?? '';
+      if (activeConversationId) {
+        setConversationId(activeConversationId);
+        window.dispatchEvent(new Event('app:conversation-updated'));
+        return activeConversationId;
+      }
+    }
+
+    const recentConversations = await conversationApi.listRecentConversations();
+    const latestConversationId = recentConversations[0]?.conversationId?.trim() ?? '';
+    if (latestConversationId) {
+      setConversationId(latestConversationId);
+      window.dispatchEvent(new Event('app:conversation-updated'));
+      return latestConversationId;
+    }
+
+    const createdConversationId = (await conversationApi.createConversation()).conversationId;
+    setConversationId(createdConversationId);
+    window.dispatchEvent(new Event('app:conversation-updated'));
+    return createdConversationId;
+  }, []);
+
   const handleSubmitService = async () => {
     if (!isAuthenticated) {
       openAuthModal('login', '请先登录');
@@ -902,6 +955,9 @@ export default function LearningStudioDemoPage({ mode }: { mode: 'qna' | 'engine
       serviceResultLines: [],
       downloadLinks: [],
       videoResult: null,
+      inlineResource: null,
+      practiceBatch: null,
+      judgeResult: null,
     });
 
     const params = buildServiceParams(selectedService, { resourceForm, pathForm, pushForm, assessmentForm });
@@ -909,13 +965,9 @@ export default function LearningStudioDemoPage({ mode }: { mode: 'qna' | 'engine
     try {
       engineSubmitVersionRef.current += 1;
       const submitVersion = engineSubmitVersionRef.current;
-      const ensuredConversationId = conversationId || (await conversationApi.createConversation()).conversationId;
+      const ensuredConversationId = await ensureEngineConversationId();
       if (engineSubmitVersionRef.current !== submitVersion) {
         return;
-      }
-      if (!conversationId) {
-        setConversationId(ensuredConversationId);
-        window.dispatchEvent(new Event('app:conversation-updated'));
       }
       const submitResp = await smartEngineApi.submit({
         conversationId: ensuredConversationId,
@@ -937,6 +989,75 @@ export default function LearningStudioDemoPage({ mode }: { mode: 'qna' | 'engine
         engineState: 'ENGINE_FAILED',
         taskStatus: '任务失败',
         serviceResultLines: [...current.serviceResultLines, `接口失败：${message}`],
+      }));
+    }
+  };
+
+  const handleSubmitPracticeAnswers = async (batch: PracticeQuestionBatch, answers: Record<string, string>) => {
+    if (!isAuthenticated) {
+      openAuthModal('login', '请先登录');
+      return;
+    }
+    const targetService: EngineService = selectedService === 'assessment' ? 'assessment' : 'resource';
+    if (hasLockedTask(serviceSnapshots[targetService])) {
+      return;
+    }
+
+    const refs = taskMonitorRefsRef.current[targetService];
+    refs.taskStreamAbortRef.current?.abort();
+    refs.taskStreamAbortRef.current = null;
+    refs.streamQueueRef.current = [];
+    cleanupStreamSchedulers(refs.streamFlushTimerRef, refs.streamRafRef);
+    updateServiceSnapshot(targetService, (current) => ({
+      ...current,
+      engineState: 'ENGINE_SUBMITTING',
+      taskId: '',
+      taskProgress: 12,
+      taskStatus: '已提交判题任务',
+      taskSummary: '',
+      serviceResultLines: [],
+      judgeResult: null,
+    }));
+
+    try {
+      const ensuredConversationId = await ensureEngineConversationId();
+      const assessmentDimension = batch.assessmentDimension || (targetService === 'assessment' ? assessmentForm.dimensions[0] : '');
+      const batchTopic = batch.topic || resourceForm.keyPoints || resourceForm.course;
+      const judgeQuery = targetService === 'assessment'
+        ? `${assessmentDimension || '专项评估'} ${batchTopic} 判题`
+        : `${resourceForm.course} ${batchTopic} 练习题判题`;
+      const submitResp = await smartEngineApi.submit({
+        conversationId: ensuredConversationId,
+        serviceType: 'PRACTICE_JUDGE',
+        params: {
+          topic: targetService === 'assessment' && assessmentDimension
+            ? `${assessmentDimension}：${batchTopic}`
+            : batchTopic,
+          query: judgeQuery,
+          practiceQuestionBatch: batch,
+          practiceQuestions: batch.questions,
+          answers,
+          assessmentDimension,
+          learningContext: {
+            course: resourceForm.course,
+            chapter: batchTopic,
+          },
+        },
+      });
+      updateServiceSnapshot(targetService, (current) => ({
+        ...current,
+        taskId: submitResp.taskId,
+        engineState: 'ENGINE_RUNNING',
+        taskStatus: toUiTaskStatus(submitResp.status),
+      }));
+      void monitorTask(targetService, submitResp.taskId);
+    } catch (error) {
+      const message = getErrorMessage(error);
+      updateServiceSnapshot(targetService, (current) => ({
+        ...current,
+        engineState: 'ENGINE_FAILED',
+        taskStatus: '判题失败',
+        serviceResultLines: [...current.serviceResultLines, `判题失败：${message}`],
       }));
     }
   };
@@ -1150,6 +1271,11 @@ export default function LearningStudioDemoPage({ mode }: { mode: 'qna' | 'engine
         serviceResultLines={serviceResultLines}
         downloadLinks={downloadLinks}
         videoResult={videoResult}
+        inlineResource={activeEngineSnapshot.inlineResource}
+        practiceBatch={activeEngineSnapshot.practiceBatch}
+        judgeResult={activeEngineSnapshot.judgeResult}
+        canSubmitPractice={!hasLockedTask(activeEngineSnapshot)}
+        onSubmitPracticeAnswers={handleSubmitPracticeAnswers}
       />
     </div>
   );

@@ -1,6 +1,7 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { motion } from 'framer-motion';
 import { LoaderCircle, Play, PlayCircle } from 'lucide-react';
+import { API_BASE_URL, getAuthHeaders } from '../api/request';
 
 export type VideoCardStyle = 'talking_head' | 'animation' | 'hybrid';
 
@@ -26,6 +27,9 @@ export default function VideoCard(props: VideoCardProps) {
   const [started, setStarted] = useState(false);
   const [completed, setCompleted] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [resolvedVideoUrl, setResolvedVideoUrl] = useState('');
+  const [resolvedThumbnailUrl, setResolvedThumbnailUrl] = useState('');
+  const videoRef = useRef<HTMLVideoElement | null>(null);
 
   const durationLabel = useMemo(() => {
     if (typeof props.duration !== 'number' || Number.isNaN(props.duration) || props.duration <= 0) {
@@ -40,15 +44,68 @@ export default function VideoCard(props: VideoCardProps) {
   }, [props.duration]);
 
   const styleInfo = props.style ? styleLabelMap[props.style] : null;
+  const mediaId = resolvedVideoUrl || props.videoUrl;
+
+  useEffect(() => {
+    let cancelled = false;
+    let videoObjectUrl = '';
+    let thumbnailObjectUrl = '';
+
+    async function loadProtectedMedia(): Promise<void> {
+      setLoading(true);
+
+      const loadedVideoUrl = await fetchMediaBlobUrl(props.videoUrl);
+      if (!cancelled) {
+        videoObjectUrl = loadedVideoUrl.objectUrl;
+        setResolvedVideoUrl(loadedVideoUrl.url);
+      }
+
+      if (props.thumbnailUrl) {
+        const loadedThumbnailUrl = await fetchMediaBlobUrl(props.thumbnailUrl);
+        if (!cancelled) {
+          thumbnailObjectUrl = loadedThumbnailUrl.objectUrl;
+          setResolvedThumbnailUrl(loadedThumbnailUrl.url);
+        }
+      } else if (!cancelled) {
+        setResolvedThumbnailUrl('');
+      }
+    }
+
+    void loadProtectedMedia().catch(() => {
+      if (!cancelled) {
+        setResolvedVideoUrl(resolveMediaUrl(props.videoUrl));
+        setResolvedThumbnailUrl(props.thumbnailUrl ? resolveMediaUrl(props.thumbnailUrl) : '');
+        setLoading(false);
+      }
+    });
+
+    return () => {
+      cancelled = true;
+      if (videoObjectUrl) {
+        URL.revokeObjectURL(videoObjectUrl);
+      }
+      if (thumbnailObjectUrl) {
+        URL.revokeObjectURL(thumbnailObjectUrl);
+      }
+    };
+  }, [props.thumbnailUrl, props.videoUrl]);
+
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video) {
+      return;
+    }
+    video.load();
+  }, [resolvedVideoUrl, props.videoUrl]);
 
   return (
     <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-700 dark:bg-slate-900">
       {/* Video Player Area */}
       <div className="relative aspect-video bg-slate-900">
         {/* Thumbnail / Background */}
-        {props.thumbnailUrl ? (
+        {resolvedThumbnailUrl ? (
           <img
-            src={props.thumbnailUrl}
+            src={resolvedThumbnailUrl}
             alt={props.title}
             className="absolute inset-0 h-full w-full object-cover"
             onLoad={() => setLoading(false)}
@@ -85,9 +142,9 @@ export default function VideoCard(props: VideoCardProps) {
           <button
             type="button"
             onClick={() => {
-              const video = document.querySelector(`video[data-video-id="${props.videoUrl}"]`) as HTMLVideoElement | null;
+              const video = videoRef.current;
               if (video) {
-                video.play();
+                void video.play();
               }
             }}
             className="absolute inset-0 z-20 flex items-center justify-center transition-opacity hover:opacity-80"
@@ -103,12 +160,15 @@ export default function VideoCard(props: VideoCardProps) {
         ) : null}
 
         <video
-          data-video-id={props.videoUrl}
+          ref={videoRef}
+          data-video-id={mediaId}
           controls
           preload="metadata"
-          poster={props.thumbnailUrl}
+          poster={resolvedThumbnailUrl}
+          src={resolvedVideoUrl || resolveMediaUrl(props.videoUrl)}
           className="relative z-10 h-full w-full"
           onLoadedData={() => setLoading(false)}
+          onError={() => setLoading(false)}
           onPlay={() => {
             if (!started) {
               setStarted(true);
@@ -122,7 +182,6 @@ export default function VideoCard(props: VideoCardProps) {
             }
           }}
         >
-          <source src={props.videoUrl} />
           当前浏览器不支持视频播放，请直接下载后查看。
         </video>
       </div>
@@ -159,15 +218,44 @@ export default function VideoCard(props: VideoCardProps) {
         <div className="flex items-center justify-between gap-3 border-t border-slate-100 pt-3 dark:border-slate-800">
           <span className="text-xs text-slate-400 dark:text-slate-500">{props.expiresHint || '视频资源已生成'}</span>
           <a
-            href={props.videoUrl}
+            href={resolvedVideoUrl || resolveMediaUrl(props.videoUrl)}
             target="_blank"
             rel="noreferrer"
+            download={`${props.title || 'teaching-video'}.mp4`}
             className="text-xs font-medium text-indigo-600 transition-colors hover:text-indigo-700 dark:text-indigo-400 dark:hover:text-indigo-300"
           >
-            打开原始视频
+            下载视频
           </a>
         </div>
       </div>
     </div>
   );
+}
+
+function resolveMediaUrl(url: string): string {
+  if (!url) {
+    return '';
+  }
+  if (/^(blob:|data:|https?:)/i.test(url)) {
+    return url;
+  }
+  return `${API_BASE_URL}${url.startsWith('/') ? url : `/${url}`}`;
+}
+
+async function fetchMediaBlobUrl(url: string): Promise<{ url: string; objectUrl: string }> {
+  const resolvedUrl = resolveMediaUrl(url);
+  const response = await fetch(resolvedUrl, {
+    headers: {
+      ...getAuthHeaders(),
+    },
+  });
+  if (!response.ok) {
+    throw new Error(`failed to load media: ${response.status}`);
+  }
+  const blob = await response.blob();
+  const objectUrl = URL.createObjectURL(blob);
+  return {
+    url: objectUrl,
+    objectUrl,
+  };
 }

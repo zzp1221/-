@@ -83,6 +83,7 @@ public class TaskStateMachineService {
         switch (eventType) {
             case PROGRESS -> applyProgressEvent(task, pythonEvent, payload);
             case RESOURCE_FILE -> payload = applyResourceFileEvent(task, payload);
+            case QUESTION_BATCH, JUDGE_RESULT -> applyStructuredResultEvent(task, pythonEvent, payload);
             case DONE -> applyDoneEvent(task, payload);
             case ERROR -> applyErrorEvent(task, payload);
             default -> applyIntermediateEvent(task, pythonEvent);
@@ -223,6 +224,11 @@ public class TaskStateMachineService {
         }
     }
 
+    private void applyStructuredResultEvent(SmartEngineTask task, PythonStreamEvent pythonEvent, Map<String, Object> payload) {
+        applyIntermediateEvent(task, pythonEvent);
+        task.setResponseSummary(new LinkedHashMap<>(payload));
+    }
+
     private void applyDoneEvent(SmartEngineTask task, Map<String, Object> payload) {
         task.setTaskStatus(TaskStatus.COMPLETED);
         task.setCurrentStage("completed");
@@ -244,6 +250,7 @@ public class TaskStateMachineService {
         String sandboxPath = (String) payload.getOrDefault("sandboxPath", payload.get("localPath"));
         String fileName = (String) payload.get("fileName");
         if (sandboxPath == null || fileName == null) {
+            task.setResponseSummary(new LinkedHashMap<>(payload));
             return payload;
         }
         videoGenerationTaskService.syncFromResourceFile(task, payload);
@@ -279,6 +286,7 @@ public class TaskStateMachineService {
             signedPayload.remove("thumbnailPath");
             signedPayload.put("thumbnailUrl", thumbnailDescriptor.downloadUrl());
         }
+        task.setResponseSummary(new LinkedHashMap<>(signedPayload));
         return signedPayload;
     }
 

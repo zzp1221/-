@@ -62,6 +62,13 @@ export interface UserProfileResponse {
   profile?: Record<string, unknown>;
   summary?: string;
   updatedAt?: string;
+  history?: Array<{
+    version?: number;
+    profile?: Record<string, unknown>;
+    summary?: string;
+    confidence?: number;
+    updatedAt?: string;
+  }>;
 }
 
 export const smartEngineApi = {

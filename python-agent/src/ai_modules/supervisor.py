@@ -69,6 +69,7 @@ class PythonAgentSupervisor:
             "READING": "reading_generator",
             "MINDMAP": "mindmap_generator",
             "CODE": "code_generator",
+            "QUIZ": "practice",
             "VIDEO": "video_generator",
         }.get(requested_resource_type, "document_generator")
 
@@ -79,8 +80,8 @@ class PythonAgentSupervisor:
             "VIDEO_GENERATION": ["query_rewrite", "retrieval", "video_generator"],
             "PRACTICE_JUDGE": ["practice", "judge", "profile"],
             "PATH_PLANNING": ["path_planning"],
-            "EVALUATION": ["evaluation", "path_planning"],
-            "LEARNING_EVALUATION": ["evaluation", "path_planning"],
+            "EVALUATION": ["evaluation"],
+            "LEARNING_EVALUATION": ["evaluation"],
             "TUTORING": ["query_rewrite", "retrieval", "tutor", "profile"],
         }
         if service_type not in route_map:
@@ -109,7 +110,7 @@ class PythonAgentSupervisor:
         return {
             "EXPLANATION": "DOCUMENT",
             "CODE_CASE": "CODE",
-            "QUIZ": "DOCUMENT",
+            "QUIZ": "QUIZ",
         }.get(normalized, normalized)
 
     async def build_snapshot(self, request: EngineStreamRequest) -> SystemSnapshot:
@@ -159,56 +160,53 @@ class PythonAgentSupervisor:
 
             agent_name = agent_names[i]
 
-            # P0-2: Run query_rewrite and retrieval in parallel
+            # Retrieval must consume rewritten query/keywords, otherwise high-precision wiki matches are lost.
             if (
                 agent_name == "query_rewrite"
                 and i + 1 < len(agent_names)
                 and agent_names[i + 1] == "retrieval"
             ):
+                rewrite_agent = self.agent_registry["query_rewrite"]
+                rewrite_prompt = self.build_agent_system_prompt(agent_name="query_rewrite", snapshot=snapshot)
                 rewrite_params = copy.deepcopy(current_params)
+
+                async for event in rewrite_agent.run(
+                    task_id=request.task_id,
+                    trace_id=request.trace_id,
+                    seq=0,
+                    service_type=request.service_type,
+                    params=rewrite_params,
+                    snapshot=snapshot,
+                    system_prompt=rewrite_prompt,
+                ):
+                    yield event.model_copy(update={"seq": seq})
+                    seq += 1
+
+                current_params.update(rewrite_params)
+                snapshot = await self.snapshot_builder.build(
+                    user_id=request.user_id,
+                    task_id=request.task_id,
+                    conversation_id=request.conversation_id,
+                    params=current_params,
+                )
+
+                retrieval_agent = self.agent_registry["retrieval"]
+                retrieval_prompt = self.build_agent_system_prompt(agent_name="retrieval", snapshot=snapshot)
                 retrieval_params = copy.deepcopy(current_params)
-                retrieval_params["rewrittenQuery"] = str(
-                    retrieval_params.get("query")
-                    or retrieval_params.get("message", "")
-                )
-                retrieval_params["keywords"] = []
 
-                async def _run_agent(_agent_name: str, _agent_params: dict):
-                    agent = self.agent_registry[_agent_name]
-                    sp = self.build_agent_system_prompt(agent_name=_agent_name, snapshot=snapshot)
-                    events: list[SSEEvent] = []
-                    async for event in agent.run(
-                        task_id=request.task_id,
-                        trace_id=request.trace_id,
-                        seq=0,
-                        service_type=request.service_type,
-                        params=_agent_params,
-                        snapshot=snapshot,
-                        system_prompt=sp,
-                    ):
-                        events.append(event)
-                    return events, _agent_params
-
-                rewrite_task = asyncio.create_task(_run_agent("query_rewrite", rewrite_params))
-                retrieval_task = asyncio.create_task(_run_agent("retrieval", retrieval_params))
-
-                rewrite_events, _rw_params = await rewrite_task
-                retrieval_events, _ret_params = await retrieval_task
-
-                for event in rewrite_events:
-                    yield event.model_copy(update={"seq": seq})
-                    seq += 1
-                for event in retrieval_events:
+                async for event in retrieval_agent.run(
+                    task_id=request.task_id,
+                    trace_id=request.trace_id,
+                    seq=0,
+                    service_type=request.service_type,
+                    params=retrieval_params,
+                    snapshot=snapshot,
+                    system_prompt=retrieval_prompt,
+                ):
                     yield event.model_copy(update={"seq": seq})
                     seq += 1
 
-                current_params.update(_ret_params)
-                current_params["rewrittenQuery"] = _rw_params.get(
-                    "rewrittenQuery", current_params.get("rewrittenQuery")
-                )
-                current_params["keywords"] = _rw_params.get(
-                    "keywords", current_params.get("keywords", [])
-                )
+                current_params.update(retrieval_params)
 
                 i += 2
                 snapshot = await self.snapshot_builder.build(
@@ -217,31 +215,6 @@ class PythonAgentSupervisor:
                     conversation_id=request.conversation_id,
                     params=current_params,
                 )
-                continue
-
-            # P1-1: ProfileAgent runs in background for TUTORING
-            if agent_name == "profile" and request.service_type == "TUTORING":
-                agent_params = copy.deepcopy(current_params)
-                sp = self.build_agent_system_prompt(agent_name="profile", snapshot=snapshot)
-                agent = self.agent_registry["profile"]
-
-                async def _run_background():
-                    try:
-                        async for _ in agent.run(
-                            task_id=request.task_id,
-                            trace_id=request.trace_id,
-                            seq=0,
-                            service_type=request.service_type,
-                            params=agent_params,
-                            snapshot=snapshot,
-                            system_prompt=sp,
-                        ):
-                            pass
-                    except Exception:
-                        pass
-
-                asyncio.create_task(_run_background())
-                i += 1
                 continue
 
             agent = self.agent_registry[agent_name]

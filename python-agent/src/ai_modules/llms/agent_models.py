@@ -5,6 +5,8 @@ from __future__ import annotations
 import json
 from typing import Any
 
+from pydantic import BaseModel, ConfigDict, Field
+
 from src.ai_modules.config import get_settings
 from src.ai_modules.llms.openai_compatible import OpenAICompatibleClient
 from src.ai_modules.llms.spark_compatible import (
@@ -62,6 +64,12 @@ def _component_provider_ready(component_name: str) -> bool:
     return settings.provider_ready(settings.resolve_component_provider(component_name))
 
 
+def _require_component_provider_ready(component_name: str) -> tuple[str, str]:
+    if not _component_provider_ready(component_name):
+        raise RuntimeError(f"{component_name} provider is not ready")
+    return _resolve_component_binding(component_name, default_logical_model="main_chat_model")
+
+
 def create_compatible_client(
     *,
     model_name: str | None = None,
@@ -117,9 +125,13 @@ class OpenAICompatibleJSONGenerator:
             model_name=model_name,
             temperature=self.temperature,
             max_tokens=max_tokens,
+            response_format={"type": "json_object"},
         )
         message = self.client.extract_message(response)
-        return self.client.parse_json_text(self.client.extract_content(message))
+        content = self.client.extract_content(message).strip()
+        if not content:
+            raise ValueError("empty assistant content for structured json output")
+        return self.client.parse_json_text(content)
 
 
 class OpenAICompatibleQueryRewriteGenerator:
@@ -191,6 +203,8 @@ class OpenAICompatibleEvaluationGenerator:
     """Generate structured learner evaluation with the primary provider model."""
 
     def __init__(self) -> None:
+        if not _component_provider_ready("evaluation_llm"):
+            raise RuntimeError("evaluation_llm provider is not ready")
         provider_name, model_name = _resolve_component_binding("evaluation_llm", default_logical_model="main_chat_model")
         self.generator = OpenAICompatibleJSONGenerator(model_name=model_name, provider_name=provider_name)
 
@@ -208,13 +222,15 @@ class OpenAICompatibleEvaluationGenerator:
             ),
             max_tokens=1200,
         )
-        return EvaluationPayload.model_validate(payload)
+        return EvaluationPayload.model_validate(_normalize_evaluation_payload(payload))
 
 
 class OpenAICompatibleLearningPathGenerator:
     """Generate structured learning path with the primary provider model."""
 
     def __init__(self) -> None:
+        if not _component_provider_ready("path_planning_llm"):
+            raise RuntimeError("path_planning_llm provider is not ready")
         provider_name, model_name = _resolve_component_binding("path_planning_llm", default_logical_model="main_chat_model")
         self.generator = OpenAICompatibleJSONGenerator(model_name=model_name, provider_name=provider_name)
 
@@ -232,7 +248,113 @@ class OpenAICompatibleLearningPathGenerator:
             ),
             max_tokens=1400,
         )
-        return LearningPlanPayload.model_validate(payload)
+        return LearningPlanPayload.model_validate(self._normalize_learning_plan_payload(payload))
+
+    def _normalize_learning_plan_payload(self, payload: dict[str, Any]) -> dict[str, Any]:
+        raw_payload = payload.get("learningPath") if isinstance(payload.get("learningPath"), dict) else payload
+        if not isinstance(raw_payload, dict):
+            return payload
+
+        raw_steps = raw_payload.get("steps")
+        normalized_steps = self._normalize_learning_plan_steps(raw_steps)
+        if not normalized_steps:
+            normalized_steps = self._normalize_learning_plan_steps(raw_payload.get("phases"))
+        if not normalized_steps:
+            normalized_steps = self._normalize_learning_plan_steps(raw_payload.get("milestones"))
+
+        milestones_value = raw_payload.get("milestones")
+        milestones: list[str] = []
+        if isinstance(milestones_value, list):
+            for item in milestones_value:
+                if isinstance(item, dict):
+                    text = item.get("title") or item.get("milestone") or item.get("objective")
+                    if isinstance(text, str) and text.strip():
+                        milestones.append(text.strip())
+                elif str(item).strip():
+                    milestones.append(str(item).strip())
+        else:
+            single_milestone = raw_payload.get("milestone")
+            if isinstance(single_milestone, str) and single_milestone.strip():
+                milestones = [single_milestone.strip()]
+        if not milestones and normalized_steps:
+            milestones = [step["title"] for step in normalized_steps if step.get("title")]
+
+        duration = raw_payload.get("duration")
+        if not isinstance(duration, str) or not duration.strip():
+            duration = raw_payload.get("targetPeriod") or raw_payload.get("period")
+        if not isinstance(duration, str) or not duration.strip():
+            day_value = raw_payload.get("day") or raw_payload.get("days") or raw_payload.get("totalDays")
+            if day_value is not None:
+                duration = f"{day_value}天"
+
+        summary_text = raw_payload.get("summaryText")
+        if not isinstance(summary_text, str) or not summary_text.strip():
+            summary_text = raw_payload.get("summary") or raw_payload.get("overview") or raw_payload.get("milestone") or ""
+        if isinstance(summary_text, str) and not summary_text.strip():
+            goal = str(raw_payload.get("goal") or raw_payload.get("target") or "").strip()
+            duration_text = str(duration or "").strip()
+            if goal and duration_text:
+                summary_text = f"已生成一个 {duration_text} 的学习路径，围绕“{goal}”推进。"
+            elif goal:
+                summary_text = f"已生成围绕“{goal}”的学习路径。"
+
+        return {
+            "goal": raw_payload.get("goal") or raw_payload.get("target") or "",
+            "duration": duration or "",
+            "milestones": milestones,
+            "steps": normalized_steps,
+            "summaryText": summary_text,
+        }
+
+    def _normalize_learning_plan_steps(self, raw_steps: Any) -> list[dict[str, Any]]:
+        normalized_steps: list[dict[str, Any]] = []
+        if not isinstance(raw_steps, list):
+            return normalized_steps
+        for index, item in enumerate(raw_steps, start=1):
+            if not isinstance(item, dict):
+                continue
+            title = str(item.get("title") or item.get("name") or item.get("milestone") or f"阶段 {index}").strip()
+            objective = str(
+                item.get("objective")
+                or item.get("description")
+                or item.get("milestone")
+                or title
+            ).strip()
+            activities_value = item.get("activities") or item.get("tasks")
+            activities: list[str] = []
+            if isinstance(activities_value, list):
+                for entry in activities_value:
+                    if isinstance(entry, dict):
+                        text = entry.get("description") or entry.get("title") or entry.get("name")
+                        if isinstance(text, str) and text.strip():
+                            activities.append(text.strip())
+                    elif str(entry).strip():
+                        activities.append(str(entry).strip())
+            elif isinstance(item.get("resources"), list):
+                for entry in item["resources"]:
+                    if isinstance(entry, dict):
+                        text = entry.get("description") or entry.get("title") or entry.get("name")
+                        if isinstance(text, str) and text.strip():
+                            activities.append(text.strip())
+                    elif str(entry).strip():
+                        activities.append(str(entry).strip())
+            success_criteria = str(
+                item.get("successCriteria")
+                or item.get("success_criteria")
+                or item.get("assessment")
+                or item.get("expectedOutcome")
+                or item.get("completionCriteria")
+                or objective
+            ).strip()
+            normalized_steps.append(
+                {
+                    "title": title,
+                    "objective": objective,
+                    "activities": activities or [objective],
+                    "successCriteria": success_criteria,
+                }
+            )
+        return normalized_steps
 
 
 class OpenAICompatiblePracticeQuestionGenerator:
@@ -370,6 +492,8 @@ class OpenAICompatibleProfileAnalyzer:
     """Extract learner profile dimensions with the primary provider model."""
 
     def __init__(self) -> None:
+        if not _component_provider_ready("profile_llm"):
+            raise RuntimeError("profile_llm provider is not ready")
         provider_name, model_name = _resolve_component_binding("profile_llm", default_logical_model="main_chat_model")
         self.generator = OpenAICompatibleJSONGenerator(model_name=model_name, provider_name=provider_name)
 
@@ -381,16 +505,130 @@ class OpenAICompatibleProfileAnalyzer:
         payload = await self.generator.generate(
             system_prompt=(
                 "你是教学系统中的 Profile Agent。"
-                "请根据对话、结构化摘要、练习与判题信息抽取学生画像。"
+                "请根据对话、结构化摘要、练习题、判题结果和已有画像，抽取可落地的学习画像。"
+                "你必须覆盖至少 7 个教育画像维度：知识基础、技能掌握、薄弱知识点、学习习惯、"
+                "易错模式、认知风格与学习偏好、当前学习目标。"
+                "禁止输出占位词、禁止写“待补充/未提供/未知情况较多”这类空泛描述；"
+                "信息不足时请基于已有证据做保守推断，并把置信度调低。"
                 "输出必须是 JSON，字段为 "
-                '{"knowledgeFoundation":"...","learningGoal":"...","professionalBackground":"...",'
-                '"learningPreference":"...","cognitiveStyle":"...","weakPoints":["..."],'
-                '"learningPace":"...","confidenceLevel":"...","source":"...","summaryText":"..."}。'
+                '{"knowledgeFoundation":"BEGINNER|BASIC|INTERMEDIATE|ADVANCED",'
+                '"learningGoal":"...",'
+                '"professionalBackground":"...",'
+                '"learningPreference":"...",'
+                '"cognitiveStyle":"...",'
+                '"weakPoints":["..."],'
+                '"learningPace":"steady|normal|fast",'
+                '"confidenceLevel":"LOW|MEDIUM|HIGH",'
+                '"confidenceScore":0.0,'
+                '"skillMastery":{"技能名":0.0},'
+                '"weakPointDetails":[{"topic":"...","severity":0.0,"lastError":"..."}],'
+                '"learningHabits":{"studyFrequency":"...","preferredTime":"...","avgSessionDuration":0,'
+                '"noteTaking":false,"selfTesting":false},'
+                '"errorPatterns":[{"pattern":"...","frequency":0.0,"examples":["..."]}],'
+                '"currentGoal":{"shortTerm":"...","midTerm":"...","context":"...","urgency":"LOW|MEDIUM|HIGH"},'
+                '"preferredResourceTypes":["DOCUMENT|READING|MINDMAP|CODE|QUIZ|VIDEO"],'
+                '"explanationPreference":"先原理后例子|先例子后原理|step_by_step",'
+                '"inferredRecommendations":["..."],'
+                '"evidence":["..."],'
+                '"source":"CONVERSATION|EVALUATION|PRACTICE",'
+                '"summaryText":"..."}。'
+                "所有分值范围必须在 0 到 1 之间；summaryText 需要明确说明该学生当前水平、薄弱点、偏好和下一步建议。"
             ),
             user_prompt=json.dumps(context_payload, ensure_ascii=False),
             max_tokens=1400,
         )
         return LearnerProfileDimensions.model_validate(payload)
+
+
+class ResourcePushRerankItem(BaseModel):
+    """A reranked resource candidate returned by the LLM."""
+
+    index: int
+    score: float = 0.0
+    reason: str = ""
+
+    model_config = ConfigDict(extra="ignore")
+
+
+class ResourcePushRerankPayload(BaseModel):
+    """Structured rerank payload for resource push."""
+
+    ranked_items: list[ResourcePushRerankItem] = Field(default_factory=list, alias="rankedItems")
+    summary_text: str = Field(default="", alias="summaryText")
+
+    model_config = ConfigDict(populate_by_name=True, extra="ignore")
+
+
+class OpenAICompatibleResourcePushReranker:
+    """Rerank resource-push candidates with an OpenAI-compatible rerank model."""
+
+    def __init__(self) -> None:
+        settings = get_settings()
+        if not _component_provider_ready("resource_push_llm"):
+            raise RuntimeError("resource_push_llm provider is not ready")
+        provider_name = settings.resolve_component_provider("resource_push_llm")
+        model_name = settings.resolve_component_model(
+            "resource_push_llm",
+            default_logical_model="rerank_model",
+            provider_name=provider_name,
+        )
+        self.generator = OpenAICompatibleJSONGenerator(
+            model_name=model_name,
+            provider_name=provider_name,
+            temperature=0.0,
+        )
+
+    async def rerank(
+        self,
+        *,
+        query: str,
+        profile_context: dict[str, Any],
+        candidates: list[dict[str, Any]],
+    ) -> ResourcePushRerankPayload:
+        payload = await self.generator.generate(
+            system_prompt=(
+                "你是学习资源推送系统中的重排器。"
+                "请结合用户查询、学习画像和候选资源，选出最适合当前学生的资源排序。"
+                "排序原则：先匹配薄弱点与学习目标，再匹配学生水平和资源类型偏好，最后考虑摘要与标题相关性。"
+                "禁止凭空捏造候选资源，不允许输出未提供的索引。"
+                "输出必须是 JSON，格式为 "
+                '{"rankedItems":[{"index":0,"score":0.0,"reason":"..."}],"summaryText":"..."}。'
+                "score 范围为 0 到 1，rankedItems 按优先级从高到低排序，最多返回 5 个。"
+            ),
+            user_prompt=json.dumps(
+                {
+                    "query": query,
+                    "profileContext": profile_context,
+                    "candidates": candidates,
+                },
+                ensure_ascii=False,
+            ),
+            max_tokens=1200,
+        )
+        return ResourcePushRerankPayload.model_validate(payload)
+
+
+def _normalize_evaluation_payload(payload: dict[str, Any]) -> dict[str, Any]:
+    normalized = dict(payload)
+    for field in ("strengths", "weaknesses", "nextFocus"):
+        value = normalized.get(field)
+        if isinstance(value, str):
+            normalized[field] = _split_text_list(value)
+    dimensions = normalized.get("dimensions")
+    if isinstance(dimensions, dict):
+        normalized["dimensions"] = [dimensions]
+    elif not isinstance(dimensions, list):
+        normalized["dimensions"] = []
+    return normalized
+
+
+def _split_text_list(value: str) -> list[str]:
+    parts = [
+        item.strip(" -\t\r\n")
+        for item in value.replace("；", "，").replace("、", "，").replace("\n", "，").split("，")
+    ]
+    filtered = [item for item in parts if item]
+    return filtered or [value.strip()]
 
 
 # Provider-neutral aliases used by current agents.
@@ -403,6 +641,7 @@ PracticeQuestionGenerator = OpenAICompatiblePracticeQuestionGenerator
 ObjectiveJudgeGenerator = OpenAICompatibleObjectiveJudgeGenerator
 JudgeFeedbackGenerator = OpenAICompatibleJudgeFeedbackGenerator
 ProfileAnalyzer = OpenAICompatibleProfileAnalyzer
+ResourcePushReranker = OpenAICompatibleResourcePushReranker
 
 BailianJSONGenerator = OpenAICompatibleJSONGenerator
 BailianQueryRewriteGenerator = OpenAICompatibleQueryRewriteGenerator
@@ -413,6 +652,7 @@ BailianPracticeQuestionGenerator = OpenAICompatiblePracticeQuestionGenerator
 BailianObjectiveJudgeGenerator = OpenAICompatibleObjectiveJudgeGenerator
 BailianJudgeFeedbackGenerator = OpenAICompatibleJudgeFeedbackGenerator
 BailianProfileAnalyzer = OpenAICompatibleProfileAnalyzer
+BailianResourcePushReranker = OpenAICompatibleResourcePushReranker
 
 
 class PracticeLLMClientFactory:

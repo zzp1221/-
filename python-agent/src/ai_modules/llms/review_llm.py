@@ -85,6 +85,8 @@ class OpenAICompatibleCriticReviewer:
     def __init__(self) -> None:
         settings = get_settings()
         provider_name = settings.resolve_component_provider("review_llm")
+        if not settings.provider_ready(provider_name):
+            raise RuntimeError("review_llm provider is not ready")
         model_name = settings.resolve_component_model(
             "review_llm",
             default_logical_model="main_chat_model",
@@ -110,6 +112,7 @@ class OpenAICompatibleCriticReviewer:
             ),
             max_tokens=1200,
         )
+        payload = _normalize_critic_payload(payload)
         return CriticReviewPayload.model_validate(payload)
 
 
@@ -119,6 +122,8 @@ class OpenAICompatibleSafetyReviewer:
     def __init__(self) -> None:
         settings = get_settings()
         provider_name = settings.resolve_component_provider("safety_llm")
+        if not settings.provider_ready(provider_name):
+            raise RuntimeError("safety_llm provider is not ready")
         model_name = settings.resolve_component_model(
             "safety_llm",
             default_logical_model="safety_model",
@@ -145,6 +150,35 @@ class OpenAICompatibleSafetyReviewer:
             max_tokens=1200,
         )
         return SafetyReviewPayload.model_validate(payload)
+
+
+def _normalize_critic_payload(payload: dict[str, Any]) -> dict[str, Any]:
+    normalized = dict(payload)
+    for field in ("factConsistency", "difficultyMatch", "sourceCoverage"):
+        value = normalized.get(field)
+        if isinstance(value, dict):
+            normalized[field] = _stringify_review_signal(value)
+    return normalized
+
+
+def _stringify_review_signal(value: dict[str, Any]) -> str:
+    parts: list[str] = []
+    status = value.get("status")
+    if isinstance(status, str) and status.strip():
+        parts.append(f"状态: {status.strip()}")
+    issues = value.get("issues")
+    if isinstance(issues, list):
+        normalized_issues = [str(item).strip() for item in issues if str(item).strip()]
+        if normalized_issues:
+            parts.append(f"问题: {'；'.join(normalized_issues[:3])}")
+    evidence = value.get("evidence")
+    if isinstance(evidence, dict):
+        evidence_parts = [f"{key}={evidence[key]}" for key in evidence if evidence[key] is not None]
+        if evidence_parts:
+            parts.append(f"证据: {', '.join(evidence_parts[:4])}")
+    if not parts:
+        return json.dumps(value, ensure_ascii=False)
+    return "；".join(parts)
 
 
 class ReviewLLMClientFactory:

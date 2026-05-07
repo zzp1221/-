@@ -5,11 +5,10 @@ from __future__ import annotations
 import asyncio
 import logging
 from dataclasses import dataclass
-from datetime import timedelta
 from typing import Any
+from urllib.parse import urlparse
 
-import psycopg2
-from psycopg2.extras import RealDictCursor
+import httpx
 
 from src.ai_modules.agents.base import PlaceholderAgent
 from src.ai_modules.config import get_settings
@@ -33,17 +32,19 @@ class PushResourceCandidate:
     summary_text: str
     file_name: str
     mime_type: str | None
-    bucket_name: str | None
-    object_key: str | None
-    access_mode: str | None
-    storage_url: str | None
     score: int
     matched_terms: list[str]
     download_url: str | None = None
+    rerank_reason: str = ""
+    rerank_score: float | None = None
+    thumbnail_url: str | None = None
+    duration_seconds: int | None = None
+    knowledge_point: str | None = None
+    source_name: str | None = None
 
 
 class ResourcePushAgent(PlaceholderAgent):
-    """Select existing resources from object storage instead of regenerating them."""
+    """Recommend external resources directly from Tavily results."""
 
     def __init__(self) -> None:
         super().__init__("Resource Push Agent", "resource_push")
@@ -60,9 +61,10 @@ class ResourcePushAgent(PlaceholderAgent):
         snapshot,
         system_prompt: str,
     ) -> asyncio.AsyncIterator[SSEEvent]:
-        del service_type, snapshot, system_prompt
+        del service_type, system_prompt
 
-        query = self._build_query(params)
+        profile_context = self._extract_profile_context(params, snapshot)
+        query = self._build_query(params, profile_context)
         yield ProgressSSEEvent(
             taskId=task_id,
             traceId=trace_id,
@@ -70,11 +72,27 @@ class ResourcePushAgent(PlaceholderAgent):
             payload=ProgressPayload(
                 stage=self.stage_name,
                 percent=25,
-                message=f"正在根据推送参数筛选资源：{query}",
+                message=f"正在根据当前画像筛选 {query}",
             ),
         )
 
-        candidates = await asyncio.to_thread(self._select_candidates, params)
+        preferred_type = self._normalize_text(params.get("resourceType")).upper()
+        yield ProgressSSEEvent(
+            taskId=task_id,
+            traceId=trace_id,
+            seq=seq + 1,
+            payload=ProgressPayload(
+                stage=self.stage_name,
+                percent=40,
+                message=f"正在通过 Tavily 搜索匹配的{self._resource_type_label(preferred_type)}",
+            ),
+        )
+        candidates = await self._search_external_candidates(
+            preferred_type=preferred_type,
+            query=query,
+            profile_context=profile_context,
+        )
+
         if not candidates:
             params["pushedResources"] = []
             yield ResultChunkSSEEvent(
@@ -83,8 +101,8 @@ class ResourcePushAgent(PlaceholderAgent):
                 seq=seq + 1,
                 payload=ResultChunkPayload(
                     text=(
-                        f"未找到与“{query}”匹配的现成资源。"
-                        "请尝试调整关键词、课程范围或资源类型后重试。"
+                        f"未找到与当前画像匹配的{self._resource_type_label(preferred_type)}外部资源。"
+                        "请调整画像或稍后重试。"
                     )
                 ),
             )
@@ -98,6 +116,10 @@ class ResourcePushAgent(PlaceholderAgent):
                 "downloadUrl": item.download_url,
                 "summaryText": item.summary_text,
                 "matchedTerms": item.matched_terms,
+                "rerankReason": item.rerank_reason,
+                "rerankScore": item.rerank_score,
+                "sourceName": item.source_name,
+                "thumbnailUrl": item.thumbnail_url,
             }
             for item in candidates
         ]
@@ -109,7 +131,7 @@ class ResourcePushAgent(PlaceholderAgent):
             payload=ProgressPayload(
                 stage=self.stage_name,
                 percent=65,
-                message=f"已筛选出 {len(candidates)} 个可推送资源",
+                message=f"已筛选出 {len(candidates)} 个推荐资源",
             ),
         )
         yield ResultChunkSSEEvent(
@@ -131,148 +153,50 @@ class ResourcePushAgent(PlaceholderAgent):
                     assetType=item.resource_type,
                     title=item.title,
                     summary=item.summary_text,
-                    displayMode="download",
+                    displayMode="external_link",
                     fileName=item.file_name,
                     localPath=None,
                     mimeType=item.mime_type,
                     downloadUrl=item.download_url,
+                    thumbnailUrl=item.thumbnail_url,
+                    durationSeconds=item.duration_seconds,
+                    knowledgePoint=item.knowledge_point,
+                    sourceName=item.source_name,
                 ),
             )
             next_seq += 1
 
-    def _build_query(self, params: dict[str, Any]) -> str:
+    def _build_query(self, params: dict[str, Any], profile_context: dict[str, Any]) -> str:
         parts = [
-            self._normalize_text(params.get("keyword")),
-            self._normalize_text(params.get("courseScope")),
-            self._normalize_text(params.get("resourceType")),
+            self._normalize_text(profile_context.get("primaryWeakPoint")),
+            self._normalize_text(profile_context.get("currentCourse")),
+            self._normalize_text(profile_context.get("currentChapter")),
+            self._normalize_text(profile_context.get("studentLevel")),
+            self._resource_type_label(self._normalize_text(params.get("resourceType")).upper()),
         ]
-        return " / ".join(part for part in parts if part) or "未指定推送条件"
+        rendered = " / ".join(part for part in parts if part)
+        return rendered or f"{self._normalize_text(params.get('resourceType')) or '资源'}"
 
-    def _select_candidates(self, params: dict[str, Any]) -> list[PushResourceCandidate]:
-        preferred_type = self._normalize_text(params.get("resourceType"))
-        keyword = self._normalize_text(params.get("keyword"))
-        course_scope = self._normalize_text(params.get("courseScope"))
-        terms = self._build_terms(keyword, course_scope, preferred_type)
-
-        sql = """
-            SELECT
-                lr.title,
-                lr.resource_type::text AS resource_type,
-                COALESCE(lr.summary_text, '') AS summary_text,
-                ro.file_name,
-                ro.mime_type,
-                ro.bucket_name,
-                ro.object_key,
-                ro.access_mode,
-                ro.storage_url,
-                COALESCE(lr.tags::text, '') AS tags_text,
-                COALESCE(lr.metadata_json::text, '') AS metadata_text
-            FROM app.learning_resource lr
-            JOIN storage.resource_object ro ON ro.id = lr.storage_object_id
-            WHERE lr.status = 'ACTIVE'
-              AND lr.storage_object_id IS NOT NULL
-              AND (%(preferred_type)s = '' OR lr.resource_type::text = %(preferred_type)s)
-            ORDER BY lr.updated_at DESC
-            LIMIT 80
-        """
-
-        with psycopg2.connect(**self.settings.postgres_connect_kwargs()) as connection:
-            with connection.cursor(cursor_factory=RealDictCursor) as cursor:
-                cursor.execute(sql, {"preferred_type": preferred_type})
-                rows = cursor.fetchall()
-
-        ranked: list[PushResourceCandidate] = []
-        for row in rows:
-            if not self._is_pushable_resource(row):
-                continue
-            searchable_text = " ".join(
-                [
-                    self._normalize_text(row.get("title")),
-                    self._normalize_text(row.get("summary_text")),
-                    self._normalize_text(row.get("tags_text")),
-                    self._normalize_text(row.get("metadata_text")),
-                    self._normalize_text(row.get("resource_type")),
-                    self._normalize_text(row.get("file_name")),
-                ]
-            ).lower()
-            matched_terms = [term for term in terms if term.lower() in searchable_text]
-            score = len(matched_terms) * 10
-            if keyword and keyword.lower() in searchable_text:
-                score += 20
-            if course_scope and course_scope.lower() in searchable_text:
-                score += 20
-            if preferred_type and preferred_type.lower() == self._normalize_text(row.get("resource_type")).lower():
-                score += 15
-            if terms and score == 0:
-                continue
-
-            candidate = PushResourceCandidate(
-                title=self._normalize_text(row.get("title")) or "未命名资源",
-                resource_type=self._normalize_text(row.get("resource_type")) or "DOCUMENT",
-                summary_text=self._normalize_text(row.get("summary_text")) or "已命中现成资源，可直接推送。",
-                file_name=self._normalize_text(row.get("file_name")) or "resource.dat",
-                mime_type=self._normalize_text(row.get("mime_type")) or None,
-                bucket_name=self._normalize_text(row.get("bucket_name")) or None,
-                object_key=self._normalize_text(row.get("object_key")) or None,
-                access_mode=self._normalize_text(row.get("access_mode")) or None,
-                storage_url=self._normalize_text(row.get("storage_url")) or None,
-                score=score,
-                matched_terms=matched_terms[:4],
-            )
-            candidate.download_url = self._resolve_download_url(candidate)
-            if candidate.download_url:
-                ranked.append(candidate)
-
-        ranked.sort(key=lambda item: (-item.score, item.title))
-        return ranked[:3]
-
-    def _is_pushable_resource(self, row: dict[str, Any]) -> bool:
-        file_name = self._normalize_text(row.get("file_name")).lower()
-        mime_type = self._normalize_text(row.get("mime_type")).lower()
-        object_key = self._normalize_text(row.get("object_key")).lower()
-        storage_url = self._normalize_text(row.get("storage_url")).lower()
-
-        if mime_type == "application/json":
+    @staticmethod
+    def _is_http_url(url: str | None) -> bool:
+        if not url:
             return False
-        if any(path.endswith(".json") for path in (file_name, object_key, storage_url) if path):
-            return False
-        return bool(file_name or object_key or storage_url)
+        normalized = url.strip().lower()
+        return normalized.startswith("http://") or normalized.startswith("https://")
 
-    def _resolve_download_url(self, item: PushResourceCandidate) -> str | None:
-        if item.storage_url and item.access_mode == "DIRECT":
-            return item.storage_url
-        if not item.object_key:
-            return item.storage_url
-        bucket_name = item.bucket_name or self.settings.minio_bucket
-        try:
-            from minio import Minio
-
-            # Get region from internal client (can connect to MinIO)
-            internal_client = Minio(**self.settings.minio_connect_kwargs())
-            region = internal_client._get_region(bucket_name)
-
-            # Create public client with region pre-set (avoids lookup to unreachable endpoint)
-            public_client = Minio(
-                **self.settings.minio_presign_kwargs(),
-                region=region,
-            )
-            return public_client.presigned_get_object(
-                bucket_name,
-                item.object_key,
-                expires=timedelta(hours=2),
-            )
-        except Exception:
-            LOGGER.warning(
-                "Failed to create presigned url for resource push bucket=%s object=%s",
-                bucket_name,
-                item.object_key,
-                exc_info=True,
-            )
-            return item.storage_url
-
-    def _build_terms(self, keyword: str, course_scope: str, preferred_type: str) -> list[str]:
+    def _build_terms(
+        self,
+        preferred_type: str,
+        profile_context: dict[str, Any],
+    ) -> list[str]:
         terms: list[str] = []
-        for raw in (keyword, course_scope):
+        for raw in (
+            self._normalize_text(profile_context.get("primaryWeakPoint")),
+            self._normalize_text(profile_context.get("currentCourse")),
+            self._normalize_text(profile_context.get("currentChapter")),
+            self._normalize_text(profile_context.get("learningGoal")),
+            " ".join(profile_context.get("weakPoints", [])),
+        ):
             if not raw:
                 continue
             for token in raw.replace("/", " ").replace(">", " ").split():
@@ -281,14 +205,312 @@ class ResourcePushAgent(PlaceholderAgent):
                     terms.append(cleaned)
         if preferred_type:
             terms.append(preferred_type)
+        for resource_type in profile_context.get("preferredResourceTypes", []):
+            normalized = self._normalize_text(resource_type)
+            if normalized and normalized not in terms:
+                terms.append(normalized)
         return terms
+
+    def _extract_profile_context(self, params: dict[str, Any], snapshot: Any) -> dict[str, Any]:
+        profile = params.get("profile", {}) if isinstance(params.get("profile", {}), dict) else {}
+        learning_context = params.get("learningContext", {}) if isinstance(params.get("learningContext", {}), dict) else {}
+        weak_points = [
+            item for item in profile.get("weakPoints", [])
+            if isinstance(item, str) and item.strip()
+        ]
+        if not weak_points:
+            weak_points = [
+                str(item.get("topic", "")).strip()
+                for item in profile.get("weakPointDetails", [])
+                if isinstance(item, dict)
+            ]
+        preferred_resource_types = [
+            self._normalize_text(item).upper()
+            for item in profile.get("preferredResourceTypes", [])
+            if self._normalize_text(item)
+        ]
+        if not preferred_resource_types and getattr(snapshot, "preferred_style", ""):
+            preferred_style = str(snapshot.preferred_style)
+            if "visual" in preferred_style or "图" in preferred_style:
+                preferred_resource_types = ["MINDMAP", "VIDEO"]
+            elif "example" in preferred_style or "code" in preferred_style:
+                preferred_resource_types = ["CODE", "DOCUMENT"]
+            else:
+                preferred_resource_types = ["DOCUMENT", "READING"]
+        return {
+            "studentLevel": self._normalize_text(profile.get("studentLevel") or profile.get("knowledgeFoundation") or getattr(snapshot, "student_level", "")),
+            "learningGoal": self._normalize_text(profile.get("learningGoal") or (profile.get("currentGoal", {}) or {}).get("shortTerm")),
+            "primaryWeakPoint": weak_points[0] if weak_points else (getattr(snapshot, "knowledge_gaps", []) or [""])[0],
+            "weakPoints": weak_points or list(getattr(snapshot, "knowledge_gaps", [])),
+            "preferredResourceTypes": preferred_resource_types,
+            "currentCourse": self._normalize_text(
+                getattr(snapshot, "current_course", "")
+                or learning_context.get("course")
+                or params.get("course")
+            ),
+            "currentChapter": self._normalize_text(
+                getattr(snapshot, "current_chapter", "")
+                or learning_context.get("chapter")
+                or params.get("topic")
+                or params.get("keyPoints")
+            ),
+        }
 
     def _build_summary_text(self, query: str, candidates: list[PushResourceCandidate]) -> str:
         titles = "，".join(item.title for item in candidates[:3])
+        lead_reason = candidates[0].rerank_reason or "与当前学习画像和查询最匹配"
+        resource_label = self._resource_type_label(candidates[0].resource_type)
         return (
-            f"已按“{query}”筛选到 {len(candidates)} 个现成资源，并生成可直接推送的下载链接。"
-            f"优先资源：{titles}。"
+            f"已基于当前画像完成“{query}”的 Tavily 外部推荐，并返回 {len(candidates)} 个{resource_label}。"
+            f"优先资源：{titles}。首位推荐原因：{lead_reason}。"
         )
+
+    async def _search_external_candidates(
+        self,
+        *,
+        preferred_type: str,
+        query: str,
+        profile_context: dict[str, Any],
+    ) -> list[PushResourceCandidate]:
+        if not self.settings.tavily_api_key.strip():
+            LOGGER.info("Skip Tavily search because TAVILY_API_KEY is not configured")
+            return []
+
+        search_query = self._build_tavily_query(preferred_type, query, profile_context)
+        try:
+            async with httpx.AsyncClient(timeout=20.0) as client:
+                response = await client.post(
+                    self.settings.tavily_base_url,
+                    json={
+                        "api_key": self.settings.tavily_api_key,
+                        "query": search_query,
+                        "topic": "general",
+                        "search_depth": "advanced",
+                        "max_results": 8,
+                        "include_images": True,
+                        "include_answer": False,
+                        "include_raw_content": False,
+                    },
+                )
+                response.raise_for_status()
+        except Exception:
+            LOGGER.warning("Tavily resource search failed for query=%s", search_query, exc_info=True)
+            return []
+
+        payload = response.json()
+        results = payload.get("results")
+        if not isinstance(results, list):
+            return []
+
+        matched_terms = self._build_terms(preferred_type, profile_context)[:4]
+        knowledge_point = self._normalize_text(profile_context.get("primaryWeakPoint") or profile_context.get("currentChapter"))
+        candidates: list[PushResourceCandidate] = []
+        for index, item in enumerate(results, start=1):
+            if not isinstance(item, dict):
+                continue
+            url = self._normalize_text(item.get("url"))
+            raw_title = self._normalize_text(item.get("title"))
+            raw_summary = self._normalize_text(item.get("content"))
+            if not raw_title or not self._is_http_url(url):
+                continue
+            if not self._passes_content_safety(raw_title, raw_summary, url):
+                continue
+            if not self._is_valid_external_result(preferred_type, item, url, raw_title):
+                continue
+            title = self._truncate_display_text(self._clean_display_text(raw_title), 20)
+            summary = self._truncate_display_text(
+                self._clean_display_text(raw_summary) or f"已通过 Tavily 检索到与当前画像匹配的{self._resource_type_label(preferred_type)}。",
+                20,
+            )
+            candidates.append(
+                PushResourceCandidate(
+                    title=title,
+                    resource_type=preferred_type,
+                    summary_text=summary,
+                    file_name="",
+                    mime_type="text/html",
+                    score=max(1, 100 - index + self._source_preference_bonus(preferred_type, url)),
+                    matched_terms=matched_terms,
+                    download_url=url,
+                    rerank_reason=f"Tavily {self._resource_type_label(preferred_type)}搜索命中",
+                    rerank_score=round(max(0.1, 1 - (index - 1) * 0.1), 4),
+                    thumbnail_url=self._extract_tavily_thumbnail(item, payload),
+                    knowledge_point=knowledge_point or None,
+                    source_name=self._extract_source_name(url),
+                )
+            )
+        candidates.sort(key=lambda candidate: (-candidate.score, candidate.title))
+        return candidates[:6]
+
+    def _build_tavily_query(self, preferred_type: str, query: str, profile_context: dict[str, Any]) -> str:
+        type_hint_map = {
+            "EXPLANATION": "概念讲解 教程 官方文档 文章",
+            "CODE_CASE": "源码 示例项目 code example github tutorial",
+            "PRACTICAL_CASE": "从零搭建 实战 项目 教程 源码 github hands-on build",
+            "READING": "进阶阅读 深入解析 文章 文档",
+            "VIDEO": "教学视频 讲解 course tutorial",
+        }
+        site_hint_map = {
+            "CODE_CASE": "site:github.com OR site:gitee.com OR site:gitlab.com",
+            "PRACTICAL_CASE": "site:github.com OR site:gitee.com OR site:medium.com OR site:dev.to",
+            "VIDEO": "site:bilibili.com OR site:youtube.com",
+        }
+        parts = [
+            self._normalize_text(profile_context.get("currentCourse")),
+            self._normalize_text(profile_context.get("currentChapter")),
+            self._normalize_text(profile_context.get("primaryWeakPoint")),
+            self._normalize_text(profile_context.get("learningGoal")),
+            query.replace("VIDEO", "视频").replace("数字人视频", "视频"),
+            type_hint_map.get(preferred_type, "高质量学习资源"),
+            site_hint_map.get(preferred_type, ""),
+        ]
+        return " ".join(part for part in parts if part).strip()
+
+    def _extract_tavily_thumbnail(self, item: dict[str, Any], payload: dict[str, Any]) -> str | None:
+        for key in ("thumbnailUrl", "thumbnail_url", "image", "imageUrl"):
+            value = item.get(key)
+            if isinstance(value, str) and self._is_http_url(value):
+                return value
+        item_images = item.get("images")
+        if isinstance(item_images, list):
+            for value in item_images:
+                if isinstance(value, str) and self._is_http_url(value):
+                    return value
+        payload_images = payload.get("images")
+        if isinstance(payload_images, list):
+            for value in payload_images:
+                if isinstance(value, str) and self._is_http_url(value):
+                    return value
+        return None
+
+    def _extract_source_name(self, url: str) -> str | None:
+        if not self._is_http_url(url):
+            return None
+        host = urlparse(url).netloc.lower()
+        if not host:
+            return None
+        if host.startswith("www."):
+            host = host[4:]
+        return host
+
+    def _is_valid_external_result(self, preferred_type: str, item: dict[str, Any], url: str, title: str) -> bool:
+        if preferred_type == "VIDEO":
+            return self._is_valid_video_result(item, url, title)
+        if preferred_type == "CODE_CASE":
+            return self._is_valid_code_case_result(item, url, title)
+        if preferred_type == "PRACTICAL_CASE":
+            return self._is_valid_practical_case_result(item, url, title)
+        if preferred_type == "READING":
+            return self._is_valid_reading_result(url)
+        return self._is_valid_explanation_result(url)
+
+    def _is_valid_video_result(self, item: dict[str, Any], url: str, title: str) -> bool:
+        lowered_url = url.lower()
+        lowered_title = title.lower()
+        if any(token in lowered_url for token in (".pdf", "/pdf", "arxiv.org", "doi.org")):
+            return False
+        if any(token in lowered_url for token in ("github.com", "gitlab.com", "docs.", "readthedocs")):
+            return False
+        source = self._extract_source_name(url) or ""
+        if source in {"bilibili.com", "youtube.com", "youtu.be"}:
+            return True
+        if any(token in lowered_title for token in ("视频", "讲解", "课程", "lesson", "tutorial", "lecture")):
+            return True
+        content = self._normalize_text(item.get("content")).lower()
+        return any(token in content for token in ("视频", "讲解", "教程", "lecture", "tutorial"))
+
+    def _is_valid_code_case_result(self, item: dict[str, Any], url: str, title: str) -> bool:
+        lowered_url = url.lower()
+        lowered_title = title.lower()
+        source = self._extract_source_name(url) or ""
+        if any(token in lowered_url for token in (".pdf", "youtube.com", "bilibili.com")):
+            return False
+        if source in {"github.com", "gitee.com", "gitlab.com", "gist.github.com"}:
+            return True
+        content = self._normalize_text(item.get("content")).lower()
+        return any(token in f"{lowered_title} {content}" for token in ("代码", "源码", "示例", "example", "sample", "github"))
+
+    def _is_valid_practical_case_result(self, item: dict[str, Any], url: str, title: str) -> bool:
+        lowered_url = url.lower()
+        lowered_title = title.lower()
+        if any(token in lowered_url for token in (".pdf", "youtube.com", "bilibili.com")):
+            return False
+        source = self._extract_source_name(url) or ""
+        content = self._normalize_text(item.get("content")).lower()
+        has_source_code_signal = source in {"github.com", "gitee.com", "gitlab.com"} or any(
+            token in f"{lowered_title} {content}" for token in ("源码", "source code", "repo", "repository", "github")
+        )
+        has_hands_on_signal = any(
+            token in f"{lowered_title} {content}"
+            for token in ("从零", "实战", "搭建", "项目", "hands-on", "build", "tutorial", "step-by-step")
+        )
+        return has_source_code_signal and has_hands_on_signal
+
+    def _is_valid_reading_result(self, url: str) -> bool:
+        lowered_url = url.lower()
+        return not any(token in lowered_url for token in ("youtube.com", "bilibili.com", "github.com", "gist.github.com"))
+
+    def _is_valid_explanation_result(self, url: str) -> bool:
+        lowered_url = url.lower()
+        return not any(token in lowered_url for token in ("youtube.com", "bilibili.com", "github.com", "gist.github.com"))
+
+    def _source_preference_bonus(self, preferred_type: str, url: str) -> int:
+        source = self._extract_source_name(url) or ""
+        if preferred_type == "VIDEO" and source in {"bilibili.com", "youtube.com", "youtu.be"}:
+            return 20
+        if preferred_type == "CODE_CASE" and source in {"github.com", "gitee.com", "gitlab.com", "gist.github.com"}:
+            return 25
+        if preferred_type == "PRACTICAL_CASE" and source in {"github.com", "gitee.com", "gitlab.com"}:
+            return 30
+        return 0
+
+    def _resource_type_label(self, preferred_type: str) -> str:
+        return {
+            "EXPLANATION": "讲解文档",
+            "CODE_CASE": "代码案例",
+            "PRACTICAL_CASE": "实操案例",
+            "READING": "拓展阅读",
+            "VIDEO": "视频",
+        }.get(preferred_type, preferred_type or "资源")
+
+    def _passes_content_safety(self, title: str, summary: str, url: str) -> bool:
+        combined = f"{title} {summary} {url}".lower()
+        blocked_tokens = (
+            "china-dictatorship",
+            "anti chinese",
+            "anti-china",
+            "anti china",
+            "anti ccp",
+            "反共",
+            "反华",
+            "政治宣传",
+            "宣传库",
+            "propaganda",
+            "dictatorship",
+            "falun",
+            "falun gong",
+            "法轮功",
+            "六四",
+            "天安门",
+            "疆独",
+            "港独",
+            "台独",
+            "邪教",
+            "习近平",
+            "xijinping",
+            "ccp",
+            "共产党",
+        )
+        return not any(token in combined for token in blocked_tokens)
+
+    def _clean_display_text(self, text: str) -> str:
+        compact = " ".join(part for part in text.replace("\n", " ").replace("\r", " ").split() if part)
+        return compact.strip()
+
+    def _truncate_display_text(self, text: str, limit: int) -> str:
+        if len(text) <= limit:
+            return text
+        return text[:limit]
 
     @staticmethod
     def _normalize_text(value: Any) -> str:

@@ -1,10 +1,8 @@
-"""LLM-backed content generation chain with deterministic fallback."""
+"""LLM-backed content generation chain."""
 
 from __future__ import annotations
 
-import json
 import logging
-import re
 import time
 from typing import Any, ClassVar, Protocol
 
@@ -24,7 +22,11 @@ from src.ai_modules.generation.prompts import (
     build_reading_user_prompt,
     build_slides_system_prompt,
     build_slides_user_prompt,
+    build_video_script_system_prompt,
+    build_video_script_user_prompt,
 )
+from src.ai_modules.models.video import VideoScriptPayload
+from src.ai_modules.llms.openai_compatible import extract_json_object_from_text
 
 LOGGER = logging.getLogger(__name__)
 TRACER = trace.get_tracer(__name__)
@@ -87,6 +89,7 @@ class GeneratedMindMap(BaseModel):
     summary: str
     root: str
     children: list[GeneratedMindMapNode]
+    mermaid: str = ""
 
 
 GeneratedMindMapNode.model_rebuild()
@@ -97,6 +100,7 @@ class GeneratedCodeAsset(BaseModel):
 
     title: str
     summary: str
+    language: str = "python"
     code: str
     explanation: str
 
@@ -150,6 +154,17 @@ class SupportsStructuredGenerator(Protocol):
         sources: list[dict[str, Any]],
     ) -> GeneratedCodeAsset: ...
 
+    def generate_video_script(
+        self,
+        *,
+        title: str,
+        topic: str,
+        snapshot: dict[str, Any],
+        sources: list[dict[str, Any]],
+        duration_seconds: int,
+        style: str,
+    ) -> VideoScriptPayload: ...
+
 
 class OpenAICompatibleStructuredGenerator:
     """OpenAI-compatible structured generator for the configured providers."""
@@ -195,6 +210,7 @@ class OpenAICompatibleStructuredGenerator:
         messages: list[dict[str, Any]],
         temperature: float = 0.3,
         max_tokens: int | None = None,
+        response_format: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         if not self.api_key:
             raise RuntimeError(f"missing {self.provider_name} api key")
@@ -207,6 +223,8 @@ class OpenAICompatibleStructuredGenerator:
         }
         if max_tokens is not None:
             payload["max_tokens"] = max_tokens
+        if response_format is not None:
+            payload["response_format"] = response_format
         response = client.post(
             f"{self.base_url}/chat/completions",
             headers={
@@ -321,19 +339,18 @@ class OpenAICompatibleStructuredGenerator:
         snapshot: dict[str, Any],
         sources: list[dict[str, Any]],
     ) -> GeneratedMindMap:
-        return GeneratedMindMap.model_validate(
-            self._call_and_parse_json(
-                span_name=f"{self.provider_name}.generate_mindmap_asset",
-                system_prompt=build_mindmap_system_prompt(),
-                user_prompt=build_mindmap_user_prompt(
-                    title=title,
-                    topic=topic,
-                    snapshot=snapshot,
-                    sources=sources,
-                ),
-                max_tokens=1600,
-            )
+        mermaid = self._call_and_extract_text(
+            span_name=f"{self.provider_name}.generate_mindmap_asset",
+            system_prompt=build_mindmap_system_prompt(),
+            user_prompt=build_mindmap_user_prompt(
+                title=title,
+                topic=topic,
+                snapshot=snapshot,
+                sources=sources,
+            ),
+            max_tokens=1600,
         )
+        return self._parse_mindmap_mermaid(title=title, topic=topic, mermaid=mermaid)
 
     def generate_code_asset(
         self,
@@ -352,6 +369,32 @@ class OpenAICompatibleStructuredGenerator:
                     topic=topic,
                     snapshot=snapshot,
                     sources=sources,
+                ),
+                max_tokens=2200,
+            )
+        )
+
+    def generate_video_script(
+        self,
+        *,
+        title: str,
+        topic: str,
+        snapshot: dict[str, Any],
+        sources: list[dict[str, Any]],
+        duration_seconds: int,
+        style: str,
+    ) -> VideoScriptPayload:
+        return VideoScriptPayload.model_validate(
+            self._call_and_parse_json(
+                span_name=f"{self.provider_name}.generate_video_script",
+                system_prompt=build_video_script_system_prompt(),
+                user_prompt=build_video_script_user_prompt(
+                    title=title,
+                    topic=topic,
+                    snapshot=snapshot,
+                    sources=sources,
+                    duration_seconds=duration_seconds,
+                    style=style,
                 ),
                 max_tokens=2200,
             )
@@ -376,6 +419,7 @@ class OpenAICompatibleStructuredGenerator:
                         ],
                         temperature=0.3,
                         max_tokens=max_tokens,
+                        response_format={"type": "json_object"},
                     )
                 payload = self._extract_message_content(response)
                 return self._extract_json(payload)
@@ -393,6 +437,41 @@ class OpenAICompatibleStructuredGenerator:
 
         raise RuntimeError(f"{self.provider_name} structured generation failed: {last_error}")
 
+    def _call_and_extract_text(
+        self,
+        *,
+        span_name: str,
+        system_prompt: str,
+        user_prompt: str,
+        max_tokens: int | None = None,
+    ) -> str:
+        last_error: Exception | None = None
+        for attempt in range(self.max_retries + 1):
+            try:
+                with TRACER.start_as_current_span(span_name):
+                    response = self._post_chat_completion(
+                        messages=[
+                            {"role": "system", "content": system_prompt},
+                            {"role": "user", "content": user_prompt},
+                        ],
+                        temperature=0.3,
+                        max_tokens=max_tokens,
+                    )
+                return self._extract_message_content(response)
+            except (RuntimeError, KeyError, TypeError, httpx.HTTPError) as exc:
+                last_error = exc
+                LOGGER.warning(
+                    "%s text generation attempt %s failed: %s",
+                    self.provider_name,
+                    attempt + 1,
+                    exc,
+                )
+                if attempt >= self.max_retries:
+                    break
+                time.sleep(self.backoff_seconds * (2**attempt))
+
+        raise RuntimeError(f"{self.provider_name} text generation failed: {last_error}")
+
     def _extract_message_content(self, response: Any) -> str:
         if not isinstance(response, dict):
             raise RuntimeError(f"unsupported {self.provider_name} response format")
@@ -407,29 +486,98 @@ class OpenAICompatibleStructuredGenerator:
             raise RuntimeError(f"missing message in {self.provider_name} response")
         content = message.get("content")
         if isinstance(content, list):
-            return "".join(
+            joined = "".join(
                 item.get("text", "") if isinstance(item, dict) else str(item)
                 for item in content
             )
+            if joined.strip():
+                return joined
         if isinstance(content, str):
-            return content
+            if content.strip():
+                return content
         raise RuntimeError(f"unsupported {self.provider_name} content format")
 
     def _extract_json(self, content: str) -> dict[str, Any]:
-        fenced_match = re.search(r"```json\s*(\{[\s\S]*\})\s*```", content)
-        raw_json = fenced_match.group(1) if fenced_match else content.strip()
-        start = raw_json.find("{")
-        end = raw_json.rfind("}")
-        if start == -1 or end == -1:
-            raise ValueError(f"no json object found in {self.provider_name} output")
-        return json.loads(raw_json[start : end + 1])
+        return extract_json_object_from_text(content)
+
+    def _parse_mindmap_mermaid(
+        self,
+        *,
+        title: str,
+        topic: str,
+        mermaid: str,
+    ) -> GeneratedMindMap:
+        normalized_mermaid = self._normalize_mermaid_text(mermaid)
+        lines = [line for line in normalized_mermaid.splitlines() if line.strip()]
+        if not lines or lines[0].strip().lower() != "mindmap":
+            raise ValueError(f"invalid mermaid mindmap output from {self.provider_name}")
+
+        root: str | None = None
+        root_depth: int | None = None
+        children: list[GeneratedMindMapNode] = []
+        stack: list[tuple[int, GeneratedMindMapNode]] = []
+
+        for raw_line in lines[1:]:
+            depth = len(raw_line) - len(raw_line.lstrip(" "))
+            node_name = self._normalize_mermaid_node_label(raw_line.strip())
+            if not node_name:
+                continue
+            if root is None:
+                root = node_name
+                root_depth = depth
+                continue
+            node = GeneratedMindMapNode(name=node_name)
+            while stack and stack[-1][0] >= depth:
+                stack.pop()
+            if stack:
+                stack[-1][1].children.append(node)
+            else:
+                children.append(node)
+            stack.append((depth, node))
+
+        if root is None or root_depth is None:
+            raise ValueError(f"missing root node in {self.provider_name} mermaid output")
+
+        return GeneratedMindMap(
+            title=title,
+            summary=f"{topic} 思维导图已生成",
+            root=root,
+            children=children,
+            mermaid=normalized_mermaid,
+        )
+
+    def _normalize_mermaid_text(self, content: str) -> str:
+        stripped = content.strip()
+        if stripped.startswith("```"):
+            lines = stripped.splitlines()
+            if lines and lines[0].strip().lower().startswith("```mermaid"):
+                lines = lines[1:]
+            if lines and lines[-1].strip() == "```":
+                lines = lines[:-1]
+            stripped = "\n".join(lines).strip()
+        if "mindmap" not in stripped.lower():
+            raise ValueError(f"no mermaid mindmap found in {self.provider_name} output")
+        start = stripped.lower().find("mindmap")
+        return stripped[start:].strip()
+
+    def _normalize_mermaid_node_label(self, label: str) -> str:
+        text = label.strip()
+        if text.startswith("root((") and text.endswith("))"):
+            text = text[6:-2]
+        elif "((" in text and text.endswith("))"):
+            text = text[text.find("((") + 2 : -2]
+        elif "[" in text and text.endswith("]"):
+            text = text[text.find("[") + 1 : -1]
+        elif "(" in text and text.endswith(")"):
+            text = text[text.find("(") + 1 : -1]
+        return text.strip().strip('"').strip("'")
 
 
 BailianStructuredGenerator = OpenAICompatibleStructuredGenerator
 
 
 class ContentGenerationChain:
-    """Structured document-content chain with an OpenAI-compatible primary and fallback output."""
+    """Structured document-content chain backed only by the configured LLM."""
 
     def __init__(
         self,
@@ -448,22 +596,14 @@ class ContentGenerationChain:
         fallback_builder: Any,
     ) -> GeneratedSectionBundle:
         with TRACER.start_as_current_span("content_chain.generate_document_sections"):
-            try:
-                return self.primary_generator.generate_document_sections(
-                    title=title,
-                    topic=topic,
-                    snapshot=snapshot,
-                    section_plans=section_plans,
-                    sources=sources,
-                )
-            except Exception as exc:
-                LOGGER.warning("Falling back to deterministic document generation: %s", exc)
-                return self._build_fallback_sections(
-                    topic=topic,
-                    snapshot=snapshot,
-                    section_plans=section_plans,
-                    fallback_builder=fallback_builder,
-                )
+            del fallback_builder
+            return self.primary_generator.generate_document_sections(
+                title=title,
+                topic=topic,
+                snapshot=snapshot,
+                section_plans=section_plans,
+                sources=sources,
+            )
 
     def _build_fallback_sections(
         self,
@@ -504,21 +644,13 @@ class ContentGenerationChain:
         fallback_builder: Any,
     ) -> GeneratedTextAsset:
         with TRACER.start_as_current_span("content_chain.generate_reading_asset"):
-            try:
-                return self.primary_generator.generate_reading_asset(
-                    title=title,
-                    topic=topic,
-                    snapshot=snapshot,
-                    sources=sources,
-                )
-            except Exception as exc:
-                LOGGER.warning("Falling back to deterministic reading generation: %s", exc)
-                return fallback_builder.build_fallback_reading_asset(
-                    title=title,
-                    topic=topic,
-                    snapshot=snapshot,
-                    sources=sources,
-                )
+            del fallback_builder
+            return self.primary_generator.generate_reading_asset(
+                title=title,
+                topic=topic,
+                snapshot=snapshot,
+                sources=sources,
+            )
 
     def generate_slides_asset(
         self,
@@ -530,21 +662,13 @@ class ContentGenerationChain:
         fallback_builder: Any,
     ) -> GeneratedSlideDeck:
         with TRACER.start_as_current_span("content_chain.generate_slides_asset"):
-            try:
-                return self.primary_generator.generate_slides_asset(
-                    title=title,
-                    topic=topic,
-                    snapshot=snapshot,
-                    sources=sources,
-                )
-            except Exception as exc:
-                LOGGER.warning("Falling back to deterministic slide generation: %s", exc)
-                return fallback_builder.build_fallback_slides_asset(
-                    title=title,
-                    topic=topic,
-                    snapshot=snapshot,
-                    sources=sources,
-                )
+            del fallback_builder
+            return self.primary_generator.generate_slides_asset(
+                title=title,
+                topic=topic,
+                snapshot=snapshot,
+                sources=sources,
+            )
 
     def generate_mindmap_asset(
         self,
@@ -556,21 +680,13 @@ class ContentGenerationChain:
         fallback_builder: Any,
     ) -> GeneratedMindMap:
         with TRACER.start_as_current_span("content_chain.generate_mindmap_asset"):
-            try:
-                return self.primary_generator.generate_mindmap_asset(
-                    title=title,
-                    topic=topic,
-                    snapshot=snapshot,
-                    sources=sources,
-                )
-            except Exception as exc:
-                LOGGER.warning("Falling back to deterministic mindmap generation: %s", exc)
-                return fallback_builder.build_fallback_mindmap_asset(
-                    title=title,
-                    topic=topic,
-                    snapshot=snapshot,
-                    sources=sources,
-                )
+            del fallback_builder
+            return self.primary_generator.generate_mindmap_asset(
+                title=title,
+                topic=topic,
+                snapshot=snapshot,
+                sources=sources,
+            )
 
     def generate_code_asset(
         self,
@@ -582,18 +698,32 @@ class ContentGenerationChain:
         fallback_builder: Any,
     ) -> GeneratedCodeAsset:
         with TRACER.start_as_current_span("content_chain.generate_code_asset"):
-            try:
-                return self.primary_generator.generate_code_asset(
-                    title=title,
-                    topic=topic,
-                    snapshot=snapshot,
-                    sources=sources,
-                )
-            except Exception as exc:
-                LOGGER.warning("Falling back to deterministic code generation: %s", exc)
-                return fallback_builder.build_fallback_code_asset(
-                    title=title,
-                    topic=topic,
-                    snapshot=snapshot,
-                    sources=sources,
-                )
+            del fallback_builder
+            return self.primary_generator.generate_code_asset(
+                title=title,
+                topic=topic,
+                snapshot=snapshot,
+                sources=sources,
+            )
+
+    def generate_video_script(
+        self,
+        *,
+        title: str,
+        topic: str,
+        snapshot: dict[str, Any],
+        sources: list[dict[str, Any]],
+        duration_seconds: int,
+        style: str,
+        fallback_builder: Any,
+    ) -> VideoScriptPayload:
+        with TRACER.start_as_current_span("content_chain.generate_video_script"):
+            del fallback_builder
+            return self.primary_generator.generate_video_script(
+                title=title,
+                topic=topic,
+                snapshot=snapshot,
+                sources=sources,
+                duration_seconds=duration_seconds,
+                style=style,
+            )

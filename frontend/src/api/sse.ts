@@ -77,7 +77,7 @@ export function parseSseEventBlock(block: string, defaultEvent = 'message'): Raw
     return null;
   }
 
-  const lines = block.split('\n');
+  const lines = block.split(/\r?\n/);
   let event = defaultEvent;
   const dataParts: string[] = [];
   for (const rawLine of lines) {
