@@ -37,12 +37,15 @@ class VideoSandboxArtifact(BaseModel):
     script_json_path: str = Field(alias="scriptJsonPath")
     script_text_path: str = Field(alias="scriptTextPath")
     audio_path: str = Field(alias="audioPath")
-    final_video_path: str = Field(alias="finalVideoPath")
+    final_video_path: str | None = Field(default=None, alias="finalVideoPath")
     thumbnail_path: str = Field(alias="thumbnailPath")
     duration_seconds: int = Field(alias="durationSeconds")
     video_style: str = Field(alias="videoStyle")
     preview_text: str = Field(alias="previewText")
     summary_text: str = Field(alias="summaryText")
+    audio_base64: str | None = Field(default=None, alias="audioBase64")
+    audio_format: str | None = Field(default="mp3", alias="audioFormat")
+    avatar_data_url: str | None = Field(default=None, alias="avatarDataUrl")
 
     model_config = ConfigDict(populate_by_name=True)
 

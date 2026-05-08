@@ -1,0 +1,301 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>DH Live Renderer</title>
+    <style>
+      html, body {
+        margin: 0;
+        padding: 0;
+        background: transparent;
+      }
+
+      canvas {
+        position: fixed;
+        left: -9999px;
+        top: -9999px;
+      }
+    </style>
+  </head>
+  <body>
+    <figure id="loadingSpinner">
+      <strong>DH Live loading...</strong>
+    </figure>
+    <canvas id="canvasEl"></canvas>
+    <canvas id="canvas_video"></canvas>
+    <canvas id="canvas_gl" width="128" height="128"></canvas>
+    <div id="screen"></div>
+    <div id="screen2" style="display:none;"></div>
+    <div id="startMessage">加载中</div>
+    <script src="/dh_live/js/pako.min.js"></script>
+    <script src="/dh_live/js/mp4box.all.min.js"></script>
+    <script src="/dh_live/js/DHLiveMini.js"></script>
+    <script src="/dh_live/js/MiniMateLoader.js"></script>
+    <script src="/dh_live/js/MiniLive2.js"></script>
+    <script>
+      (function () {
+        const ORIGIN = window.location.origin;
+        const state = {
+          ready: false,
+          requestId: '',
+          activeRenderToken: 0,
+          activeRecorder: null,
+          mediaStream: null,
+          audioContext: null,
+          animationTimer: null,
+        };
+
+        function configureDhLiveGlobals() {
+          // MiniLive2.js declares some globals with let/const. Avoid reassigning const values here.
+          if (typeof tag_ios17 !== 'undefined') {
+            tag_ios17 = false;
+          }
+          if (typeof fps_enabled !== 'undefined') {
+            fps_enabled = false;
+          }
+          if (typeof isPaused !== 'undefined') {
+            isPaused = true;
+          }
+          if (typeof asset_dir !== 'undefined') {
+            asset_dir = '/dh_live/assets';
+          }
+        }
+
+        configureDhLiveGlobals();
+
+        function notify(message) {
+          window.parent.postMessage(message, ORIGIN);
+        }
+
+        function wait(ms) {
+          return new Promise((resolve) => window.setTimeout(resolve, ms));
+        }
+
+        function base64ToUint8Array(base64) {
+          const binary = atob(base64);
+          const bytes = new Uint8Array(binary.length);
+          for (let i = 0; i < binary.length; i += 1) {
+            bytes[i] = binary.charCodeAt(i);
+          }
+          return bytes;
+        }
+
+        function loadImageBlob(canvas) {
+          return new Promise((resolve) => {
+            canvas.toBlob((blob) => resolve(blob || undefined), 'image/jpeg', 0.9);
+          });
+        }
+
+        async function decodeAudioBuffer(audioBase64) {
+          const uint8 = base64ToUint8Array(audioBase64);
+          const copy = uint8.slice();
+          const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+          const audioBuffer = await audioContext.decodeAudioData(copy.buffer);
+          return {
+            audioContext,
+            audioBuffer,
+            encodedBytes: uint8,
+          };
+        }
+
+        function feedAudioToModule(uint8) {
+          const ptr = Module._malloc(uint8.byteLength);
+          Module.HEAPU8.set(uint8, ptr);
+          Module._setAudioBuffer(ptr, uint8.byteLength);
+          Module._free(ptr);
+        }
+
+        async function ensureRendererReady() {
+          if (state.ready) {
+            return;
+          }
+          if (typeof newVideoTask !== 'function') {
+            throw new Error('DH Live 渲染资源加载失败');
+          }
+          for (let i = 0; i < 200; i += 1) {
+            if (typeof videoProcessor !== 'undefined' && videoProcessor.combinedData && canvas_video.width > 0) {
+              isPaused = true;
+              state.ready = true;
+              notify({ type: 'dh_live_renderer:ready' });
+              return;
+            }
+            await wait(100);
+          }
+          await newVideoTask();
+          isPaused = true;
+          state.ready = true;
+          notify({ type: 'dh_live_renderer:ready' });
+        }
+
+        function resetRuntime() {
+          try {
+            Module._clearAudio();
+          } catch (error) {
+            console.warn('clear audio failed', error);
+          }
+          isPaused = true;
+          frameIndex = 0;
+          if (state.animationTimer) {
+            window.clearTimeout(state.animationTimer);
+            state.animationTimer = null;
+          }
+          if (state.mediaStream) {
+            state.mediaStream.getTracks().forEach((track) => track.stop());
+            state.mediaStream = null;
+          }
+          if (state.activeRecorder && state.activeRecorder.state !== 'inactive') {
+            state.activeRecorder.stop();
+          }
+          state.activeRecorder = null;
+          if (state.audioContext) {
+            state.audioContext.close().catch(() => undefined);
+            state.audioContext = null;
+          }
+        }
+
+        async function renderVideo(requestId, payload) {
+          await ensureRendererReady();
+          resetRuntime();
+          state.requestId = requestId;
+          state.activeRenderToken += 1;
+          const renderToken = state.activeRenderToken;
+          notify({ type: 'dh_live_renderer:progress', requestId, percent: 10, message: '浏览器渲染引擎初始化完成' });
+
+          const { audioContext, audioBuffer, encodedBytes } = await decodeAudioBuffer(payload.audioBase64);
+          if (renderToken !== state.activeRenderToken) {
+            await audioContext.close().catch(() => undefined);
+            return;
+          }
+          state.audioContext = audioContext;
+          feedAudioToModule(encodedBytes);
+          notify({ type: 'dh_live_renderer:progress', requestId, percent: 35, message: '音频解码完成，开始驱动数字人' });
+
+          const canvasVideo = document.getElementById('canvas_video');
+          const stream = canvasVideo.captureStream(25);
+          const audioDestination = audioContext.createMediaStreamDestination();
+          const source = audioContext.createBufferSource();
+          source.buffer = audioBuffer;
+          source.connect(audioDestination);
+          source.connect(audioContext.destination);
+          audioDestination.stream.getAudioTracks().forEach((track) => stream.addTrack(track));
+          state.mediaStream = stream;
+
+          const mimeType = MediaRecorder.isTypeSupported('video/webm;codecs=vp9,opus')
+            ? 'video/webm;codecs=vp9,opus'
+            : 'video/webm;codecs=vp8,opus';
+          const chunks = [];
+          const recorder = new MediaRecorder(stream, {
+            mimeType,
+            videoBitsPerSecond: 3_000_000,
+          });
+          state.activeRecorder = recorder;
+          recorder.ondataavailable = (event) => {
+            if (event.data && event.data.size > 0) {
+              chunks.push(event.data);
+            }
+          };
+
+          const recorderStopped = new Promise((resolve, reject) => {
+            recorder.onstop = async () => {
+              const videoBlob = new Blob(chunks, { type: mimeType });
+              const thumbnailBlob = await loadImageBlob(canvasVideo);
+              resolve({ videoBlob, thumbnailBlob, mimeType });
+            };
+            recorder.onerror = (event) => {
+              reject(event.error || new Error('浏览器录制失败'));
+            };
+          });
+
+          const totalMs = Math.max(1000, Math.ceil(audioBuffer.duration * 1000));
+          const playbackFinished = new Promise((resolve) => {
+            let settled = false;
+            const finish = () => {
+              if (settled) {
+                return;
+              }
+              settled = true;
+              resolve(undefined);
+            };
+            source.onended = finish;
+            window.setTimeout(finish, totalMs + 1500);
+          });
+
+          await audioContext.resume().catch(() => undefined);
+          recorder.start(500);
+          isPaused = false;
+          notify({ type: 'dh_live_renderer:progress', requestId, percent: 60, message: '浏览器本地渲染中...' });
+          source.start(0);
+          source.stop(audioContext.currentTime + audioBuffer.duration + 0.1);
+
+          const startedAt = performance.now();
+          const progressTimer = window.setInterval(() => {
+            if (renderToken !== state.activeRenderToken) {
+              window.clearInterval(progressTimer);
+              return;
+            }
+            const elapsed = performance.now() - startedAt;
+            const ratio = Math.min(elapsed / totalMs, 0.98);
+            notify({
+              type: 'dh_live_renderer:progress',
+              requestId,
+              percent: 60 + Math.round(ratio * 35),
+              message: '浏览器本地渲染中...',
+            });
+          }, 500);
+
+          await playbackFinished;
+          window.clearInterval(progressTimer);
+          await wait(300);
+          if (recorder.state !== 'inactive') {
+            recorder.stop();
+          }
+          const result = await recorderStopped;
+          if (renderToken !== state.activeRenderToken) {
+            return;
+          }
+          isPaused = true;
+          notify({ type: 'dh_live_renderer:progress', requestId, percent: 98, message: '浏览器本地封装完成' });
+          notify({
+            type: 'dh_live_renderer:complete',
+            requestId,
+            videoBlob: result.videoBlob,
+            thumbnailBlob: result.thumbnailBlob,
+            mimeType: result.mimeType,
+            fileName: `${(payload.title || 'teaching-video').replace(/[^\w\u4e00-\u9fa5-]+/g, '_')}.webm`,
+          });
+        }
+
+        window.addEventListener('message', (event) => {
+          if (event.origin !== ORIGIN || !event.data || typeof event.data !== 'object') {
+            return;
+          }
+          const { type, requestId, payload } = event.data;
+          if (type === 'dh_live_renderer:cancel') {
+            state.activeRenderToken += 1;
+            resetRuntime();
+            return;
+          }
+          if (type !== 'dh_live_renderer:render') {
+            return;
+          }
+          renderVideo(requestId, payload).catch((error) => {
+            notify({
+              type: 'dh_live_renderer:error',
+              requestId,
+              message: error instanceof Error ? error.message : '浏览器本地渲染失败',
+            });
+          });
+        });
+
+        ensureRendererReady().catch((error) => {
+          notify({
+            type: 'dh_live_renderer:error',
+            requestId: '',
+            message: error instanceof Error ? error.message : 'DH Live 初始化失败',
+          });
+        });
+      }());
+    </script>
+  </body>
+</html>

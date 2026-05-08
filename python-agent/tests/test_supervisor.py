@@ -247,7 +247,18 @@ class _StubVideoGeneratorAgent(PlaceholderAgent):
             taskId=task_id,
             traceId=trace_id,
             seq=seq + 2,
-            payload=ProgressPayload(stage="speech_synthesized", percent=50, message="语音合成完成"),
+            payload=ProgressPayload(
+                stage="speech_synthesized",
+                percent=50,
+                message="语音合成完成",
+                audioBase64="ZmFrZS1hdWRpby1iYXNlNjQ=",
+                format="mp3",
+                avatarDataUrl="/dh_live/assets/combined_data.json.gz",
+                durationSeconds=60,
+                title="联合索引教学视频",
+                topic="联合索引",
+                videoStyle="hybrid",
+            ),
         )
         yield VideoProgressSSEEvent(
             event="video_gen:avatar",
@@ -265,9 +276,9 @@ class _StubVideoGeneratorAgent(PlaceholderAgent):
                 title="联合索引教学视频",
                 summary="视频讲解",
                 displayMode="download",
-                fileName="video.mp4",
-                localPath="sandbox/video.mp4",
-                mimeType="video/mp4",
+                fileName="browser-rendered.webm",
+                localPath=None,
+                mimeType="video/webm",
                 thumbnailPath="sandbox/video.png",
                 thumbnailFileName="video.png",
                 thumbnailMimeType="image/png",
@@ -526,6 +537,8 @@ async def test_supervisor_streams_video_generation_events() -> None:
     resource_event = next(event for event in events if event.event == "resource_file")
     assert resource_event.payload.asset_type == "VIDEO"
     assert resource_event.payload.thumbnail_path is not None
+    speech_event = next(event for event in events if event.event == "video_gen:speech")
+    assert speech_event.payload.audio_base64 is not None
     assert any(event.event == "done" and "教学视频" in event.payload.summary for event in events)
 
 

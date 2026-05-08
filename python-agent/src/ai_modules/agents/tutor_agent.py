@@ -153,13 +153,21 @@ class TutorAgent(PlaceholderAgent):
         return normalized
 
     def _select_strategy(self, *, snapshot: SystemSnapshot, params: dict[str, Any]) -> str:
+        """Select pedagogy strategy with Sigma-style Socratic as the default.
+
+        - mastery_socratic: Socratic questioning + mastery rubric + misconception tracking
+        - retrieval_grounded_scaffold: evidence-augmented Socratic tutoring
+        - diagnostic_scaffold: gap-focused diagnostic breakdown
+        """
         retrieval_result = params.get("retrievalResult", {})
         documents = retrieval_result.get("documents", [])
+        profile = params.get("profile", {})
+        has_misconceptions = bool(profile.get("misconceptions") or [])
         if snapshot.knowledge_gaps and documents:
             return "retrieval_grounded_scaffold"
-        if snapshot.knowledge_gaps:
+        if snapshot.knowledge_gaps or has_misconceptions:
             return "diagnostic_scaffold"
-        return "concept_explain_then_check"
+        return "mastery_socratic"
 
     async def _run_agent_core_loop(
         self,
@@ -283,6 +291,13 @@ class TutorAgent(PlaceholderAgent):
         learner_goal = memory.get("learnerGoal") or context.get("learnerGoal") or ""
         known_gaps = memory.get("knownGaps") or context.get("knownGaps") or []
         unresolved = memory.get("unresolvedQuestions") or context.get("unresolvedQuestions") or []
+        # Sigma: surface recorded misconceptions for targeted counter-example design
+        recorded_misconceptions = (
+            profile.get("misconceptions")
+            or memory.get("misconceptions")
+            or []
+        )
+        mastered_concepts = profile.get("masteredConcepts") or memory.get("masteredConcepts") or []
         if profile:
             if profile.get("studentLevel"):
                 parts.append(f"学生水平：{profile['studentLevel']}")
@@ -301,6 +316,21 @@ class TutorAgent(PlaceholderAgent):
             parts.append(f"已知薄弱点：{', '.join(known_gaps)}")
         if unresolved:
             parts.append(f"未解决问题：{', '.join(unresolved)}")
+        if recorded_misconceptions:
+            parts.append("‼️ 已记录的错误概念（必须用反例瓦解，勿直接纠正）：")
+            for mc in recorded_misconceptions[:5]:
+                concept = mc.get("concept", "") if isinstance(mc, dict) else ""
+                belief = mc.get("wrongBelief", "") if isinstance(mc, dict) else ""
+                status = mc.get("status", "") if isinstance(mc, dict) else ""
+                if concept and belief:
+                    parts.append(f"  - [{concept}] {belief} (状态: {status or 'active'})")
+        if mastered_concepts:
+            concepts_str = ", ".join(
+                mc.get("concept", "") if isinstance(mc, dict) else str(mc)
+                for mc in mastered_concepts[:8]
+            )
+            if concepts_str:
+                parts.append(f"已掌握概念（可用于交叉练习混入）：{concepts_str}")
         documents = evidence.get("documents", []) if isinstance(evidence.get("documents"), list) else []
         if documents:
             parts.append("检索到的知识来源：")
@@ -309,7 +339,14 @@ class TutorAgent(PlaceholderAgent):
                 snippet = str(doc.get("evidence") or doc.get("snippet") or "")[:200]
                 parts.append(f"  {i}. {title}: {snippet}")
         parts.append(f"用户问题：{user_query}")
-        parts.append("请基于以上上下文给出一段个性化辅导回答：先解释，再纠偏，再给下一步建议，并在结尾提出一个追问。")
+        parts.append(
+            "请按 Sigma 教学流程处理："
+            "1) 先用问题诊断学生的当前理解（不直接解释）；"
+            "2) 根据回答决定下一步（见系统提示词中的映射表）；"
+            "3) 如果涉及已记录的错误概念，设计反例让学生自己发现矛盾；"
+            "4) 每 3-4 轮问答穿插一个需要用到已掌握概念的交叉练习；"
+            "5) 以一个问题结尾，引导学生继续思考。"
+        )
         return "\n\n".join(parts)
 
     async def _run_with_agent_core_loop(

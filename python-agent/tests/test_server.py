@@ -98,6 +98,9 @@ def test_stream_endpoint_supports_video_generation_events(client) -> None:
     resource_file_payload = next(item["payload"] for item in data_payloads if item["event"] == "resource_file")
     assert resource_file_payload["assetType"] == "VIDEO"
     assert resource_file_payload["thumbnailPath"].endswith(".svg")
+    speech_payload = next(item["payload"] for item in data_payloads if item["event"] == "video_gen:speech")
+    assert speech_payload["audioBase64"]
+    assert speech_payload["avatarDataUrl"] == "/dh_live/assets/combined_data.json.gz"
     completion_payload = next(item["payload"] for item in data_payloads if item["event"] == "result_chunk" and "视频生成完成" in item["payload"].get("text", ""))
     assert "视频生成完成" in completion_payload["text"]
 

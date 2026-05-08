@@ -47,6 +47,7 @@ export interface VideoResult {
   style?: VideoCardStyle;
   knowledgePoint?: string;
   expiresHint?: string;
+  fileName?: string;
 }
 
 export interface InlineResourceView {

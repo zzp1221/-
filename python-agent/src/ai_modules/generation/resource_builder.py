@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import base64
 from dataclasses import asdict
 from pathlib import Path
 from typing import Any
@@ -652,8 +653,7 @@ class ResourceGenerationService:
         script_json_path = task_dir / "script.json"
         script_text_path = task_dir / "script.txt"
         audio_path = task_dir / "speech.mp3"
-        final_video_path = task_dir / "final.mp4"
-        thumbnail_path = task_dir / "thumbnail.jpg"
+        thumbnail_path = task_dir / "thumbnail.svg"
 
         script_json_path.write_text(
             json.dumps(script_payload.model_dump(by_alias=True), ensure_ascii=False, indent=2),
@@ -679,19 +679,6 @@ class ResourceGenerationService:
             params["tts_audio_bytes"] = tts_audio_bytes
         audio_path.write_bytes(tts_audio_bytes)
 
-        # DH_live digital human rendering
-        from src.ai_modules.generation.video_renderer import VideoRendererService
-
-        settings = get_settings()
-        renderer = VideoRendererService(
-            checkpoint_dir=settings.dh_live_checkpoint_dir,
-            avatar_data_dir=settings.avatar_data_dir,
-        )
-        renderer.render_talking_video(
-            audio_path=audio_path,
-            output_video_path=final_video_path,
-        )
-
         # Thumbnail
         thumbnail_path.write_text(
             self._build_video_thumbnail_svg(
@@ -707,13 +694,17 @@ class ResourceGenerationService:
             scriptJsonPath=str(script_json_path),
             scriptTextPath=str(script_text_path),
             audioPath=str(audio_path),
-            finalVideoPath=str(final_video_path),
+            finalVideoPath=None,
             thumbnailPath=str(thumbnail_path),
             durationSeconds=script_payload.total_duration,
             videoStyle=style,
             previewText=script_payload.full_text[:100],
-            summaryText=f"{topic} 教学视频已通过数字人生成。",
+            summaryText=f"{topic} 教学视频脚本与语音已生成，等待浏览器本地渲染。",
+            audioBase64=base64.b64encode(tts_audio_bytes).decode("utf-8"),
+            audioFormat="mp3",
+            avatarDataUrl="/dh_live/assets/combined_data.json.gz",
         )
+        settings = get_settings()
         params["videoSandboxArtifact"] = artifact.model_dump(by_alias=True)
         params["videoGenerationTask"] = VideoGenerationTaskPayload(
             status="completed",
@@ -723,7 +714,7 @@ class ResourceGenerationService:
             durationSeconds=artifact.duration_seconds,
             videoStyle=style,
             ttsProvider=settings.tts_provider,
-            avatarProvider="dh_live_mini",
+            avatarProvider="browser_dh_live_mini",
             generationParams={
                 "durationTarget": script_payload.total_duration,
                 "style": style,
@@ -734,10 +725,10 @@ class ResourceGenerationService:
             title=script_payload.title,
             summary=artifact.summary_text,
             displayMode="VIDEO_PLAYER",
-            fileName="final.mp4",
-            localPath=str(final_video_path),
+            fileName="browser-rendered.webm",
+            localPath=None,
             previewText=artifact.preview_text,
-            mimeType="video/mp4",
+            mimeType="video/webm",
             thumbnailPath=str(thumbnail_path),
             thumbnailFileName="thumbnail.svg",
             thumbnailMimeType="image/svg+xml",

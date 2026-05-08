@@ -141,6 +141,11 @@ public class ConversationService {
                 appendConversationMessage(conversationId, currentUser.userId(), "assistant", assistantReply.toString(), false);
                 emitter.complete();
             } catch (Exception ex) {
+                if (isClientDisconnect(ex)) {
+                    LOGGER.info("Conversation stream closed by client conversationId={}", conversationId);
+                    emitter.complete();
+                    return;
+                }
                 try {
                     if (assistantReply.isEmpty()) {
                         appendConversationMessage(conversationId, currentUser.userId(), "assistant", "抱歉，处理过程中遇到了问题，请稍后重试。", false);
@@ -156,6 +161,30 @@ public class ConversationService {
         });
 
         return emitter;
+    }
+
+    private boolean isClientDisconnect(Throwable throwable) {
+        Throwable current = throwable;
+        while (current != null) {
+            if (current instanceof IOException) {
+                String message = current.getMessage();
+                if (message != null) {
+                    String normalized = message.toLowerCase();
+                    if (normalized.contains("broken pipe")
+                        || normalized.contains("connection reset")
+                        || normalized.contains("forcibly closed")
+                        || normalized.contains("asyncrequestnotusableexception")) {
+                        return true;
+                    }
+                }
+            }
+            String className = current.getClass().getName();
+            if (className.contains("AsyncRequestNotUsableException")) {
+                return true;
+            }
+            current = current.getCause();
+        }
+        return false;
     }
 
     private void sendConversationEvent(

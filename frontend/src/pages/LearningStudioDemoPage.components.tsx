@@ -113,7 +113,7 @@ export function ServiceDynamicForm(props: {
         />
         {props.resourceForm.resourceType === 'VIDEO' ? (
           <div className="mt-4 rounded-2xl border border-indigo-200 bg-indigo-50/70 px-4 py-3 text-sm text-indigo-700 dark:border-indigo-700 dark:bg-indigo-500/10 dark:text-indigo-200">
-            已固定为数字人视频生成，系统将按默认时长自动完成脚本、TTS 和数字人渲染。
+            已固定为数字人视频生成，系统将按默认时长自动完成脚本、TTS，并在当前浏览器本地渲染视频。
           </div>
         ) : null}
       </div>
@@ -504,6 +504,7 @@ export function TaskResultPanel(props: {
               style={props.videoResult.style}
               knowledgePoint={props.videoResult.knowledgePoint}
               expiresHint={props.videoResult.expiresHint}
+              fileName={props.videoResult.fileName}
             />
           </div>
         </div>

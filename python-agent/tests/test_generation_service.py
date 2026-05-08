@@ -342,19 +342,7 @@ def test_generation_service_requires_tts_audio_for_video_asset(tmp_path: Path) -
 
 def test_generation_service_writes_video_asset(
     tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    class FakeRenderer:
-        def __init__(self, checkpoint_dir=None, avatar_data_dir=None) -> None:
-            self.checkpoint_dir = checkpoint_dir
-            self.avatar_data_dir = avatar_data_dir
-
-        def render_talking_video(self, *, audio_path: Path, output_video_path: Path) -> None:
-            assert audio_path.exists()
-            output_video_path.write_bytes(b"\x00\x00\x00fake-video")
-
-    monkeypatch.setattr("src.ai_modules.generation.video_renderer.VideoRendererService", FakeRenderer)
-
     service = ResourceGenerationService(sandbox_root=tmp_path)
     snapshot = SystemSnapshot(
         current_course="数据结构",
@@ -383,13 +371,14 @@ def test_generation_service_writes_video_asset(
     asset = service.build_asset(asset_type="VIDEO", params=params, snapshot=snapshot)
 
     assert asset.asset_type == "VIDEO"
-    assert asset.file_name == "final.mp4"
-    assert Path(asset.local_path).exists()
-    assert Path(asset.local_path).read_bytes().startswith(b"\x00\x00\x00")
+    assert asset.file_name == "browser-rendered.webm"
+    assert asset.local_path is None
     assert Path(asset.thumbnail_path).exists()
     task_payload = params["videoGenerationTask"]
     assert task_payload["videoStyle"] == "hybrid"
     assert Path(params["videoSandboxArtifact"]["scriptJsonPath"]).exists()
+    assert params["videoSandboxArtifact"]["audioBase64"]
+    assert params["videoSandboxArtifact"]["avatarDataUrl"] == "/dh_live/assets/combined_data.json.gz"
 
 
 def test_generation_service_synthesizes_video_audio_from_final_script(
@@ -398,21 +387,11 @@ def test_generation_service_synthesizes_video_audio_from_final_script(
 ) -> None:
     captured: dict[str, str] = {}
 
-    class FakeRenderer:
-        def __init__(self, checkpoint_dir=None, avatar_data_dir=None) -> None:
-            self.checkpoint_dir = checkpoint_dir
-            self.avatar_data_dir = avatar_data_dir
-
-        def render_talking_video(self, *, audio_path: Path, output_video_path: Path) -> None:
-            assert audio_path.exists()
-            output_video_path.write_bytes(b"\x00\x00\x00fake-video")
-
     class FakeMimoClient:
         def synthesize_speech_sync(self, **kwargs) -> bytes:
             captured["text"] = kwargs["text"]
             return b"y" * 512
 
-    monkeypatch.setattr("src.ai_modules.generation.video_renderer.VideoRendererService", FakeRenderer)
     monkeypatch.setattr("src.ai_modules.llms.mimo_client.MiMoClient", FakeMimoClient)
 
     service = ResourceGenerationService(

@@ -170,6 +170,10 @@ function normalizeRestoredQnaMessages(snapshot: PersistedQnaSnapshot): ChatMessa
   return normalized;
 }
 
+function buildConversationSyncSignature(messages: ChatMessage[]): string {
+  return messages.map((item) => `${item.role}:${item.content}`).join('\u0001');
+}
+
 export default function LearningStudioDemoPage({ mode }: { mode: 'qna' | 'engine' }) {
   const { isAuthenticated, currentUser, openAuthModal } = useOutletContext<LayoutOutletContext>();
   const pendingActionRef = useRef<null | (() => void)>(null);
@@ -218,6 +222,7 @@ export default function LearningStudioDemoPage({ mode }: { mode: 'qna' | 'engine
   const qnaConversationCacheRef = useRef<PersistedQnaConversationCache>({});
   const qnaRequestVersionRef = useRef(0);
   const engineSubmitVersionRef = useRef(0);
+  const previousModeRef = useRef(mode);
 
   const [profile, setProfile] = useState<ProfileSnapshot | null>(null);
   const [profileSummary, setProfileSummary] = useState('');
@@ -310,7 +315,7 @@ export default function LearningStudioDemoPage({ mode }: { mode: 'qna' | 'engine
 
   const resetQnaConversation = useCallback(() => {
     qnaRequestVersionRef.current += 1;
-    qnaAbortRef.current?.abort();
+    qnaAbortRef.current = null;
     cacheConversationView(conversationIdRef.current, {
       qnaInput: qnaInputRef.current,
       qnaMessages: qnaMessagesRef.current,
@@ -382,15 +387,78 @@ export default function LearningStudioDemoPage({ mode }: { mode: 'qna' | 'engine
     window.dispatchEvent(new CustomEvent('app:active-conversation-changed', { detail: { conversationId } }));
   }, [conversationId]);
 
+  const syncConversationHistory = useCallback(async ({
+    targetConversationId,
+    requestVersion,
+    cachedMessages,
+    nextInput,
+    expectStreaming = false,
+  }: {
+    targetConversationId: string;
+    requestVersion?: number;
+    cachedMessages?: ChatMessage[];
+    nextInput?: string;
+    expectStreaming?: boolean;
+  }): Promise<boolean> => {
+    const normalizedConversationId = targetConversationId.trim();
+    if (!normalizedConversationId) {
+      return false;
+    }
+
+    let latestMessages = cachedMessages;
+    let previousSignature = latestMessages ? buildConversationSyncSignature(latestMessages) : '';
+    let unchangedPolls = 0;
+    const maxAttempts = expectStreaming ? 8 : 1;
+
+    for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+      const history = await conversationApi.getConversationMessages(normalizedConversationId, {
+        dedupe: false,
+        retry: 1,
+      });
+      if (!mountedRef.current || conversationIdRef.current !== normalizedConversationId) {
+        return Boolean(latestMessages?.length);
+      }
+      if (requestVersion !== undefined && qnaRequestVersionRef.current !== requestVersion) {
+        return Boolean(latestMessages?.length);
+      }
+
+      const mapped = mapConversationHistory(history);
+      if (mapped.length > 0) {
+        const preferredMessages = pickPreferredConversationMessages(latestMessages, mapped);
+        latestMessages = preferredMessages;
+        setQnaMessages(preferredMessages);
+        cacheConversationView(normalizedConversationId, {
+          qnaInput: nextInput ?? qnaInputRef.current,
+          qnaMessages: preferredMessages,
+        });
+
+        const currentSignature = buildConversationSyncSignature(preferredMessages);
+        if (currentSignature === previousSignature) {
+          unchangedPolls += 1;
+        } else {
+          previousSignature = currentSignature;
+          unchangedPolls = 0;
+        }
+
+        if (!expectStreaming || (attempt >= 2 && unchangedPolls >= 2)) {
+          return true;
+        }
+      }
+
+      if (attempt < maxAttempts - 1) {
+        await new Promise((resolve) => window.setTimeout(resolve, 1200));
+      }
+    }
+
+    return Boolean(latestMessages?.length);
+  }, [cacheConversationView]);
+
   const openExistingConversation = useCallback(async (payload: SelectedConversationSnapshot) => {
     const nextConversationId = payload.conversationId?.trim();
     if (!nextConversationId) {
       return;
     }
     if (loadingConversationIdRef.current === nextConversationId) {
-      return;
-    }
-    if (conversationIdRef.current === nextConversationId && qnaMessagesRef.current.length > 1) {
       return;
     }
     qnaRequestVersionRef.current += 1;
@@ -403,7 +471,7 @@ export default function LearningStudioDemoPage({ mode }: { mode: 'qna' | 'engine
     });
     const cachedSnapshot = qnaConversationCacheRef.current[conversationCacheKey(nextConversationId)];
 
-    qnaAbortRef.current?.abort();
+    qnaAbortRef.current = null;
     setConversationId(nextConversationId);
     setQnaInput(cachedSnapshot?.qnaInput ?? qnaDraftsRef.current[nextConversationId] ?? '');
     setQnaState('QNA_IDLE');
@@ -415,18 +483,13 @@ export default function LearningStudioDemoPage({ mode }: { mode: 'qna' | 'engine
       ]);
 
     try {
-      const history = await conversationApi.getConversationMessages(nextConversationId);
-      if (conversationIdRef.current !== nextConversationId || qnaRequestVersionRef.current !== requestVersion) {
-        return;
-      }
-      const mapped = mapConversationHistory(history);
-      if (mapped.length > 0) {
-        const preferredMessages = pickPreferredConversationMessages(cachedSnapshot?.qnaMessages, mapped);
-        setQnaMessages(preferredMessages);
-        cacheConversationView(nextConversationId, {
-          qnaInput: cachedSnapshot?.qnaInput ?? qnaDraftsRef.current[nextConversationId] ?? '',
-          qnaMessages: preferredMessages,
-        });
+      const synced = await syncConversationHistory({
+        targetConversationId: nextConversationId,
+        requestVersion,
+        cachedMessages: cachedSnapshot?.qnaMessages,
+        nextInput: cachedSnapshot?.qnaInput ?? qnaDraftsRef.current[nextConversationId] ?? '',
+      });
+      if (synced) {
         return;
       }
       setQnaMessages([
@@ -458,7 +521,7 @@ export default function LearningStudioDemoPage({ mode }: { mode: 'qna' | 'engine
     } finally {
       loadingConversationIdRef.current = '';
     }
-  }, [cacheConversationView]);
+  }, [cacheConversationView, syncConversationHistory]);
 
   const loadCurrentProfile = useCallback(
     async (source: ProfileUpdateSource) => {
@@ -487,7 +550,6 @@ export default function LearningStudioDemoPage({ mode }: { mode: 'qna' | 'engine
   useEffect(() => {
     return () => {
       mountedRef.current = false;
-      qnaAbortRef.current?.abort();
       Object.values(taskMonitorRefsRef.current).forEach((refs) => {
         refs.taskStreamAbortRef.current?.abort();
         cleanupStreamSchedulers(refs.streamFlushTimerRef, refs.streamRafRef);
@@ -519,10 +581,37 @@ export default function LearningStudioDemoPage({ mode }: { mode: 'qna' | 'engine
       setQnaInput(snapshot.qnaInput ?? '');
       setQnaState(snapshot.qnaState === 'QNA_STREAMING' ? 'QNA_IDLE' : 'QNA_IDLE');
       setQnaMessages(normalizeRestoredQnaMessages(snapshot));
+      if (snapshot.qnaState === 'QNA_STREAMING' && snapshot.conversationId?.trim()) {
+        const restoredConversationId = snapshot.conversationId.trim();
+        void syncConversationHistory({
+          targetConversationId: restoredConversationId,
+          cachedMessages: normalizeRestoredQnaMessages(snapshot),
+          nextInput: snapshot.qnaInput ?? '',
+          expectStreaming: true,
+        }).catch(() => undefined);
+      }
     } catch {
       clearPersistedQnaSnapshot();
     }
-  }, [cacheConversationView, clearPersistedQnaSnapshot, mode]);
+  }, [cacheConversationView, clearPersistedQnaSnapshot, mode, syncConversationHistory]);
+
+  useEffect(() => {
+    const previousMode = previousModeRef.current;
+    previousModeRef.current = mode;
+    if (mode !== 'qna' || previousMode === 'qna') {
+      return;
+    }
+    const restoredConversationId = conversationIdRef.current.trim();
+    if (!restoredConversationId) {
+      return;
+    }
+    void syncConversationHistory({
+      targetConversationId: restoredConversationId,
+      cachedMessages: qnaMessagesRef.current,
+      nextInput: qnaInputRef.current,
+      expectStreaming: qnaStateRef.current === 'QNA_STREAMING',
+    }).catch(() => undefined);
+  }, [mode, syncConversationHistory]);
 
   useEffect(() => {
     if (mode !== 'qna' || !qnaSnapshotHydratedRef.current || typeof window === 'undefined') {
@@ -823,7 +912,6 @@ export default function LearningStudioDemoPage({ mode }: { mode: 'qna' | 'engine
 
     qnaRequestVersionRef.current += 1;
     const requestVersion = qnaRequestVersionRef.current;
-    qnaAbortRef.current?.abort();
     const abortController = new AbortController();
     qnaAbortRef.current = abortController;
     const draftConversationId = conversationId;

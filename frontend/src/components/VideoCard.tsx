@@ -13,6 +13,7 @@ export interface VideoCardProps {
   style?: VideoCardStyle;
   knowledgePoint?: string;
   expiresHint?: string;
+  fileName?: string;
   onPlay?: () => void;
   onComplete?: () => void;
 }
@@ -53,6 +54,15 @@ export default function VideoCard(props: VideoCardProps) {
 
     async function loadProtectedMedia(): Promise<void> {
       setLoading(true);
+
+      if (/^(blob:|data:)/i.test(props.videoUrl)) {
+        if (!cancelled) {
+          setResolvedVideoUrl(props.videoUrl);
+          setResolvedThumbnailUrl(props.thumbnailUrl || '');
+          setLoading(false);
+        }
+        return;
+      }
 
       const loadedVideoUrl = await fetchMediaBlobUrl(props.videoUrl);
       if (!cancelled) {
@@ -221,7 +231,7 @@ export default function VideoCard(props: VideoCardProps) {
             href={resolvedVideoUrl || resolveMediaUrl(props.videoUrl)}
             target="_blank"
             rel="noreferrer"
-            download={`${props.title || 'teaching-video'}.mp4`}
+            download={props.fileName || `${props.title || 'teaching-video'}.webm`}
             className="text-xs font-medium text-indigo-600 transition-colors hover:text-indigo-700 dark:text-indigo-400 dark:hover:text-indigo-300"
           >
             下载视频

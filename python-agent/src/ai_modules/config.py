@@ -190,15 +190,6 @@ class Settings(BaseSettings):
     tavily_api_key: str = Field(default="", alias="TAVILY_API_KEY")
     tavily_base_url: str = Field(default="https://api.tavily.com/search", alias="TAVILY_BASE_URL")
 
-    avatar_data_dir: str = Field(
-        default="/data/sandbox-temp/avatar_data",
-        alias="AVATAR_DATA_DIR",
-    )
-    dh_live_checkpoint_dir: str = Field(
-        default="src/ai_modules/generation/dh_live/checkpoint",
-        alias="DH_LIVE_CHECKPOINT_DIR",
-    )
-
     otel_exporter_otlp_endpoint: str = Field(
         default="",
         alias="OTEL_EXPORTER_OTLP_ENDPOINT",

@@ -1,4 +1,5 @@
 import { API_BASE_URL, getAuthHeaders, request } from './request';
+import type { AxiosRequestConfig } from 'axios';
 import { streamSse } from './sse';
 
 export interface CreateConversationResponse {
@@ -62,9 +63,13 @@ export const conversationApi = {
     return request.post<CreateConversationResponse>('/api/conversations');
   },
 
-  async getConversationMessages(conversationId: string): Promise<ConversationMessageItem[]> {
+  async getConversationMessages(
+    conversationId: string,
+    config?: AxiosRequestConfig & { dedupe?: boolean; retry?: number },
+  ): Promise<ConversationMessageItem[]> {
     return request.get<ConversationMessageItem[]>(`/api/conversations/${conversationId}/messages`, {
-      dedupe: true,
+      ...config,
+      dedupe: config?.dedupe ?? true,
       dedupeKey: `conversation-messages:${conversationId}`,
     });
   },

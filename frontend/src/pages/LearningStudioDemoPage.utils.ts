@@ -1,8 +1,9 @@
 import { getErrorMessage, isUnauthorizedError } from '../api/request';
 import { smartEngineApi } from '../api/smartEngine';
+import { renderTalkingVideoInBrowser } from '../utils/browserVideoRenderer';
 import type {
-  ConversationStreamEventPayload,
   EngineService,
+  ConversationStreamEventPayload,
   InlineResourceView,
   ProfileDimensionScore,
   ProfileSnapshot,
@@ -68,6 +69,13 @@ export async function runByApiTask({
   setJudgeResult,
   taskStreamAbortRef,
 }: RunByApiTaskArgs): Promise<'completed' | 'running' | 'failed' | 'aborted' | 'unauthorized'> {
+  const browserRenderState = {
+    taskId: currentTaskId,
+    started: false,
+    completed: false,
+    promise: null as Promise<void> | null,
+    errorMessage: '',
+  };
   const handlers: TaskRunHandlers = {
     onProgress: (value, statusHint) => {
       setTaskProgress((prev) => Math.max(prev, value));
@@ -95,6 +103,7 @@ export async function runByApiTask({
       }
     },
     onVideo: (item) => {
+      browserRenderState.completed = true;
       setVideoResult((prev) => prev ?? item);
     },
     onInlineResource: (item) => {
@@ -120,7 +129,7 @@ export async function runByApiTask({
     currentTaskId,
     {
       onEvent: (event) => {
-        consumeTaskStreamEvent(event, handlers);
+        void consumeTaskStreamEvent(event, handlers, browserRenderState);
       },
       onDone: () => {
         streamDone = true;
@@ -136,6 +145,11 @@ export async function runByApiTask({
   flushStreamQueue(streamQueueRef, streamFlushTimerRef, streamRafRef, setServiceResultLines);
 
   if (streamDone && !streamErrorMessage) {
+    const browserRenderSucceeded = await settleBrowserRender(handlers, browserRenderState);
+    if (!browserRenderSucceeded) {
+      setTaskStatus('视频生成失败');
+      return 'failed';
+    }
     setTaskProgress(100);
     setTaskStatus('任务完成');
     return 'completed';
@@ -159,9 +173,13 @@ export async function runByApiTask({
         return 'aborted';
       }
       const task = await smartEngineApi.getTask(currentTaskId, { dedupe: false, retry: 2 });
-      applyTaskSnapshot(task, service, handlers);
+      await applyTaskSnapshot(task, service, handlers, browserRenderState);
 
       if (task.status === 'COMPLETED') {
+        const browserRenderSucceeded = await settleBrowserRender(handlers, browserRenderState);
+        if (!browserRenderSucceeded) {
+          throw new Error(browserRenderState.errorMessage || '浏览器本地渲染失败');
+        }
         flushStreamQueue(streamQueueRef, streamFlushTimerRef, streamRafRef, setServiceResultLines);
         return 'completed';
       }
@@ -190,7 +208,17 @@ export async function runByApiTask({
   }
 }
 
-function consumeTaskStreamEvent(event: SmartEngineStreamEvent, handlers: TaskRunHandlers): void {
+async function consumeTaskStreamEvent(
+  event: SmartEngineStreamEvent,
+  handlers: TaskRunHandlers,
+  browserRenderState: {
+    taskId: string;
+    started: boolean;
+    completed: boolean;
+    promise: Promise<void> | null;
+    errorMessage: string;
+  },
+): Promise<void> {
   const envelope = parseTaskStreamEnvelope(event.data);
 
   if (event.event === 'progress') {
@@ -212,10 +240,14 @@ function consumeTaskStreamEvent(event: SmartEngineStreamEvent, handlers: TaskRun
       if (summary) {
         handlers.onSummary(summary);
       }
+      await maybeStartBrowserRender(envelope.payload, handlers, browserRenderState);
       const videoResult = readVideoResult(envelope.payload);
       if (videoResult) {
         handlers.onVideo(videoResult);
       }
+    }
+    if (event.event === 'video_gen:speech') {
+      await maybeStartBrowserRender(envelope.payload, handlers, browserRenderState);
     }
     return;
   }
@@ -298,11 +330,18 @@ function consumeTaskStreamEvent(event: SmartEngineStreamEvent, handlers: TaskRun
   }
 }
 
-function applyTaskSnapshot(
+async function applyTaskSnapshot(
   task: SmartEngineTaskResponse,
   service: EngineService,
   handlers: TaskRunHandlers,
-): void {
+  browserRenderState: {
+    taskId: string;
+    started: boolean;
+    completed: boolean;
+    promise: Promise<void> | null;
+    errorMessage: string;
+  },
+): Promise<void> {
   const progress =
     readNumeric(task.progressPercent) ??
     readNumeric(task.progress);
@@ -320,6 +359,7 @@ function applyTaskSnapshot(
     if (videoResult) {
       handlers.onVideo(videoResult);
     }
+    await maybeStartBrowserRender(task.responseSummary, handlers, browserRenderState);
     const inlineResource = readInlineResource(task.responseSummary);
     if (inlineResource) {
       handlers.onInlineResource(inlineResource);
@@ -334,6 +374,96 @@ function applyTaskSnapshot(
     }
     responseSummaryToLines(task.responseSummary, service).forEach((line) => handlers.onLine(line));
   }
+}
+
+async function maybeStartBrowserRender(
+  payload: Record<string, unknown> | undefined,
+  handlers: TaskRunHandlers,
+  browserRenderState: {
+    taskId: string;
+    started: boolean;
+    completed: boolean;
+    promise: Promise<void> | null;
+    errorMessage: string;
+  },
+): Promise<void> {
+  if (!payload || browserRenderState.completed) {
+    return;
+  }
+  if (browserRenderState.promise) {
+    await browserRenderState.promise;
+    return;
+  }
+  const audioBase64 = readString(payload.audioBase64);
+  if (!audioBase64) {
+    return;
+  }
+  browserRenderState.started = true;
+  browserRenderState.errorMessage = '';
+  handlers.onProgress(78, '浏览器本地渲染中');
+  handlers.onLine('已收到语音素材，开始浏览器本地渲染');
+  browserRenderState.promise = renderTalkingVideoInBrowser(
+    {
+      taskId: browserRenderState.taskId,
+      audioBase64,
+      title: readString(payload.title) || readString(payload.topic) || '教学视频',
+      durationSeconds: readDuration(payload),
+      knowledgePoint: readString(payload.knowledgePoint) || readString(payload.topic),
+      style: readVideoStyle(payload),
+    },
+    {
+      onProgress: (percent, message) => {
+        handlers.onProgress(Math.max(78, percent), '浏览器本地渲染中');
+        if (message) {
+          handlers.onLine(message);
+        }
+      },
+    },
+  )
+    .then((rendered) => {
+      browserRenderState.completed = true;
+      handlers.onSummary('视频已在当前浏览器本地渲染完成');
+      handlers.onVideo({
+        title: readString(payload.title) || readString(payload.topic) || '教学视频',
+        videoUrl: rendered.videoUrl,
+        thumbnailUrl: rendered.thumbnailUrl,
+        duration: readDuration(payload),
+        style: readVideoStyle(payload),
+        knowledgePoint: readString(payload.knowledgePoint) || readString(payload.topic),
+        expiresHint: '视频已在当前浏览器本地生成',
+        fileName: rendered.fileName,
+      });
+      handlers.onProgress(100, '视频生成完成');
+    })
+    .catch((error) => {
+      browserRenderState.started = false;
+      browserRenderState.errorMessage = getErrorMessage(error);
+      handlers.onLine(`浏览器本地渲染失败：${browserRenderState.errorMessage}`);
+    })
+    .finally(() => {
+      browserRenderState.promise = null;
+    });
+  await browserRenderState.promise;
+}
+
+async function settleBrowserRender(
+  handlers: TaskRunHandlers,
+  browserRenderState: {
+    taskId: string;
+    started: boolean;
+    completed: boolean;
+    promise: Promise<void> | null;
+    errorMessage: string;
+  },
+): Promise<boolean> {
+  if (!browserRenderState.started && !browserRenderState.promise) {
+    return true;
+  }
+  if (browserRenderState.promise) {
+    handlers.onProgress(88, '等待浏览器本地渲染完成');
+    await browserRenderState.promise;
+  }
+  return !browserRenderState.errorMessage;
 }
 
 function parseTaskStreamEnvelope(raw: string): { payload?: Record<string, unknown> } {
@@ -1143,9 +1273,9 @@ function mapVideoProgressEvent(eventType: SmartEngineStreamEvent['event']): { pr
     case 'video_gen:speech':
       return { progress: 50, status: '语音合成完成', message: '语音合成完成' };
     case 'video_gen:avatar':
-      return { progress: 75, status: '视频渲染中', message: '视频渲染中...' };
+      return { progress: 75, status: '浏览器本地渲染中', message: '浏览器本地渲染中...' };
     case 'video_gen:complete':
-      return { progress: 100, status: '视频生成完成', message: '视频生成完成' };
+      return { progress: 100, status: '视频素材已就绪', message: '视频素材已就绪' };
     default:
       return { progress: 0, status: '执行中', message: '' };
   }
@@ -1208,6 +1338,7 @@ function mapDownloadToVideoResult(item: TempDownloadLink): VideoResult {
     style: item.style,
     knowledgePoint: item.knowledgePoint,
     expiresHint: item.expiresHint,
+    fileName: item.fileName,
   };
 }
 

@@ -58,6 +58,9 @@ $RECYCLE.BIN/
 .Trash-*
 *.orig
 
+# Docker persistent data (generated at runtime)
+data/
+
 # ============================================================
 # 3. IDE / Editor (multi-contributor safe)
 # ============================================================

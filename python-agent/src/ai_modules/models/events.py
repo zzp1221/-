@@ -80,6 +80,19 @@ class ProgressPayload(BaseModel):
     stage: str
     percent: int
     message: str | None = None
+    script_json: dict[str, Any] | None = Field(default=None, alias="scriptJson")
+    script_text: str | None = Field(default=None, alias="scriptText")
+    audio_base64: str | None = Field(default=None, alias="audioBase64")
+    audio_url: str | None = Field(default=None, alias="audioUrl")
+    audio_format: str | None = Field(default=None, alias="format")
+    avatar_data_url: str | None = Field(default=None, alias="avatarDataUrl")
+    duration_seconds: int | None = Field(default=None, alias="durationSeconds")
+    title: str | None = None
+    topic: str | None = None
+    knowledge_point: str | None = Field(default=None, alias="knowledgePoint")
+    video_style: str | None = Field(default=None, alias="videoStyle")
+
+    model_config = ConfigDict(populate_by_name=True)
 
 
 class ResultChunkPayload(BaseModel):

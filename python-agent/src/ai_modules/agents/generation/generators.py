@@ -234,16 +234,24 @@ class _BaseGenerationAgent(PlaceholderAgent):
         build_params.setdefault("taskId", task_id)
 
         async def operation() -> dict[str, Any]:
-            asset_or_awaitable = self.generation_service.build_asset(
-                asset_type=self.asset_type,
-                params=build_params,
-                snapshot=snapshot,
-            )
-            asset = (
-                await asset_or_awaitable
-                if inspect.isawaitable(asset_or_awaitable)
-                else asset_or_awaitable
-            )
+            if self.asset_type == "VIDEO":
+                asset = await asyncio.to_thread(
+                    self.generation_service.build_asset,
+                    asset_type=self.asset_type,
+                    params=build_params,
+                    snapshot=snapshot,
+                )
+            else:
+                asset_or_awaitable = self.generation_service.build_asset(
+                    asset_type=self.asset_type,
+                    params=build_params,
+                    snapshot=snapshot,
+                )
+                asset = (
+                    await asset_or_awaitable
+                    if inspect.isawaitable(asset_or_awaitable)
+                    else asset_or_awaitable
+                )
             generated_content = (
                 asset.preview_text
                 if asset.asset_type == "VIDEO"
@@ -256,6 +264,9 @@ class _BaseGenerationAgent(PlaceholderAgent):
                 "generatedContent": generated_content,
             }
         draft = await operation()
+        for key in ("videoGenerationTask", "videoSandboxArtifact", "tts_audio_bytes"):
+            if key in build_params:
+                params[key] = build_params[key]
         params["generatedAsset"] = draft["asset"]
         params["generatedContent"] = draft["generatedContent"]
         return draft
@@ -511,40 +522,17 @@ class VideoGenerationAgent(_BaseGenerationAgent):
         system_prompt: str,
     ) -> AsyncIterator[SSEEvent]:
         topic = str(params.get("topic") or params.get("query") or "教学主题")
-        stage_events = [
-            ("video_gen:start", "video_started", 10, f"{topic} 视频生成任务已启动"),
-            ("video_gen:script", "script_generated", 25, "脚本生成完成"),
-        ]
         current_seq = seq
-        for event_type, stage_name, percent, message in stage_events:
-            yield VideoProgressSSEEvent(
-                event=event_type,
-                taskId=task_id,
-                traceId=trace_id,
-                seq=current_seq,
-                payload=ProgressPayload(stage=stage_name, percent=percent, message=message),
-            )
-            current_seq += 1
-
         yield VideoProgressSSEEvent(
-            event="video_gen:speech",
+            event="video_gen:start",
             taskId=task_id,
             traceId=trace_id,
             seq=current_seq,
             payload=ProgressPayload(
-                stage="speech_generating",
-                percent=45,
-                message="正在根据最终视频脚本生成语音",
+                stage="video_started",
+                percent=10,
+                message=f"{topic} 视频生成任务已启动",
             ),
-        )
-        current_seq += 1
-
-        yield VideoProgressSSEEvent(
-            event="video_gen:avatar",
-            taskId=task_id,
-            traceId=trace_id,
-            seq=current_seq,
-            payload=ProgressPayload(stage="video_rendering", percent=75, message="视频渲染中..."),
         )
         current_seq += 1
 
@@ -636,11 +624,84 @@ class VideoGenerationAgent(_BaseGenerationAgent):
         settings = get_settings()
         video_task_payload = params.get("videoGenerationTask")
         video_artifact_payload = params.get("videoSandboxArtifact")
+        script_payload = video_task_payload.get("script") if isinstance(video_task_payload, dict) else None
+        browser_audio_base64 = None
+        browser_audio_format = "mp3"
+        browser_avatar_data_url = "/dh_live/assets/combined_data.json.gz"
+        if isinstance(video_artifact_payload, dict):
+            browser_audio_base64 = video_artifact_payload.get("audioBase64")
+            browser_audio_format = str(video_artifact_payload.get("audioFormat") or browser_audio_format)
+            browser_avatar_data_url = str(video_artifact_payload.get("avatarDataUrl") or browser_avatar_data_url)
+
+        if isinstance(script_payload, dict):
+            yield VideoProgressSSEEvent(
+                event="video_gen:script",
+                taskId=task_id,
+                traceId=trace_id,
+                seq=current_seq,
+                payload=ProgressPayload(
+                    stage="script_generated",
+                    percent=25,
+                    message="脚本生成完成",
+                    scriptJson=script_payload,
+                    scriptText=script_payload.get("fullText"),
+                    durationSeconds=asset.duration_seconds,
+                    title=asset.title,
+                    topic=topic,
+                    knowledgePoint=asset.knowledge_point,
+                    videoStyle=asset.video_style,
+                ),
+            )
+            current_seq += 1
+
+        if browser_audio_base64:
+            yield VideoProgressSSEEvent(
+                event="video_gen:speech",
+                taskId=task_id,
+                traceId=trace_id,
+                seq=current_seq,
+                payload=ProgressPayload(
+                    stage="speech_synthesized",
+                    percent=50,
+                    message="语音合成完成，前端即将开始浏览器本地渲染",
+                    audioBase64=browser_audio_base64,
+                    format=browser_audio_format,
+                    avatarDataUrl=browser_avatar_data_url,
+                    durationSeconds=asset.duration_seconds,
+                    title=asset.title,
+                    topic=topic,
+                    knowledgePoint=asset.knowledge_point,
+                    videoStyle=asset.video_style,
+                    scriptJson=script_payload if isinstance(script_payload, dict) else None,
+                    scriptText=script_payload.get("fullText") if isinstance(script_payload, dict) else None,
+                ),
+            )
+            current_seq += 1
+
+        yield VideoProgressSSEEvent(
+            event="video_gen:avatar",
+            taskId=task_id,
+            traceId=trace_id,
+            seq=current_seq,
+            payload=ProgressPayload(
+                stage="browser_rendering",
+                percent=75,
+                message="浏览器本地渲染准备完成",
+                avatarDataUrl=browser_avatar_data_url,
+                durationSeconds=asset.duration_seconds,
+                title=asset.title,
+                topic=topic,
+                knowledgePoint=asset.knowledge_point,
+                videoStyle=asset.video_style,
+            ),
+        )
+        current_seq += 1
+
         complete_payload: dict[str, Any] = {
             "topic": topic,
             "stage": "completed",
             "progress": 100,
-            "message": "视频生成完成",
+            "message": "视频脚本与语音已生成，请在浏览器完成本地渲染",
             "title": asset.title,
             "duration": asset.duration_seconds,
             "durationSeconds": asset.duration_seconds,
@@ -649,24 +710,24 @@ class VideoGenerationAgent(_BaseGenerationAgent):
             "knowledgePoint": asset.knowledge_point,
             "activeProvider": settings.runtime_provider_name(),
             "fallbackProvider": settings.selected_fallback_provider_name(),
-            "finalVideoPath": asset.local_path,
             "thumbnailPath": asset.thumbnail_path,
             "criticScore": 1.0 if critic_review.verdict == "PASS" else 0.5,
             "safetyPassed": safety_review.allowed,
+            "audioBase64": browser_audio_base64,
+            "format": browser_audio_format,
+            "avatarDataUrl": browser_avatar_data_url,
         }
         if isinstance(video_task_payload, dict):
             complete_payload["videoGenerationTask"] = video_task_payload
             complete_payload["ttsProvider"] = video_task_payload.get("ttsProvider")
             complete_payload["avatarProvider"] = video_task_payload.get("avatarProvider")
             complete_payload["generationParams"] = video_task_payload.get("generationParams")
-            script_payload = video_task_payload.get("script")
             if isinstance(script_payload, dict):
                 complete_payload["scriptJson"] = script_payload
                 complete_payload["scriptText"] = script_payload.get("fullText")
         if isinstance(video_artifact_payload, dict):
             complete_payload["videoSandboxArtifact"] = video_artifact_payload
             complete_payload["audioPath"] = video_artifact_payload.get("audioPath")
-            complete_payload["finalVideoPath"] = video_artifact_payload.get("finalVideoPath", asset.local_path)
             complete_payload["thumbnailPath"] = video_artifact_payload.get("thumbnailPath", asset.thumbnail_path)
         yield VideoCompleteSSEEvent(
             taskId=task_id,
@@ -683,7 +744,8 @@ class VideoGenerationAgent(_BaseGenerationAgent):
                 text=(
                     f"视频生成完成：主题={complete_payload['topic']}，"
                     f"时长={complete_payload.get('durationSeconds') or '未知'}秒，"
-                    f"风格={complete_payload.get('videoStyle') or '默认'}。"
+                    f"风格={complete_payload.get('videoStyle') or '默认'}，"
+                    "可在当前浏览器直接预览和下载。"
                 )
             ),
         )

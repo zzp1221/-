@@ -83,7 +83,7 @@ public class TaskStateMachineService {
         switch (eventType) {
             case PROGRESS -> applyProgressEvent(task, pythonEvent, payload);
             case RESOURCE_FILE -> payload = applyResourceFileEvent(task, payload);
-            case QUESTION_BATCH, JUDGE_RESULT -> applyStructuredResultEvent(task, pythonEvent, payload);
+            case QUESTION_BATCH, JUDGE_RESULT, VIDEO_GEN_SPEECH, VIDEO_GEN_COMPLETE -> applyStructuredResultEvent(task, pythonEvent, payload);
             case DONE -> applyDoneEvent(task, payload);
             case ERROR -> applyErrorEvent(task, payload);
             default -> applyIntermediateEvent(task, pythonEvent);
@@ -234,7 +234,9 @@ public class TaskStateMachineService {
         task.setCurrentStage("completed");
         task.setProgressPercent(BigDecimal.valueOf(100));
         task.setCompletedAt(OffsetDateTime.now());
-        task.setResponseSummary(payload);
+        Map<String, Object> mergedSummary = new LinkedHashMap<>(task.getResponseSummary());
+        mergedSummary.putAll(payload);
+        task.setResponseSummary(mergedSummary);
     }
 
     private void applyErrorEvent(SmartEngineTask task, Map<String, Object> payload) {
