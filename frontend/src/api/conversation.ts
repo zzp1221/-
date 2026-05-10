@@ -97,7 +97,16 @@ export const conversationApi = {
         signal,
       },
       missingBodyMessage: '无法读取会话流',
-      requestFailedMessage: (status) => `会话请求失败 (${status})`,
+      requestFailedMessage: (status) => status === 429
+        ? '请求过于频繁 (429)，请稍后重试'
+        : `会话请求失败 (${status})`,
+      maxRetries: 2,
+      onRetry: (_attempt, maxRetries) => {
+        handlers.onEvent({
+          event: 'retry',
+          data: { payload: { text: `连接中断，正在重连 (${_attempt}/${maxRetries})...` } },
+        });
+      },
       onOpen: handlers.onOpen,
       onEvent: (rawEvent) => {
         const parsed: ConversationStreamEvent = {

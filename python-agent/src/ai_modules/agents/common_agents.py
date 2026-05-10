@@ -208,7 +208,11 @@ class CriticAgent(PlaceholderAgent):
             )
         except Exception as exc:
             LOGGER.exception("Critic review LLM failed")
-            raise RuntimeError("Critic review LLM failed") from exc
+            LOGGER.warning(
+                "Critic review falls back to heuristic signals: error_type=%s",
+                type(exc).__name__,
+            )
+            return self._fallback_review(review_signals=review_signals)
 
     def _build_critic_context(
         self,
@@ -445,7 +449,11 @@ class SafetyAgent(PlaceholderAgent):
             )
         except Exception as exc:
             LOGGER.exception("Safety review LLM failed")
-            raise RuntimeError("Safety review LLM failed") from exc
+            LOGGER.warning(
+                "Safety review falls back to heuristic signals: error_type=%s",
+                type(exc).__name__,
+            )
+            return self._fallback_review(review_signals=review_signals)
 
     def _build_safety_context(
         self,

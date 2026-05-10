@@ -103,7 +103,10 @@ export const smartEngineApi = {
         signal,
       },
       missingBodyMessage: '无法读取任务流',
-      requestFailedMessage: (status) => `任务流请求失败 (${status})`,
+      requestFailedMessage: (status) => status === 429
+        ? '请求过于频繁 (429)，请稍后重试'
+        : `任务流请求失败 (${status})`,
+      maxRetries: 2,
       defaultEvent: 'result_chunk',
       onEvent: (rawEvent) => {
         const parsed: SmartEngineStreamEvent = {

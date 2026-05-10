@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { memo, useEffect, useRef, useState, type ReactNode } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Activity, ArrowDown, Brain, BookOpen, CheckCircle2, Clock3, ExternalLink, FileText, LoaderCircle, SendHorizontal, Sparkles, Target, TrendingUp, TriangleAlert, XCircle } from 'lucide-react';
 import CodeBlock from '../components/CodeBlock';
@@ -33,7 +33,7 @@ import {
 import { request } from '../api/request';
 import { normalizeCopyText } from './LearningStudioDemoPage.utils';
 
-export function ServiceDynamicForm(props: {
+export const ServiceDynamicForm = memo(function ServiceDynamicForm(props: {
   service: EngineService | null;
   resourceForm: ResourceForm;
   pathForm: PathForm;
@@ -203,9 +203,9 @@ export function ServiceDynamicForm(props: {
       </div>
     </div>
   );
-}
+});
 
-export function ServiceSubmitPanel(props: {
+export const ServiceSubmitPanel = memo(function ServiceSubmitPanel(props: {
   disabled: boolean;
   onSubmit: () => void;
   onStop?: () => void;
@@ -271,7 +271,7 @@ export function ServiceSubmitPanel(props: {
       ) : null}
     </div>
   );
-}
+});
 
 function InlineResourcePanel(props: { resource: InlineResourceView }) {
   if (props.resource.kind === 'code') {
@@ -417,7 +417,7 @@ function PracticeQuestionPanel(props: {
   );
 }
 
-export function TaskResultPanel(props: {
+export const TaskResultPanel = memo(function TaskResultPanel(props: {
   service: EngineService | null;
   taskSummary: string;
   serviceResultLines: string[];
@@ -602,7 +602,7 @@ export function TaskResultPanel(props: {
       ) : null}
     </div>
   );
-}
+});
 
 function ExternalResourceRecommendationCard(props: { item: TempDownloadLink }) {
   const actionLabel = recommendationActionLabel(props.item.resourceType);
@@ -701,7 +701,7 @@ function extractFileName(url: string, fallbackTitle: string): string {
   }
 }
 
-export function RealtimeProfile(props: {
+export const RealtimeProfile = memo(function RealtimeProfile(props: {
   profile: ProfileSnapshot | null;
   summary: string;
   updatedAt: string;
@@ -846,7 +846,7 @@ export function RealtimeProfile(props: {
       </div>
     </div>
   );
-}
+});
 
 function ProfileStatCard(props: {
   icon: ReactNode;
@@ -950,7 +950,7 @@ function ProfileTimeline(props: { timeline: ProfileTimelinePoint[] }) {
   );
 }
 
-export function ChatPanel({ messages }: { messages: ChatMessage[] }) {
+export const ChatPanel = memo(function ChatPanel({ messages }: { messages: ChatMessage[] }) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null);
   const [autoFollow, setAutoFollow] = useState(true);
@@ -1068,9 +1068,9 @@ export function ChatPanel({ messages }: { messages: ChatMessage[] }) {
       ) : null}
     </div>
   );
-}
+});
 
-export function InputPanel(props: {
+export const InputPanel = memo(function InputPanel(props: {
   value: string;
   busy: boolean;
   placeholder: string;
@@ -1127,7 +1127,7 @@ export function InputPanel(props: {
       </div>
     </div>
   );
-}
+});
 
 function ProfileCell({ label, value }: { label: string; value: ReactNode }) {
   return (

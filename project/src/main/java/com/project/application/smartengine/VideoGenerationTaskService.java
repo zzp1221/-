@@ -42,7 +42,10 @@ public class VideoGenerationTaskService {
             case VIDEO_GEN_SCRIPT -> entity.setStatus("script_generated");
             case VIDEO_GEN_SPEECH -> entity.setStatus("speech_synthesized");
             case VIDEO_GEN_AVATAR -> entity.setStatus("video_rendering");
-            case VIDEO_GEN_COMPLETE, DONE -> entity.setStatus("completed");
+            case VIDEO_GEN_COMPLETE -> entity.setStatus("completed");
+            case DONE -> entity.setStatus(
+                "FAILED".equalsIgnoreCase(stringValue(payload.get("status"))) ? "failed" : "completed"
+            );
             case ERROR -> entity.setStatus("failed");
             default -> {
                 return;
@@ -51,6 +54,9 @@ public class VideoGenerationTaskService {
 
         if (pythonEvent.resolvedEventType() == StreamEventType.ERROR) {
             entity.setErrorMessage(stringValue(payload.get("message")));
+        } else if (pythonEvent.resolvedEventType() == StreamEventType.DONE
+            && "FAILED".equalsIgnoreCase(stringValue(payload.get("status")))) {
+            entity.setErrorMessage(stringValue(payload.get("summary")));
         }
 
         videoGenerationTaskRepository.save(entity);

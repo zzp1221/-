@@ -11,65 +11,92 @@ interface StreamSseOptions {
   onEvent: (event: RawSseEvent) => boolean | void;
   onDone: () => void;
   onError: (error: Error) => void;
+  onRetry?: (attempt: number, maxRetries: number) => void;
   defaultEvent?: string;
+  maxRetries?: number;
 }
 
+const RETRYABLE_STATUSES = new Set([429, 502, 503, 504]);
+
 export async function streamSse(url: string, options: StreamSseOptions): Promise<void> {
-  let doneCalled = false;
-  const safeDone = () => {
-    if (!doneCalled) {
-      doneCalled = true;
-      options.onDone();
-    }
-  };
+  const maxRetries = options.maxRetries ?? 0;
+  let lastError: Error | null = null;
 
-  try {
-    const response = await fetch(url, options.init);
-    if (!response.ok) {
-      throw new Error(options.requestFailedMessage(response.status));
-    }
-    options.onOpen?.();
-
-    const reader = response.body?.getReader();
-    if (!reader) {
-      throw new Error(options.missingBodyMessage);
+  for (let attempt = 0; attempt <= maxRetries; attempt += 1) {
+    if (attempt > 0) {
+      const delay = Math.min(1000 * Math.pow(2, attempt - 1), 8000);
+      options.onRetry?.(attempt, maxRetries);
+      await new Promise((resolve) => setTimeout(resolve, delay));
     }
 
-    const decoder = new TextDecoder();
-    let buffer = '';
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) {
-        buffer += decoder.decode();
-        const trailingEvent = parseSseEventBlock(buffer, options.defaultEvent);
-        if (trailingEvent && options.onEvent(trailingEvent)) {
-          return;
-        }
-        break;
+    let doneCalled = false;
+    const safeDone = () => {
+      if (!doneCalled) {
+        doneCalled = true;
+        options.onDone();
       }
+    };
 
-      buffer += decoder.decode(value, { stream: true });
-      const eventBlocks = buffer.split('\n\n');
-      buffer = eventBlocks.pop() ?? '';
-
-      for (const block of eventBlocks) {
-        const parsed = parseSseEventBlock(block, options.defaultEvent);
-        if (!parsed) {
+    try {
+      const response = await fetch(url, options.init);
+      if (!response.ok) {
+        const statusError = new Error(options.requestFailedMessage(response.status));
+        if (RETRYABLE_STATUSES.has(response.status) && attempt < maxRetries) {
+          lastError = statusError;
           continue;
         }
-        if (options.onEvent(parsed)) {
-          return;
+        throw statusError;
+      }
+      options.onOpen?.();
+
+      const reader = response.body?.getReader();
+      if (!reader) {
+        throw new Error(options.missingBodyMessage);
+      }
+
+      const decoder = new TextDecoder();
+      let buffer = '';
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) {
+          buffer += decoder.decode();
+          const trailingEvent = parseSseEventBlock(buffer, options.defaultEvent);
+          if (trailingEvent && options.onEvent(trailingEvent)) {
+            return;
+          }
+          break;
+        }
+
+        buffer += decoder.decode(value, { stream: true });
+        const eventBlocks = buffer.split('\n\n');
+        buffer = eventBlocks.pop() ?? '';
+
+        for (const block of eventBlocks) {
+          const parsed = parseSseEventBlock(block, options.defaultEvent);
+          if (!parsed) {
+            continue;
+          }
+          if (options.onEvent(parsed)) {
+            return;
+          }
         }
       }
-    }
 
-    safeDone();
-  } catch (error) {
-    if (error instanceof DOMException && error.name === 'AbortError') {
+      safeDone();
       return;
+    } catch (error) {
+      if (error instanceof DOMException && error.name === 'AbortError') {
+        return;
+      }
+      lastError = error instanceof Error ? error : new Error('SSE 流执行失败');
+
+      if (attempt < maxRetries) {
+        continue;
+      }
     }
-    options.onError(error instanceof Error ? error : new Error('SSE 流执行失败'));
   }
+
+  options.onError(lastError ?? new Error('SSE 流执行失败，已达最大重试次数'));
 }
 
 export function parseSseEventBlock(block: string, defaultEvent = 'message'): RawSseEvent | null {

@@ -105,7 +105,11 @@
       "Bash(du -sh frontend/node_modules/)",
       "Bash(du -sh python-agent/__pycache__/)",
       "Bash(du -sh .venv/)",
-      "Bash(du -sh venv/)"
+      "Bash(du -sh venv/)",
+      "Bash(awk '{print $5, $NF}')",
+      "Bash(awk '{sum+=$5; print $5, $NF} END {print \"Total:\", sum}')",
+      "Bash(PYTHONPATH=. python -m pytest tests/test_conversation_memory_compaction_e2e.py -v)",
+      "Bash(PYTHONPATH=. python -m pytest tests/test_conversation_memory_compaction_e2e.py::test_full_conversation_memory_and_compaction -v -s)"
     ]
   }
 }

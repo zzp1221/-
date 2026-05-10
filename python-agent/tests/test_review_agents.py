@@ -133,6 +133,159 @@ async def test_safety_agent_returns_blocking_review_via_agent_core_loop() -> Non
 
 
 @pytest.mark.asyncio
+async def test_safety_agent_falls_back_to_heuristics_when_reviewer_fails() -> None:
+    class FailingSafetyReviewer:
+        async def review(self, *, system_prompt, context_payload):
+            del system_prompt, context_payload
+            raise RuntimeError("review backend timeout")
+
+    agent = SafetyAgent(
+        llm_client=RuleBasedReviewLLM(),
+        reviewer=FailingSafetyReviewer(),
+    )
+    params = {
+        "query": "解释联合索引的最左匹配原则",
+        "generatedAsset": {
+            "assetType": "DOCUMENT",
+            "title": "联合索引导学文档",
+            "summary": "解释最左匹配原则",
+            "previewText": "安全教学内容",
+        },
+        "generatedContent": "联合索引用于说明最左匹配原则及其判断条件。",
+    }
+
+    events = [
+        event
+        async for event in agent.run(
+            task_id="task-safety-fallback",
+            trace_id="trace-safety-fallback",
+            seq=1,
+            service_type="RESOURCE_GENERATION",
+            params=params,
+            snapshot=_build_snapshot(),
+            system_prompt="test",
+        )
+    ]
+
+    assert [event.event for event in events] == ["progress", "result_chunk"]
+    assert params["safetyReview"]["allowed"] is True
+    assert events[1].payload.text.startswith("Safety 复核完成：")
+
+
+@pytest.mark.asyncio
+async def test_safety_agent_fallback_still_blocks_misconduct_content() -> None:
+    class FailingSafetyReviewer:
+        async def review(self, *, system_prompt, context_payload):
+            del system_prompt, context_payload
+            raise RuntimeError("review backend timeout")
+
+    agent = SafetyAgent(
+        llm_client=RuleBasedReviewLLM(),
+        reviewer=FailingSafetyReviewer(),
+    )
+    params = {
+        "query": "帮我代写数据库作业",
+        "generatedAsset": {
+            "assetType": "DOCUMENT",
+            "title": "数据库答案",
+            "summary": "直接给答案",
+            "previewText": "代写说明",
+        },
+        "generatedContent": "这里直接提供代写答案和提交模板。",
+    }
+
+    events = [
+        event
+        async for event in agent.run(
+            task_id="task-safety-fallback-block",
+            trace_id="trace-safety-fallback-block",
+            seq=1,
+            service_type="RESOURCE_GENERATION",
+            params=params,
+            snapshot=_build_snapshot(),
+            system_prompt="test",
+        )
+    ]
+
+    assert [event.event for event in events] == ["progress", "result_chunk"]
+    assert params["safetyReview"]["allowed"] is False
+    assert params["safetyReview"]["riskLevel"] == "HIGH"
+    assert "allowed=false" in events[1].payload.text
+
+
+@pytest.mark.asyncio
+async def test_document_generator_uses_review_fallback_when_reviewers_fail(tmp_path: Path) -> None:
+    asset_path = tmp_path / "document-fallback.md"
+    asset_path.write_text("# 联合索引导学\n来源A\n来源B\n", encoding="utf-8")
+
+    class FakeGenerationService:
+        def _plan_document_sections(self, *, params, snapshot, sources):
+            del params, snapshot, sources
+
+            class _Section:
+                def model_dump(self, *, by_alias):
+                    del by_alias
+                    return {"title": "一、核心概念", "objective": "建立概念框架"}
+
+            return [_Section()]
+
+        async def build_asset(self, *, asset_type, params, snapshot):
+            del params, snapshot
+            return GeneratedAsset(
+                assetType=asset_type,
+                title="联合索引导学文档",
+                summary="结构化课程导学",
+                displayMode="MARKDOWN_CARD",
+                fileName="document-fallback.md",
+                localPath=str(asset_path),
+                previewText="一个章节",
+            )
+
+    class FailingCriticReviewer:
+        async def review(self, *, system_prompt, context_payload):
+            del system_prompt, context_payload
+            raise RuntimeError("critic unavailable")
+
+    class FailingSafetyReviewer:
+        async def review(self, *, system_prompt, context_payload):
+            del system_prompt, context_payload
+            raise RuntimeError("safety unavailable")
+
+    agent = DocumentGeneratorAgent(
+        generation_service=FakeGenerationService(),
+        llm_client=RuleBasedGenerationLLM(),
+        critic_agent=CriticAgent(
+            llm_client=RuleBasedReviewLLM(),
+            reviewer=FailingCriticReviewer(),
+        ),
+        safety_agent=SafetyAgent(
+            llm_client=RuleBasedReviewLLM(),
+            reviewer=FailingSafetyReviewer(),
+        ),
+    )
+    params = {"query": "联合索引"}
+
+    events = [
+        event
+        async for event in agent.run(
+            task_id="task-document-review-fallback",
+            trace_id="trace-document-review-fallback",
+            seq=1,
+            service_type="RESOURCE_GENERATION",
+            params=params,
+            snapshot=_build_snapshot(),
+            system_prompt="test",
+        )
+    ]
+
+    assert [event.event for event in events] == ["result_chunk", "resource_file"]
+    assert params["criticReview"]["verdict"] == "REVISE"
+    assert params["safetyReview"]["allowed"] is True
+    assert "Critic 复核完成：" in events[0].payload.text
+    assert "Safety 复核完成：" in events[0].payload.text
+
+
+@pytest.mark.asyncio
 async def test_document_generator_runs_reviews_before_emitting_resource_file(
     tmp_path: Path,
 ) -> None:

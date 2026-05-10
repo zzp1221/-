@@ -1,9 +1,12 @@
-import { useEffect, useMemo, useState } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Clock3, Compass, History, Menu, MessageCirclePlus, Search, Sparkles } from 'lucide-react';
+import { Clock3, Compass, History, LayoutGrid, Menu, MessageCirclePlus, Search, Sparkles, UserRoundSearch } from 'lucide-react';
 import AuthModal from './AuthModal';
 import ThemeToggle from './ThemeToggle';
+
+const ProfileDrawer = lazy(() => import('./ProfileDrawer'));
+const ServiceDrawer = lazy(() => import('./ServiceDrawer'));
 import { authApi, type AuthUser } from '../api/auth';
 import { conversationApi, type ConversationHistoryItem } from '../api/conversation';
 import { clearAuthSession, getAuthToken, isUnauthorizedError } from '../api/request';
@@ -63,6 +66,10 @@ export default function Layout() {
   const [activeConversationId, setActiveConversationId] = useState('');
   const [historySearch, setHistorySearch] = useState('');
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [moreMenuOpen, setMoreMenuOpen] = useState(false);
+  const moreMenuRef = useRef<HTMLDivElement>(null);
+  const [profilePanelOpen, setProfilePanelOpen] = useState(false);
+  const [servicePanelOpen, setServicePanelOpen] = useState(false);
 
   const isAuthenticated = Boolean(currentUser);
 
@@ -172,6 +179,32 @@ export default function Layout() {
     return () => {
       window.removeEventListener('app:conversation-updated', handleConversationUpdated);
     };
+  }, []);
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (moreMenuRef.current && !moreMenuRef.current.contains(event.target as Node)) {
+        setMoreMenuOpen(false);
+      }
+    };
+    if (moreMenuOpen) {
+      document.addEventListener('mousedown', handleClickOutside);
+    }
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [moreMenuOpen]);
+
+  const handleOpenProfilePanel = useCallback(() => {
+    setMoreMenuOpen(false);
+    closeSidebar();
+    setProfilePanelOpen(true);
+  }, []);
+
+  const handleOpenServicePanel = useCallback(() => {
+    setMoreMenuOpen(false);
+    closeSidebar();
+    setServicePanelOpen(true);
   }, []);
 
   const openAuthModal = (tab: AuthTab = 'login', hint = '请先登录') => {
@@ -301,20 +334,48 @@ export default function Layout() {
           <MessageCirclePlus className="h-4 w-4" />
           新对话
         </NavLink>
-        <NavLink
-          to="/engine"
-          onClick={closeSidebar}
-          className={({ isActive }) =>
-            `flex w-full items-center gap-2.5 rounded-xl px-3 py-2.5 text-sm font-medium transition-all duration-200 ${
-              isActive
+        <div className="relative" ref={moreMenuRef}>
+          <button
+            type="button"
+            onClick={() => setMoreMenuOpen((prev) => !prev)}
+            className={`flex w-full items-center gap-2.5 rounded-xl px-3 py-2.5 text-sm font-medium transition-all duration-200 ${
+              moreMenuOpen || inEngine
                 ? 'bg-indigo-50 text-indigo-700 dark:bg-indigo-500/10 dark:text-indigo-400'
                 : 'text-slate-600 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800'
-            }`
-          }
-        >
-          <Compass className="h-4 w-4" />
-          智学引擎
-        </NavLink>
+            }`}
+          >
+            <LayoutGrid className="h-4 w-4" />
+            更多功能
+          </button>
+          <AnimatePresence>
+            {moreMenuOpen ? (
+              <motion.div
+                initial={{ opacity: 0, y: -4, scale: 0.96 }}
+                animate={{ opacity: 1, y: 0, scale: 1 }}
+                exit={{ opacity: 0, y: -4, scale: 0.96 }}
+                transition={{ duration: 0.15 }}
+                className="absolute left-0 top-full z-50 mt-1 w-full min-w-[200px] overflow-hidden rounded-xl border border-slate-200 bg-white py-1 shadow-xl shadow-slate-200/50 dark:border-slate-700 dark:bg-slate-900 dark:shadow-slate-900/50"
+              >
+                <button
+                  type="button"
+                  onClick={handleOpenProfilePanel}
+                  className="flex w-full items-center gap-2.5 px-4 py-2.5 text-sm text-slate-600 transition-colors hover:bg-indigo-50 hover:text-indigo-700 dark:text-slate-400 dark:hover:bg-indigo-500/10 dark:hover:text-indigo-400"
+                >
+                  <UserRoundSearch className="h-4 w-4" />
+                  查看个人画像
+                </button>
+                <button
+                  type="button"
+                  onClick={handleOpenServicePanel}
+                  className="flex w-full items-center gap-2.5 px-4 py-2.5 text-sm text-slate-600 transition-colors hover:bg-indigo-50 hover:text-indigo-700 dark:text-slate-400 dark:hover:bg-indigo-500/10 dark:hover:text-indigo-400"
+                >
+                  <Sparkles className="h-4 w-4" />
+                  学习服务
+                </button>
+              </motion.div>
+            ) : null}
+          </AnimatePresence>
+        </div>
       </div>
 
       {/* Auth / User */}
@@ -443,7 +504,7 @@ export default function Layout() {
       </AnimatePresence>
 
       {/* Main Content */}
-      <main className="flex-1 md:ml-[280px]">
+      <main className={`flex-1 md:ml-[280px] transition-[margin-right] duration-300 ${profilePanelOpen || servicePanelOpen ? 'md:mr-[520px]' : ''}`}>
         {/* Top Header */}
         <header className="sticky top-0 z-30 flex items-center justify-between border-b border-slate-200/60 bg-white/80 px-4 py-3 backdrop-blur-xl dark:border-slate-700/60 dark:bg-slate-900/80 md:px-6">
           <div className="flex items-center gap-3">
@@ -456,7 +517,7 @@ export default function Layout() {
             </button>
             <div className="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-300">
               <Compass className="h-4 w-4 text-indigo-500" />
-              <span className="hidden sm:inline">{inEngine ? '智学引擎 / 服务选择面板' : '新对话 / 智能辅导链路'}</span>
+              <span className="hidden sm:inline">{inEngine ? '更多功能 / 服务选择面板' : '新对话 / 智能辅导链路'}</span>
               <span className="sm:hidden">{inEngine ? '服务面板' : '智能对话'}</span>
             </div>
           </div>
@@ -500,6 +561,22 @@ export default function Layout() {
           void loadRecentConversations();
         }}
       />
+
+      <Suspense fallback={null}>
+        <ProfileDrawer
+          open={profilePanelOpen}
+          currentUser={currentUser}
+          onClose={() => setProfilePanelOpen(false)}
+        />
+      </Suspense>
+
+      <Suspense fallback={null}>
+        <ServiceDrawer
+          open={servicePanelOpen}
+          isAuthenticated={isAuthenticated}
+          onClose={() => setServicePanelOpen(false)}
+        />
+      </Suspense>
     </div>
   );
 }

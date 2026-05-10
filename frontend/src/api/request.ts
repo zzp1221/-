@@ -180,6 +180,11 @@ instance.interceptors.response.use(
     // 有响应的情况：后端返回了结果（即使是错误）
     if (error.response) {
       const { data, status } = error.response;
+      if (status === 429) {
+        return Promise.reject(
+          new ApiError('请求过于频繁，请稍等片刻后重试', { httpStatus: status }),
+        );
+      }
       // 尝试解析 Result 格式
       if (data && typeof data === 'object' && 'code' in data && 'message' in data) {
         const result = data as Result;

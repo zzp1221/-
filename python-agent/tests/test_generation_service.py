@@ -519,3 +519,53 @@ def test_structured_generator_uses_spark_openai_compatible_config(
     assert isinstance(captured["messages"], list)
 
     get_settings.cache_clear()
+
+
+def test_structured_generator_retries_when_schema_validation_fails(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    attempts = {"count": 0}
+
+    def fake_post_chat_completion(
+        self,
+        *,
+        messages,
+        temperature=0.3,
+        max_tokens=None,
+        response_format=None,
+    ):
+        del self, messages, temperature, max_tokens, response_format
+        attempts["count"] += 1
+        content = (
+            "{}"
+            if attempts["count"] == 1
+            else '{"title":"联合索引延伸阅读","summary":"结构化阅读摘要","body":"结构化阅读正文"}'
+        )
+        return {
+            "choices": [
+                {
+                    "message": {
+                        "content": content,
+                    }
+                }
+            ]
+        }
+
+    monkeypatch.setattr(
+        OpenAICompatibleStructuredGenerator,
+        "_post_chat_completion",
+        fake_post_chat_completion,
+    )
+
+    generator = OpenAICompatibleStructuredGenerator(max_retries=1, backoff_seconds=0)
+    asset = generator.generate_reading_asset(
+        title="联合索引延伸阅读",
+        topic="联合索引",
+        snapshot={"current_course": "数据库原理"},
+        sources=[{"title": "数据库索引导学"}],
+    )
+
+    assert attempts["count"] == 2
+    assert asset.title == "联合索引延伸阅读"
+    assert asset.summary == "结构化阅读摘要"
+    assert asset.body == "结构化阅读正文"
