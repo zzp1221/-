@@ -7,6 +7,7 @@ from collections.abc import AsyncIterator
 from typing import Any
 
 from src.ai_modules.agents.base import PlaceholderAgent
+from src.ai_modules.async_utils import cancel_and_await
 from src.ai_modules.llms import ProfileAnalyzer, ProfileLLMClientFactory
 from src.ai_modules.memory import InMemoryProfileStore, PostgresProfileStore, ProfileStore
 from src.ai_modules.models import (
@@ -67,6 +68,7 @@ class ProfileAgent(PlaceholderAgent):
         del service_type, snapshot
         user_id = str(params.get("userId") or "00000000-0000-0000-0000-000000000001")
         next_seq = seq
+        core_loop_result: dict[str, Any] | None = None
         profile_task = asyncio.create_task(
             self._run_agent_core_loop(
                 user_id=user_id,
@@ -74,29 +76,34 @@ class ProfileAgent(PlaceholderAgent):
                 system_prompt=system_prompt,
             )
         )
-        while not profile_task.done():
-            try:
-                core_loop_result = await asyncio.wait_for(
-                    asyncio.shield(profile_task),
-                    timeout=self.heartbeat_interval_seconds,
-                )
-                break
-            except TimeoutError:
-                yield ProgressSSEEvent(
-                    taskId=task_id,
-                    traceId=trace_id,
-                    seq=next_seq,
-                    payload=ProgressPayload(
-                        stage=self.stage_name,
-                        percent=88,
-                        message="画像更新仍在执行中，请稍候",
-                    ),
-                )
-                next_seq += 1
-        else:
-            core_loop_result = await profile_task
+        try:
+            while not profile_task.done():
+                try:
+                    core_loop_result = await asyncio.wait_for(
+                        asyncio.shield(profile_task),
+                        timeout=self.heartbeat_interval_seconds,
+                    )
+                    break
+                except TimeoutError:
+                    yield ProgressSSEEvent(
+                        taskId=task_id,
+                        traceId=trace_id,
+                        seq=next_seq,
+                        payload=ProgressPayload(
+                            stage=self.stage_name,
+                            percent=88,
+                            message="画像更新仍在执行中，请稍候",
+                        ),
+                    )
+                    next_seq += 1
+            else:
+                core_loop_result = await profile_task
+        except asyncio.CancelledError:
+            await cancel_and_await(profile_task)
+            raise
 
-        core_loop_result = core_loop_result if "core_loop_result" in locals() else await profile_task
+        if core_loop_result is None:
+            core_loop_result = await profile_task
         params["profileUpdate"] = core_loop_result
 
         yield ProgressSSEEvent(

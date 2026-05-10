@@ -145,7 +145,6 @@ function waitForTaskResult(taskId: string, onProgress?: (percent: number, messag
   });
 }
 
-
 function ensureMessageListener(): void {
   if (rendererMessageBound || typeof window === 'undefined') {
     return;
@@ -277,8 +276,8 @@ export async function renderTalkingVideoInBrowser(
     return waitForTaskResult(taskId, options?.onProgress);
   }
   cancelActiveBrowserVideoRender('已取消上一条本地渲染任务');
-  const iframe = await ensureRendererIframe();
   const requestId = createRequestId();
+  const iframe = await ensureRendererIframe();
   updateTaskState(taskId, {
     taskId,
     requestId,

@@ -97,7 +97,15 @@
       "Bash(grep -n \"dangerouslySetInnerHTML\\\\|innerHTML\\\\|__html\\\\|\\\\\\\\.html\\(\" \"frontend/src/\" -r --include=\"*.tsx\" --include=\"*.ts\")",
       "Bash(grep -E \"pass\\\\s*$|:$\")",
       "Bash(grep -n \"D:\\\\\\\\\\\\\\\\\\\\|D:/\" docker-compose.yml)",
-      "Bash(grep -v \"^--$\")"
+      "Bash(grep -v \"^--$\")",
+      "Bash(awk '$1 == \"blob\" {print $3, $4}')",
+      "Bash(ls -laS *.log *.zip *.tar *.gz *.7z *.rar)",
+      "Bash(ls -laS data/)",
+      "Bash(ls -laS docker/)",
+      "Bash(du -sh frontend/node_modules/)",
+      "Bash(du -sh python-agent/__pycache__/)",
+      "Bash(du -sh .venv/)",
+      "Bash(du -sh venv/)"
     ]
   }
 }

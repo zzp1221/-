@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
 from typing import AsyncIterator
 
 from fastapi import FastAPI, HTTPException, Query, Request
@@ -13,6 +13,7 @@ from opentelemetry import trace
 from pydantic import BaseModel, ConfigDict, Field
 
 from src.ai_modules.config import get_settings
+from src.ai_modules.generation.content_chain import OpenAICompatibleStructuredGenerator
 from src.ai_modules.memory import ConversationMessageDocument, MongoConversationMessageStore
 from src.ai_modules.models import DonePayload, DoneSSEEvent, EngineStreamRequest, ErrorPayload, ErrorSSEEvent
 from src.ai_modules.observability import configure_observability
@@ -24,7 +25,7 @@ TRACER = trace.get_tracer(__name__)
 SUPERVISOR = PythonAgentSupervisor()
 MESSAGE_STORE = MongoConversationMessageStore()
 CANCELLED_TASKS: set[str] = set()
-VIDEO_SEMAPHORE = asyncio.Semaphore(1)  # 同一时间只允许一个视频生成任务
+ACTIVE_STREAM_TASKS: dict[str, asyncio.Task[None]] = {}
 
 
 class InternalConversationMessageRequest(BaseModel):
@@ -60,6 +61,7 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
         await cleanup_task
     except asyncio.CancelledError:
         pass
+    await OpenAICompatibleStructuredGenerator.close_async_clients()
 
 
 async def _sandbox_cleanup_loop() -> None:
@@ -98,69 +100,90 @@ app = FastAPI(title=SETTINGS.app_name, lifespan=lifespan)
 
 async def _supervisor_event_stream(engine_request: EngineStreamRequest) -> AsyncIterator[str]:
     """Yield SSE events produced by the placeholder supervisor."""
+    with TRACER.start_as_current_span("internal.smart_engine.stream"):
+        seq = 1
+        queue: asyncio.Queue[str | None] = asyncio.Queue()
 
-    is_video = engine_request.service_type in ("VIDEO_GENERATION",)
-    holds_semaphore = False
-    if is_video:
-        if VIDEO_SEMAPHORE.locked():
-            yield ErrorSSEEvent(
-                taskId=engine_request.task_id,
-                traceId=engine_request.trace_id,
-                seq=1,
-                payload=ErrorPayload(
-                    code="VIDEO_QUEUE_FULL",
-                    message="当前有视频正在生成，请稍后重试",
-                ),
-            ).to_sse()
-            yield DoneSSEEvent(
-                taskId=engine_request.task_id,
-                traceId=engine_request.trace_id,
-                seq=2,
-                payload=DonePayload(
-                    status="FAILED",
-                    summary="视频生成队列已满，请稍后重试",
-                ),
-            ).to_sse()
-            return
-        await VIDEO_SEMAPHORE.acquire()
-        holds_semaphore = True
-
-    try:
-        with TRACER.start_as_current_span("internal.smart_engine.stream"):
-            seq = 1
+        async def pump_events() -> None:
+            # `seq` is advanced here so the outer cancellation/error branch can emit the next SSE id.
+            nonlocal seq
             try:
                 async for event in SUPERVISOR.stream(engine_request, cancelled=CANCELLED_TASKS):
                     seq = event.seq + 1
-                    yield event.to_sse()
+                    await queue.put(event.to_sse())
+            except asyncio.CancelledError:
+                LOGGER.info("Supervisor task cancelled: task_id=%s", engine_request.task_id)
+                await queue.put(
+                    ErrorSSEEvent(
+                        taskId=engine_request.task_id,
+                        traceId=engine_request.trace_id,
+                        seq=seq,
+                        payload=ErrorPayload(
+                            code="TASK_CANCELLED",
+                            message="任务已被取消",
+                        ),
+                    ).to_sse()
+                )
+                await queue.put(
+                    DoneSSEEvent(
+                        taskId=engine_request.task_id,
+                        traceId=engine_request.trace_id,
+                        seq=seq + 1,
+                        payload=DonePayload(
+                            status="FAILED",
+                            summary="任务已被取消",
+                        ),
+                    ).to_sse()
+                )
             except Exception as exc:
                 LOGGER.exception(
                     "Supervisor stream failed for task_id=%s trace_id=%s",
                     engine_request.task_id,
                     engine_request.trace_id,
                 )
-                yield ErrorSSEEvent(
-                    taskId=engine_request.task_id,
-                    traceId=engine_request.trace_id,
-                    seq=seq,
-                    payload=ErrorPayload(
-                        code="PYTHON_AGENT_ERROR",
-                        message=str(exc) or "Python Agent 执行失败",
-                    ),
-                ).to_sse()
-                yield DoneSSEEvent(
-                    taskId=engine_request.task_id,
-                    traceId=engine_request.trace_id,
-                    seq=seq + 1,
-                    payload=DonePayload(
-                        status="FAILED",
-                        summary="Supervisor 执行失败，任务已终止",
-                    ),
-                ).to_sse()
+                await queue.put(
+                    ErrorSSEEvent(
+                        taskId=engine_request.task_id,
+                        traceId=engine_request.trace_id,
+                        seq=seq,
+                        payload=ErrorPayload(
+                            code="PYTHON_AGENT_ERROR",
+                            message=str(exc) or "Python Agent 执行失败",
+                        ),
+                    ).to_sse()
+                )
+                await queue.put(
+                    DoneSSEEvent(
+                        taskId=engine_request.task_id,
+                        traceId=engine_request.trace_id,
+                        seq=seq + 1,
+                        payload=DonePayload(
+                            status="FAILED",
+                            summary="Supervisor 执行失败，任务已终止",
+                        ),
+                    ).to_sse()
+                )
             finally:
-                CANCELLED_TASKS.discard(engine_request.task_id)
-    finally:
-        if holds_semaphore:
-            VIDEO_SEMAPHORE.release()
+                await queue.put(None)
+
+        stream_task = asyncio.create_task(
+            pump_events(),
+            name=f"smart-engine:{engine_request.task_id}",
+        )
+        ACTIVE_STREAM_TASKS[engine_request.task_id] = stream_task
+        try:
+            while True:
+                item = await queue.get()
+                if item is None:
+                    break
+                yield item
+        finally:
+            ACTIVE_STREAM_TASKS.pop(engine_request.task_id, None)
+            if not stream_task.done():
+                stream_task.cancel()
+                with suppress(asyncio.CancelledError):
+                    await stream_task
+            CANCELLED_TASKS.discard(engine_request.task_id)
 
 
 @app.get("/health")
@@ -211,6 +234,9 @@ async def smart_engine_stream(
 async def cancel_smart_engine_task(task_id: str) -> JSONResponse:
     """Cancel a running smart-engine task by its id."""
     CANCELLED_TASKS.add(task_id)
+    stream_task = ACTIVE_STREAM_TASKS.get(task_id)
+    if stream_task and not stream_task.done():
+        stream_task.cancel()
     LOGGER.info("Task cancellation requested: task_id=%s", task_id)
     return JSONResponse({"status": "cancelled", "taskId": task_id})
 

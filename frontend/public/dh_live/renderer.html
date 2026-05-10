@@ -87,6 +87,41 @@
           });
         }
 
+        const FRAME_READY_POLL_ATTEMPTS = 200;
+        const FRAME_READY_POLL_INTERVAL_MS = 100;
+        const MIN_VALID_VIDEO_BLOB_BYTES = 4096; // Smaller blobs are usually empty recorder headers.
+
+        async function waitForDecodedFrames() {
+          for (let i = 0; i < FRAME_READY_POLL_ATTEMPTS; i += 1) {
+            if (
+              typeof videoProcessor !== 'undefined'
+              && videoProcessor.videoFrames.length > 0
+              && videoProcessor.videoFrames.length >= videoProcessor.nbSampleTotal
+              && canvas_video.width > 0
+              && canvas_video.height > 0
+            ) {
+              return;
+            }
+            await wait(FRAME_READY_POLL_INTERVAL_MS);
+          }
+          throw new Error('DH Live 视频帧加载超时');
+        }
+
+        async function startFrameLoop() {
+          await waitForDecodedFrames();
+          frameIndex = 0;
+          lastFrameTime = performance.now();
+          isPaused = false;
+          await processVideoFrames();
+          await wait(120);
+        }
+
+        function assertRecordedVideoBlob(videoBlob) {
+          if (!(videoBlob instanceof Blob) || videoBlob.size < MIN_VALID_VIDEO_BLOB_BYTES) {
+            throw new Error('浏览器录制结果为空，未生成有效视频');
+          }
+        }
+
         async function decodeAudioBuffer(audioBase64) {
           const uint8 = base64ToUint8Array(audioBase64);
           const copy = uint8.slice();
@@ -113,14 +148,14 @@
           if (typeof newVideoTask !== 'function') {
             throw new Error('DH Live 渲染资源加载失败');
           }
-          for (let i = 0; i < 200; i += 1) {
+          for (let i = 0; i < FRAME_READY_POLL_ATTEMPTS; i += 1) {
             if (typeof videoProcessor !== 'undefined' && videoProcessor.combinedData && canvas_video.width > 0) {
               isPaused = true;
               state.ready = true;
               notify({ type: 'dh_live_renderer:ready' });
               return;
             }
-            await wait(100);
+            await wait(FRAME_READY_POLL_INTERVAL_MS);
           }
           await newVideoTask();
           isPaused = true;
@@ -136,6 +171,7 @@
           }
           isPaused = true;
           frameIndex = 0;
+          lastFrameTime = performance.now();
           if (state.animationTimer) {
             window.clearTimeout(state.animationTimer);
             state.animationTimer = null;
@@ -171,13 +207,18 @@
           feedAudioToModule(encodedBytes);
           notify({ type: 'dh_live_renderer:progress', requestId, percent: 35, message: '音频解码完成，开始驱动数字人' });
 
-          const canvasVideo = document.getElementById('canvas_video');
+          await startFrameLoop();
+          if (renderToken !== state.activeRenderToken) {
+            return;
+          }
+          notify({ type: 'dh_live_renderer:progress', requestId, percent: 50, message: '数字人首帧已就绪，开始录制音视频' });
+
+          const canvasVideo = canvas_video;
           const stream = canvasVideo.captureStream(25);
           const audioDestination = audioContext.createMediaStreamDestination();
           const source = audioContext.createBufferSource();
           source.buffer = audioBuffer;
           source.connect(audioDestination);
-          source.connect(audioContext.destination);
           audioDestination.stream.getAudioTracks().forEach((track) => stream.addTrack(track));
           state.mediaStream = stream;
 
@@ -200,6 +241,7 @@
             recorder.onstop = async () => {
               const videoBlob = new Blob(chunks, { type: mimeType });
               const thumbnailBlob = await loadImageBlob(canvasVideo);
+              assertRecordedVideoBlob(videoBlob);
               resolve({ videoBlob, thumbnailBlob, mimeType });
             };
             recorder.onerror = (event) => {
@@ -223,7 +265,6 @@
 
           await audioContext.resume().catch(() => undefined);
           recorder.start(500);
-          isPaused = false;
           notify({ type: 'dh_live_renderer:progress', requestId, percent: 60, message: '浏览器本地渲染中...' });
           source.start(0);
           source.stop(audioContext.currentTime + audioBuffer.duration + 0.1);
@@ -246,8 +287,14 @@
 
           await playbackFinished;
           window.clearInterval(progressTimer);
-          await wait(300);
+          await wait(250);
           if (recorder.state !== 'inactive') {
+            try {
+              recorder.requestData();
+            } catch (error) {
+              console.warn('request recorder data failed', error);
+            }
+            await wait(100);
             recorder.stop();
           }
           const result = await recorderStopped;

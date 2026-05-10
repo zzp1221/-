@@ -7,6 +7,7 @@ from collections.abc import AsyncIterator
 from typing import Any
 
 from src.ai_modules.agents.base import PlaceholderAgent
+from src.ai_modules.async_utils import cancel_and_await
 from src.ai_modules.llms import PracticeLLMClientFactory, PracticeQuestionGenerator
 from src.ai_modules.memory import InMemoryPracticeStore, PostgresPracticeStore, PracticeStore
 from src.ai_modules.models import (
@@ -57,35 +58,41 @@ class PracticeAgent(PlaceholderAgent):
         del service_type, snapshot
         user_id = str(params.get("userId") or "00000000-0000-0000-0000-000000000001")
         next_seq = seq
+        question_batch: dict[str, Any] | None = None
         question_batch_task = asyncio.create_task(
             self._run_agent_core_loop(
                 params=params,
                 system_prompt=system_prompt,
             )
         )
-        while not question_batch_task.done():
-            try:
-                question_batch = await asyncio.wait_for(
-                    asyncio.shield(question_batch_task),
-                    timeout=self.heartbeat_interval_seconds,
-                )
-                break
-            except TimeoutError:
-                yield ProgressSSEEvent(
-                    taskId=task_id,
-                    traceId=trace_id,
-                    seq=next_seq,
-                    payload=ProgressPayload(
-                        stage=self.stage_name,
-                        percent=35,
-                        message="练习题仍在生成中，请稍候",
-                    ),
-                )
-                next_seq += 1
-        else:
-            question_batch = await question_batch_task
+        try:
+            while not question_batch_task.done():
+                try:
+                    question_batch = await asyncio.wait_for(
+                        asyncio.shield(question_batch_task),
+                        timeout=self.heartbeat_interval_seconds,
+                    )
+                    break
+                except TimeoutError:
+                    yield ProgressSSEEvent(
+                        taskId=task_id,
+                        traceId=trace_id,
+                        seq=next_seq,
+                        payload=ProgressPayload(
+                            stage=self.stage_name,
+                            percent=35,
+                            message="练习题仍在生成中，请稍候",
+                        ),
+                    )
+                    next_seq += 1
+            else:
+                question_batch = await question_batch_task
+        except asyncio.CancelledError:
+            await cancel_and_await(question_batch_task)
+            raise
 
-        question_batch = question_batch if "question_batch" in locals() else await question_batch_task
+        if question_batch is None:
+            question_batch = await question_batch_task
         params["practiceQuestionBatch"] = question_batch
         params["practiceQuestions"] = question_batch["questions"]
         params["practicePersistence"] = await self._safe_save_question_batch(

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import base64
 from dataclasses import asdict
@@ -91,6 +92,118 @@ class ResourceGenerationService:
         if builder is None:
             raise ValueError(f"Unsupported assetType: {asset_type}")
         return builder(params=params, snapshot=snapshot)
+
+    async def build_video_asset(
+        self,
+        *,
+        params: dict,
+        snapshot: SystemSnapshot,
+    ) -> GeneratedAsset:
+        topic = str(params.get("topic") or params.get("query") or "教学主题")
+        task_id = str(params.get("taskId") or "video-task")
+        style = str(params.get("style") or "hybrid")
+        duration_target = self._normalize_duration_seconds(params.get("duration") or params.get("durationTarget"))
+        retrieval = params.get("retrievalResult", {})
+        sources = retrieval.get("documents", []) if isinstance(retrieval, dict) else []
+        generation_snapshot = self._build_generation_snapshot(params=params, snapshot=snapshot)
+        script_payload = await self.content_chain.generate_video_script_async(
+            title=f"{topic}教学视频",
+            topic=topic,
+            snapshot=generation_snapshot,
+            sources=sources,
+            duration_seconds=duration_target,
+            style=style,
+            fallback_builder=self,
+        )
+        task_dir = self.sandbox_root / f"video_{self._safe_task_id(task_id)}"
+        task_dir.mkdir(parents=True, exist_ok=True)
+
+        script_json_path = task_dir / "script.json"
+        script_text_path = task_dir / "script.txt"
+        audio_path = task_dir / "speech.mp3"
+        thumbnail_path = task_dir / "thumbnail.svg"
+
+        script_json_path.write_text(
+            json.dumps(script_payload.model_dump(by_alias=True), ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+        script_text_path.write_text(script_payload.full_text, encoding="utf-8")
+
+        tts_audio_bytes = params.get("tts_audio_bytes")
+        if not tts_audio_bytes or not isinstance(tts_audio_bytes, bytes) or len(tts_audio_bytes) < 100:
+            from src.ai_modules.llms.mimo_client import MiMoClient
+
+            try:
+                mimo_client = MiMoClient()
+                tts_audio_bytes = await mimo_client.synthesize_speech(
+                    text=script_payload.full_text[:1600],
+                    style_description="用清晰自然的语速播报，声音沉稳专业，适合教学场景",
+                    voice="mimo_default",
+                    audio_format="mp3",
+                )
+            except Exception as exc:
+                raise RuntimeError(
+                    f"Video TTS generation failed: {type(exc).__name__}: {exc}"
+                ) from exc
+            params["tts_audio_bytes"] = tts_audio_bytes
+        audio_path.write_bytes(tts_audio_bytes)
+
+        thumbnail_path.write_text(
+            self._build_video_thumbnail_svg(
+                title=script_payload.title,
+                topic=topic,
+                style=style,
+            ),
+            encoding="utf-8",
+        )
+
+        artifact = VideoSandboxArtifact(
+            taskDir=str(task_dir),
+            scriptJsonPath=str(script_json_path),
+            scriptTextPath=str(script_text_path),
+            audioPath=str(audio_path),
+            finalVideoPath=None,
+            thumbnailPath=str(thumbnail_path),
+            durationSeconds=script_payload.total_duration,
+            videoStyle=style,
+            previewText=script_payload.full_text[:100],
+            summaryText=f"{topic} 教学视频脚本与语音已生成，等待浏览器本地渲染。",
+            audioBase64=base64.b64encode(tts_audio_bytes).decode("utf-8"),
+            audioFormat="mp3",
+            avatarDataUrl="/dh_live/assets/combined_data.json.gz",
+        )
+        settings = get_settings()
+        params["videoSandboxArtifact"] = artifact.model_dump(by_alias=True)
+        params["videoGenerationTask"] = VideoGenerationTaskPayload(
+            status="completed",
+            title=script_payload.title,
+            topic=topic,
+            script=script_payload,
+            durationSeconds=artifact.duration_seconds,
+            videoStyle=style,
+            ttsProvider=settings.tts_provider,
+            avatarProvider="browser_dh_live_mini",
+            generationParams={
+                "durationTarget": script_payload.total_duration,
+                "style": style,
+            },
+        ).model_dump(by_alias=True)
+        return GeneratedAsset(
+            assetType="VIDEO",
+            title=script_payload.title,
+            summary=artifact.summary_text,
+            displayMode="VIDEO_PLAYER",
+            fileName="browser-rendered.webm",
+            localPath=None,
+            previewText=artifact.preview_text,
+            mimeType="video/webm",
+            thumbnailPath=str(thumbnail_path),
+            thumbnailFileName="thumbnail.svg",
+            thumbnailMimeType="image/svg+xml",
+            durationSeconds=artifact.duration_seconds,
+            videoStyle=style,
+            knowledgePoint=topic,
+        )
 
     def _build_document(self, *, params: dict, snapshot: SystemSnapshot) -> GeneratedAsset:
         title = f"{params.get('query', '学习资源')}导学文档"
@@ -675,7 +788,9 @@ class ResourceGenerationService:
                     audio_format="mp3",
                 )
             except Exception as exc:
-                raise RuntimeError("Video TTS generation failed") from exc
+                raise RuntimeError(
+                    f"Video TTS generation failed: {type(exc).__name__}: {exc}"
+                ) from exc
             params["tts_audio_bytes"] = tts_audio_bytes
         audio_path.write_bytes(tts_audio_bytes)
 

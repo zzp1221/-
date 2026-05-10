@@ -14,6 +14,7 @@
 *.env.test.local
 *.env.production.local
 
+
 # Keep templates
 !.env.example
 !.env.template
@@ -310,6 +311,8 @@ docker-compose.override.yml
 # ============================================================
 docs/
 uploads/
+.agents/
+.tests/
 user_uploads/
 sandbox-temp/
 temp/

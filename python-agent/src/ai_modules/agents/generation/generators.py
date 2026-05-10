@@ -11,6 +11,7 @@ from typing import Any
 
 from src.ai_modules.agents.base import PlaceholderAgent
 from src.ai_modules.agents.common_agents import CriticAgent, SafetyAgent
+from src.ai_modules.async_utils import cancel_and_await
 from src.ai_modules.config import get_settings
 from src.ai_modules.generation import ResourceGenerationService
 from src.ai_modules.llms import GenerationToolLLMClientFactory
@@ -67,6 +68,7 @@ class _BaseGenerationAgent(PlaceholderAgent):
     ) -> AsyncIterator[SSEEvent]:
         del service_type
         next_seq = seq
+        final_output: dict[str, Any] | None = None
         final_output_task = asyncio.create_task(
             self._run_agent_core_loop(
                 task_id=task_id,
@@ -75,29 +77,34 @@ class _BaseGenerationAgent(PlaceholderAgent):
                 system_prompt=system_prompt,
             )
         )
-        while not final_output_task.done():
-            try:
-                final_output = await asyncio.wait_for(
-                    asyncio.shield(final_output_task),
-                    timeout=self.heartbeat_interval_seconds,
-                )
-                break
-            except TimeoutError:
-                yield ProgressSSEEvent(
-                    taskId=task_id,
-                    traceId=trace_id,
-                    seq=next_seq,
-                    payload=ProgressPayload(
-                        stage=self.stage_name,
-                        percent=70,
-                        message="资源生成仍在执行中，请稍候",
-                    ),
-                )
-                next_seq += 1
-        else:
-            final_output = await final_output_task
+        try:
+            while not final_output_task.done():
+                try:
+                    final_output = await asyncio.wait_for(
+                        asyncio.shield(final_output_task),
+                        timeout=self.heartbeat_interval_seconds,
+                    )
+                    break
+                except TimeoutError:
+                    yield ProgressSSEEvent(
+                        taskId=task_id,
+                        traceId=trace_id,
+                        seq=next_seq,
+                        payload=ProgressPayload(
+                            stage=self.stage_name,
+                            percent=70,
+                            message="资源生成仍在执行中，请稍候",
+                        ),
+                    )
+                    next_seq += 1
+            else:
+                final_output = await final_output_task
+        except asyncio.CancelledError:
+            await cancel_and_await(final_output_task)
+            raise
 
-        final_output = final_output if "final_output" in locals() else await final_output_task
+        if final_output is None:
+            final_output = await final_output_task
         asset = final_output["asset"]
         critic_review = final_output["criticReview"]
         safety_review = final_output["safetyReview"]
@@ -235,9 +242,7 @@ class _BaseGenerationAgent(PlaceholderAgent):
 
         async def operation() -> dict[str, Any]:
             if self.asset_type == "VIDEO":
-                asset = await asyncio.to_thread(
-                    self.generation_service.build_asset,
-                    asset_type=self.asset_type,
+                asset = await self.generation_service.build_video_asset(
                     params=build_params,
                     snapshot=snapshot,
                 )
@@ -544,29 +549,35 @@ class VideoGenerationAgent(_BaseGenerationAgent):
                 system_prompt=system_prompt,
             )
         )
-        while not final_output_task.done():
-            try:
-                final_output = await asyncio.wait_for(
-                    asyncio.shield(final_output_task),
-                    timeout=self.heartbeat_interval_seconds,
-                )
-                break
-            except TimeoutError:
-                yield ProgressSSEEvent(
-                    taskId=task_id,
-                    traceId=trace_id,
-                    seq=current_seq,
-                    payload=ProgressPayload(
-                        stage=self.stage_name,
-                        percent=85,
-                        message="视频资源仍在生成中，请稍候",
-                    ),
-                )
-                current_seq += 1
-        else:
-            final_output = await final_output_task
+        final_output: dict[str, Any] | None = None
+        try:
+            while not final_output_task.done():
+                try:
+                    final_output = await asyncio.wait_for(
+                        asyncio.shield(final_output_task),
+                        timeout=self.heartbeat_interval_seconds,
+                    )
+                    break
+                except TimeoutError:
+                    yield ProgressSSEEvent(
+                        taskId=task_id,
+                        traceId=trace_id,
+                        seq=current_seq,
+                        payload=ProgressPayload(
+                            stage=self.stage_name,
+                            percent=85,
+                            message="视频资源仍在生成中，请稍候",
+                        ),
+                    )
+                    current_seq += 1
+            else:
+                final_output = await final_output_task
+        except asyncio.CancelledError:
+            await cancel_and_await(final_output_task)
+            raise
 
-        final_output = final_output if "final_output" in locals() else await final_output_task
+        if final_output is None:
+            final_output = await final_output_task
         asset = final_output["asset"]
         critic_review = final_output["criticReview"]
         safety_review = final_output["safetyReview"]

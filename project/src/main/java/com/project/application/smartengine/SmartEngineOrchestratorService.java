@@ -175,15 +175,17 @@ public class SmartEngineOrchestratorService {
             "currentStage", task.getCurrentStage() == null ? "" : task.getCurrentStage()
         ));
 
+        TaskStreamEventPayload cancelPayload = taskStateMachineService.markCancelled(taskId);
+        sseEmitterService.cancelTask(taskId, cancelPayload);
+
         pythonAgentClient.cancel(taskId.toString());
 
-        Thread thread = runningThreads.remove(taskId);
+        // The actual cancellation must happen inside the Python runtime; interrupt only helps
+        // unblock the local worker thread if it is waiting on I/O or retries.
+        Thread thread = runningThreads.get(taskId);
         if (thread != null) {
             thread.interrupt();
         }
-
-        TaskStreamEventPayload cancelPayload = taskStateMachineService.markCancelled(taskId);
-        sseEmitterService.cancelTask(taskId, cancelPayload);
     }
 
     private void executeTask(UUID taskId, SmartEngineInvocation invocation) {

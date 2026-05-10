@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import time
 from typing import Any, ClassVar, Protocol
@@ -170,6 +171,7 @@ class OpenAICompatibleStructuredGenerator:
     """OpenAI-compatible structured generator for the configured providers."""
 
     _shared_clients: ClassVar[dict[str, httpx.Client]] = {}
+    _shared_async_clients: ClassVar[dict[str, httpx.AsyncClient]] = {}
 
     def __init__(
         self,
@@ -204,6 +206,26 @@ class OpenAICompatibleStructuredGenerator:
             self._shared_clients[client_key] = client
         return client
 
+    def _get_async_client(self) -> httpx.AsyncClient:
+        client_key = f"{self.provider_name}:{self.base_url}"
+        client = self._shared_async_clients.get(client_key)
+        if client is None or client.is_closed:
+            client = httpx.AsyncClient(
+                timeout=60.0,
+                limits=httpx.Limits(max_connections=20, max_keepalive_connections=10),
+            )
+            self._shared_async_clients[client_key] = client
+        return client
+
+    @classmethod
+    async def close_async_clients(cls) -> None:
+        """Close shared async HTTP clients during application shutdown."""
+
+        clients = list(cls._shared_async_clients.values())
+        cls._shared_async_clients.clear()
+        for client in clients:
+            await client.aclose()
+
     def _post_chat_completion(
         self,
         *,
@@ -226,6 +248,40 @@ class OpenAICompatibleStructuredGenerator:
         if response_format is not None:
             payload["response_format"] = response_format
         response = client.post(
+            f"{self.base_url}/chat/completions",
+            headers={
+                "Authorization": f"Bearer {self.api_key}",
+                "Content-Type": "application/json",
+            },
+            json=payload,
+        )
+        response.raise_for_status()
+        data = response.json()
+        self._record_usage(data)
+        return data
+
+    async def _post_chat_completion_async(
+        self,
+        *,
+        messages: list[dict[str, Any]],
+        temperature: float = 0.3,
+        max_tokens: int | None = None,
+        response_format: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        if not self.api_key:
+            raise RuntimeError(f"missing {self.provider_name} api key")
+        client = self._get_async_client()
+        payload: dict[str, Any] = {
+            "model": self.model_name,
+            "messages": messages,
+            "temperature": temperature,
+            "stream": False,
+        }
+        if max_tokens is not None:
+            payload["max_tokens"] = max_tokens
+        if response_format is not None:
+            payload["response_format"] = response_format
+        response = await client.post(
             f"{self.base_url}/chat/completions",
             headers={
                 "Authorization": f"Bearer {self.api_key}",
@@ -400,6 +456,32 @@ class OpenAICompatibleStructuredGenerator:
             )
         )
 
+    async def generate_video_script_async(
+        self,
+        *,
+        title: str,
+        topic: str,
+        snapshot: dict[str, Any],
+        sources: list[dict[str, Any]],
+        duration_seconds: int,
+        style: str,
+    ) -> VideoScriptPayload:
+        return VideoScriptPayload.model_validate(
+            await self._call_and_parse_json_async(
+                span_name=f"{self.provider_name}.generate_video_script",
+                system_prompt=build_video_script_system_prompt(),
+                user_prompt=build_video_script_user_prompt(
+                    title=title,
+                    topic=topic,
+                    snapshot=snapshot,
+                    sources=sources,
+                    duration_seconds=duration_seconds,
+                    style=style,
+                ),
+                max_tokens=2200,
+            )
+        )
+
     def _call_and_parse_json(
         self,
         *,
@@ -434,6 +516,43 @@ class OpenAICompatibleStructuredGenerator:
                 if attempt >= self.max_retries:
                     break
                 time.sleep(self.backoff_seconds * (2**attempt))
+
+        raise RuntimeError(f"{self.provider_name} structured generation failed: {last_error}")
+
+    async def _call_and_parse_json_async(
+        self,
+        *,
+        span_name: str,
+        system_prompt: str,
+        user_prompt: str,
+        max_tokens: int | None = None,
+    ) -> dict[str, Any]:
+        last_error: Exception | None = None
+        for attempt in range(self.max_retries + 1):
+            try:
+                with TRACER.start_as_current_span(span_name):
+                    response = await self._post_chat_completion_async(
+                        messages=[
+                            {"role": "system", "content": system_prompt},
+                            {"role": "user", "content": user_prompt},
+                        ],
+                        temperature=0.3,
+                        max_tokens=max_tokens,
+                        response_format={"type": "json_object"},
+                    )
+                payload = self._extract_message_content(response)
+                return self._extract_json(payload)
+            except (ValidationError, ValueError, RuntimeError, KeyError, TypeError, httpx.HTTPError) as exc:
+                last_error = exc
+                LOGGER.warning(
+                    "%s structured generation attempt %s failed: %s",
+                    self.provider_name,
+                    attempt + 1,
+                    exc,
+                )
+                if attempt >= self.max_retries:
+                    break
+                await asyncio.sleep(self.backoff_seconds * (2**attempt))
 
         raise RuntimeError(f"{self.provider_name} structured generation failed: {last_error}")
 
@@ -720,6 +839,28 @@ class ContentGenerationChain:
         with TRACER.start_as_current_span("content_chain.generate_video_script"):
             del fallback_builder
             return self.primary_generator.generate_video_script(
+                title=title,
+                topic=topic,
+                snapshot=snapshot,
+                sources=sources,
+                duration_seconds=duration_seconds,
+                style=style,
+            )
+
+    async def generate_video_script_async(
+        self,
+        *,
+        title: str,
+        topic: str,
+        snapshot: dict[str, Any],
+        sources: list[dict[str, Any]],
+        duration_seconds: int,
+        style: str,
+        fallback_builder: Any,
+    ) -> VideoScriptPayload:
+        with TRACER.start_as_current_span("content_chain.generate_video_script"):
+            del fallback_builder
+            return await self.primary_generator.generate_video_script_async(
                 title=title,
                 topic=topic,
                 snapshot=snapshot,

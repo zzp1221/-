@@ -7,6 +7,7 @@ from collections.abc import AsyncIterator
 from typing import Any
 
 from src.ai_modules.agents.base import PlaceholderAgent
+from src.ai_modules.async_utils import cancel_and_await
 from src.ai_modules.llms import (
     HeuristicSubjectiveJudgeEvaluator,
     JudgeLLMClientFactory,
@@ -74,6 +75,7 @@ class JudgeAgent(PlaceholderAgent):
         del service_type, snapshot
         user_id = str(params.get("userId") or "00000000-0000-0000-0000-000000000001")
         next_seq = seq
+        judge_result: dict[str, Any] | None = None
         judge_result_task = asyncio.create_task(
             self._run_agent_core_loop(
                 task_id=task_id,
@@ -82,29 +84,34 @@ class JudgeAgent(PlaceholderAgent):
                 system_prompt=system_prompt,
             )
         )
-        while not judge_result_task.done():
-            try:
-                judge_result = await asyncio.wait_for(
-                    asyncio.shield(judge_result_task),
-                    timeout=self.heartbeat_interval_seconds,
-                )
-                break
-            except TimeoutError:
-                yield ProgressSSEEvent(
-                    taskId=task_id,
-                    traceId=trace_id,
-                    seq=next_seq,
-                    payload=ProgressPayload(
-                        stage=self.stage_name,
-                        percent=70,
-                        message="判题仍在执行中，请稍候",
-                    ),
-                )
-                next_seq += 1
-        else:
-            judge_result = await judge_result_task
+        try:
+            while not judge_result_task.done():
+                try:
+                    judge_result = await asyncio.wait_for(
+                        asyncio.shield(judge_result_task),
+                        timeout=self.heartbeat_interval_seconds,
+                    )
+                    break
+                except TimeoutError:
+                    yield ProgressSSEEvent(
+                        taskId=task_id,
+                        traceId=trace_id,
+                        seq=next_seq,
+                        payload=ProgressPayload(
+                            stage=self.stage_name,
+                            percent=70,
+                            message="判题仍在执行中，请稍候",
+                        ),
+                    )
+                    next_seq += 1
+            else:
+                judge_result = await judge_result_task
+        except asyncio.CancelledError:
+            await cancel_and_await(judge_result_task)
+            raise
 
-        judge_result = judge_result if "judge_result" in locals() else await judge_result_task
+        if judge_result is None:
+            judge_result = await judge_result_task
         params["judgeResult"] = judge_result
         params["profileSource"] = "PRACTICE"
 

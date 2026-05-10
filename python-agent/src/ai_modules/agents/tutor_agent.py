@@ -58,12 +58,24 @@ class TutorAgent(PlaceholderAgent):
     ) -> AsyncIterator[SSEEvent]:
         del service_type
         conversation = self._extract_conversation(params)
+        user_query = self._resolve_user_query(params)
         compaction_result = self.compactor.compact(conversation)
         params["compactedConversation"] = compaction_result.compacted_messages
         params["structuredConversationSummary"] = compaction_result.structured_summary.model_dump(
             by_alias=True
         )
         params["conversationSummary"] = compaction_result.summary
+        recent_dialogue = self._build_recent_dialogue_context(
+            conversation=conversation,
+            user_query=user_query,
+        )
+        input_mode = self._classify_input_mode(
+            user_query=user_query,
+            recent_dialogue=recent_dialogue,
+        )
+        recent_dialogue["inputMode"] = input_mode
+        params["recentDialogueContext"] = recent_dialogue
+        params["inputMode"] = input_mode
 
         persisted_summary = await self._load_persisted_summary(
             conversation_id=self._conversation_id(params, task_id),
@@ -81,7 +93,7 @@ class TutorAgent(PlaceholderAgent):
             conversationId=self._conversation_id(params, task_id),
             turnId=f"{task_id}-turn",
             pedagogyStrategy=strategy,
-            nextAction="ask_follow_up",
+            nextAction=self._resolve_next_action(input_mode),
         )
 
         yield ProgressSSEEvent(
@@ -101,6 +113,21 @@ class TutorAgent(PlaceholderAgent):
         )
 
         current_seq = seq + 1
+        quick_reply = self._build_short_circuit_reply(
+            user_query=user_query,
+            input_mode=input_mode,
+            recent_dialogue=recent_dialogue,
+        )
+        if quick_reply:
+            yield ResultChunkSSEEvent(
+                taskId=task_id,
+                traceId=trace_id,
+                seq=current_seq,
+                payload=ResultChunkPayload(text=quick_reply, stage="tutoring"),
+                dialogState=dialog_state,
+            )
+            return
+
         streamed = False
         try:
             async for token in self._try_direct_chat_stream(
@@ -178,13 +205,7 @@ class TutorAgent(PlaceholderAgent):
         persisted_summary: dict[str, Any] | None,
     ) -> str:
         del snapshot
-        user_query = str(
-            params.get("query")
-            or params.get("message")
-            or params.get("rewrittenQuery")
-            or params.get("structuredConversationSummary", {}).get("lastUserMessage")
-            or "当前主题"
-        )
+        user_query = self._resolve_user_query(params)
         try:
             return await self._try_direct_chat(
                 system_prompt=system_prompt,
@@ -216,18 +237,27 @@ class TutorAgent(PlaceholderAgent):
         context_data = self._tool_read_compacted_context(tool_input={}, params=params)
         evidence_data = self._tool_read_retrieval_evidence(tool_input={}, params=params)
         profile_data = self._tool_read_profile_context(tool_input={}, params=params)
+        recent_dialogue_data = self._tool_read_recent_dialogue_context(
+            tool_input={}, params=params,
+        )
+        input_mode = self._resolve_input_mode(params=params, recent_dialogue=recent_dialogue_data)
         enriched_message = self._build_enriched_message(
             user_query=user_query,
             memory=memory_data,
             context=context_data,
             evidence=evidence_data,
             profile=profile_data,
+            recent_dialogue=recent_dialogue_data,
+            input_mode=input_mode,
+        )
+        llm_messages = self._build_llm_messages(
+            system_prompt=system_prompt,
+            runtime_context=enriched_message,
+            recent_dialogue=recent_dialogue_data,
+            user_query=user_query,
         )
         response = await client.chat_completion(
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": enriched_message},
-            ],
+            messages=llm_messages,
         )
         message = client.extract_message(response)
         return client.extract_content(message)
@@ -241,34 +271,37 @@ class TutorAgent(PlaceholderAgent):
     ):
         """Stream tokens from the LLM for real-time tutoring display."""
         client = self.llm_client.client
-        user_query = str(
-            params.get("query")
-            or params.get("message")
-            or params.get("rewrittenQuery")
-            or params.get("structuredConversationSummary", {}).get("lastUserMessage")
-            or "当前主题"
-        )
+        user_query = self._resolve_user_query(params)
         memory_data = self._tool_load_conversation_memory(
             tool_input={}, persisted_summary=persisted_summary,
         )
         context_data = self._tool_read_compacted_context(tool_input={}, params=params)
         evidence_data = self._tool_read_retrieval_evidence(tool_input={}, params=params)
         profile_data = self._tool_read_profile_context(tool_input={}, params=params)
+        recent_dialogue_data = self._tool_read_recent_dialogue_context(
+            tool_input={}, params=params,
+        )
+        input_mode = self._resolve_input_mode(params=params, recent_dialogue=recent_dialogue_data)
         enriched_message = self._build_enriched_message(
             user_query=user_query,
             memory=memory_data,
             context=context_data,
             evidence=evidence_data,
             profile=profile_data,
+            recent_dialogue=recent_dialogue_data,
+            input_mode=input_mode,
+        )
+        llm_messages = self._build_llm_messages(
+            system_prompt=system_prompt,
+            runtime_context=enriched_message,
+            recent_dialogue=recent_dialogue_data,
+            user_query=user_query,
         )
 
         # Accumulate tokens in batches of 3 for smoother UI updates
         batch: list[str] = []
         async for token in client.chat_completion_stream(
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": enriched_message},
-            ],
+            messages=llm_messages,
         ):
             batch.append(token)
             if len(batch) >= 3:
@@ -285,12 +318,17 @@ class TutorAgent(PlaceholderAgent):
         context: dict[str, Any],
         evidence: dict[str, Any],
         profile: dict[str, Any],
+        recent_dialogue: dict[str, Any],
+        input_mode: str,
     ) -> str:
         parts: list[str] = []
         topic_focus = memory.get("topicFocus") or context.get("topicFocus") or []
         learner_goal = memory.get("learnerGoal") or context.get("learnerGoal") or ""
         known_gaps = memory.get("knownGaps") or context.get("knownGaps") or []
         unresolved = memory.get("unresolvedQuestions") or context.get("unresolvedQuestions") or []
+        teaching_state = recent_dialogue.get("teachingState", {})
+        recent_messages = recent_dialogue.get("recentMessages", [])
+        parts.append(f"当前输入模式：{input_mode}")
         # Sigma: surface recorded misconceptions for targeted counter-example design
         recorded_misconceptions = (
             profile.get("misconceptions")
@@ -316,6 +354,22 @@ class TutorAgent(PlaceholderAgent):
             parts.append(f"已知薄弱点：{', '.join(known_gaps)}")
         if unresolved:
             parts.append(f"未解决问题：{', '.join(unresolved)}")
+        if teaching_state:
+            last_assistant_question = str(teaching_state.get("lastAssistantQuestion") or "").strip()
+            current_user_intent = str(teaching_state.get("currentUserIntent") or "").strip()
+            if last_assistant_question:
+                parts.append(f"上一轮导师追问：{last_assistant_question}")
+            if teaching_state.get("awaitingUserAnswer"):
+                parts.append("当前教学状态：导师上一轮刚提出问题，当前更可能在等待学生作答。")
+            if current_user_intent == "answer_previous_question":
+                parts.append("当前轮意图：用户更像是在回答上一轮问题，不要把它当成新的话题开场。")
+        if recent_messages:
+            parts.append("最近对话片段（优先用于承接上下文）：")
+            for item in recent_messages:
+                role = "导师" if item.get("role") == "assistant" else "学生"
+                content = str(item.get("content") or "").strip()
+                if content:
+                    parts.append(f"  - {role}：{content}")
         if recorded_misconceptions:
             parts.append("‼️ 已记录的错误概念（必须用反例瓦解，勿直接纠正）：")
             for mc in recorded_misconceptions[:5]:
@@ -338,15 +392,14 @@ class TutorAgent(PlaceholderAgent):
                 title = str(doc.get("title") or "")
                 snippet = str(doc.get("evidence") or doc.get("snippet") or "")[:200]
                 parts.append(f"  {i}. {title}: {snippet}")
-        parts.append(f"用户问题：{user_query}")
-        parts.append(
-            "请按 Sigma 教学流程处理："
-            "1) 先用问题诊断学生的当前理解（不直接解释）；"
-            "2) 根据回答决定下一步（见系统提示词中的映射表）；"
-            "3) 如果涉及已记录的错误概念，设计反例让学生自己发现矛盾；"
-            "4) 每 3-4 轮问答穿插一个需要用到已掌握概念的交叉练习；"
-            "5) 以一个问题结尾，引导学生继续思考。"
-        )
+        if input_mode == "small_talk":
+            parts.append("处理要求：这是寒暄、感谢或结束信号。自然简短回复，不进入教学诊断。")
+        elif input_mode == "answer_previous_question":
+            parts.append("处理要求：用户正在回答上一轮问题。先承接这句回答，指出其中合理部分，再继续推进，不要重新开题。")
+        elif input_mode == "clear_question":
+            parts.append("处理要求：用户提出了明确问题。先给一个简洁直接的回答，再按需要补充一个追问或例子。")
+        else:
+            parts.append("处理要求：只有在当前信息不足以作答时，才做一次简短澄清；禁止机械地追问“这是什么意思/什么场景”。")
         return "\n\n".join(parts)
 
     async def _run_with_agent_core_loop(
@@ -388,6 +441,16 @@ class TutorAgent(PlaceholderAgent):
             description="Read the retrieved evidence supporting the tutoring answer.",
             parameters={"type": "object", "properties": {}, "additionalProperties": False},
         )
+        tool_registry.register(
+            name="read_recent_dialogue_context",
+            fn=lambda tool_input: self._tool_read_recent_dialogue_context(
+                tool_input=tool_input,
+                params=params,
+            ),
+            permission_level=PermissionLevel.READ_ONLY,
+            description="Read the recent dialogue turns and teaching state for multi-turn continuity.",
+            parameters={"type": "object", "properties": {}, "additionalProperties": False},
+        )
         core_loop = AgentCoreLoop(
             llm_client=self.llm_client,
             tool_registry=tool_registry,
@@ -400,9 +463,10 @@ class TutorAgent(PlaceholderAgent):
             messages=[
                 {
                     "role": "user",
-                    "content": (
-                        f"请基于当前对话上下文和检索证据，对 `{user_query}` 给出一段辅导回答，"
-                        "并在结尾提出一个追问。"
+                    "content": self._build_agent_core_request(
+                        user_query=user_query,
+                        params=params,
+                        persisted_summary=persisted_summary,
                     ),
                 }
             ],
@@ -509,3 +573,229 @@ class TutorAgent(PlaceholderAgent):
             "cognitiveStyle": profile.get("cognitiveStyle"),
             "preferredResourceTypes": profile.get("preferredResourceTypes", []),
         }
+
+    def _tool_read_recent_dialogue_context(
+        self,
+        *,
+        tool_input: dict[str, Any],
+        params: dict[str, Any],
+    ) -> dict[str, Any]:
+        del tool_input
+        recent_dialogue = params.get("recentDialogueContext", {})
+        return recent_dialogue if isinstance(recent_dialogue, dict) else {}
+
+    def _resolve_user_query(self, params: dict[str, Any]) -> str:
+        return str(
+            params.get("query")
+            or params.get("message")
+            or params.get("rewrittenQuery")
+            or params.get("structuredConversationSummary", {}).get("lastUserMessage")
+            or "当前主题"
+        )
+
+    def _resolve_input_mode(
+        self,
+        *,
+        params: dict[str, Any],
+        recent_dialogue: dict[str, Any],
+    ) -> str:
+        mode = params.get("inputMode")
+        if isinstance(mode, str) and mode.strip():
+            return mode
+        return str(recent_dialogue.get("inputMode") or "clear_question")
+
+    def _build_recent_dialogue_context(
+        self,
+        *,
+        conversation: list[dict[str, Any]],
+        user_query: str,
+    ) -> dict[str, Any]:
+        recent_messages = self._select_recent_turns(conversation=conversation, user_query=user_query)
+        teaching_state = self._infer_teaching_state(
+            recent_messages=recent_messages,
+            user_query=user_query,
+        )
+        return {
+            "recentMessages": recent_messages,
+            "teachingState": teaching_state,
+        }
+
+    def _classify_input_mode(
+        self,
+        *,
+        user_query: str,
+        recent_dialogue: dict[str, Any],
+    ) -> str:
+        normalized = "".join(str(user_query).lower().split())
+        if not normalized:
+            return "small_talk"
+        if self._is_small_talk_message(normalized):
+            return "small_talk"
+        teaching_state = recent_dialogue.get("teachingState", {})
+        if teaching_state.get("awaitingUserAnswer"):
+            return "answer_previous_question"
+        if self._looks_like_question(user_query):
+            return "clear_question"
+        if len(normalized) <= 12:
+            return "ambiguous_topic"
+        return "clear_question"
+
+    def _select_recent_turns(
+        self,
+        *,
+        conversation: list[dict[str, Any]],
+        user_query: str,
+    ) -> list[dict[str, str]]:
+        normalized_query = "".join(str(user_query).split())
+        trimmed = list(conversation)
+        if trimmed:
+            last_item = trimmed[-1]
+            last_content = "".join(str(last_item.get("content") or "").split())
+            if last_item.get("role") == "user" and last_content == normalized_query:
+                trimmed = trimmed[:-1]
+        recent_turns = trimmed[-4:]
+        selected: list[dict[str, str]] = []
+        for item in recent_turns:
+            role = str(item.get("role") or "user")
+            content = self._truncate_dialogue_text(str(item.get("content") or ""))
+            if role not in {"user", "assistant"} or not content:
+                continue
+            selected.append({"role": role, "content": content})
+        return selected
+
+    def _infer_teaching_state(
+        self,
+        *,
+        recent_messages: list[dict[str, str]],
+        user_query: str,
+    ) -> dict[str, Any]:
+        last_assistant_question = ""
+        for item in reversed(recent_messages):
+            if item.get("role") == "assistant":
+                content = str(item.get("content") or "").strip()
+                if self._looks_like_question(content):
+                    last_assistant_question = content
+                    break
+        normalized_query = str(user_query).strip()
+        likely_answer = bool(normalized_query) and not self._looks_like_question(normalized_query)
+        awaiting_user_answer = bool(last_assistant_question) and likely_answer
+        return {
+            "lastAssistantQuestion": last_assistant_question,
+            "awaitingUserAnswer": awaiting_user_answer,
+            "currentUserIntent": "answer_previous_question" if awaiting_user_answer else "ask_or_shift_topic",
+        }
+
+    def _build_llm_messages(
+        self,
+        *,
+        system_prompt: str,
+        runtime_context: str,
+        recent_dialogue: dict[str, Any],
+        user_query: str,
+    ) -> list[dict[str, str]]:
+        system_content = system_prompt
+        if runtime_context.strip():
+            system_content = f"{system_prompt}\n\n# 运行时上下文\n{runtime_context}"
+        messages: list[dict[str, str]] = [{"role": "system", "content": system_content}]
+        for item in recent_dialogue.get("recentMessages", []):
+            role = str(item.get("role") or "")
+            content = str(item.get("content") or "").strip()
+            if role in {"user", "assistant"} and content:
+                messages.append({"role": role, "content": content})
+        messages.append({"role": "user", "content": user_query})
+        return messages
+
+    def _build_agent_core_request(
+        self,
+        *,
+        user_query: str,
+        params: dict[str, Any],
+        persisted_summary: dict[str, Any] | None,
+    ) -> str:
+        enriched_message = self._build_enriched_message(
+            user_query=user_query,
+            memory=self._tool_load_conversation_memory(
+                tool_input={},
+                persisted_summary=persisted_summary,
+            ),
+            context=self._tool_read_compacted_context(tool_input={}, params=params),
+            evidence=self._tool_read_retrieval_evidence(tool_input={}, params=params),
+            profile=self._tool_read_profile_context(tool_input={}, params=params),
+            recent_dialogue=self._tool_read_recent_dialogue_context(tool_input={}, params=params),
+            input_mode=self._resolve_input_mode(
+                params=params,
+                recent_dialogue=self._tool_read_recent_dialogue_context(tool_input={}, params=params),
+            ),
+        )
+        return (
+            "请基于以下结构化上下文给出自然、贴合输入类型的回答。"
+            "如果用户是在回答上一轮问题，要先承接；如果是问候或感谢，就自然回复；"
+            "只有真的不清楚时才澄清。除非适合继续教学，否则不要强行追问。\n\n"
+            f"{enriched_message}"
+        )
+
+    def _build_short_circuit_reply(
+        self,
+        *,
+        user_query: str,
+        input_mode: str,
+        recent_dialogue: dict[str, Any],
+    ) -> str:
+        if input_mode != "small_talk":
+            return ""
+        normalized = "".join(str(user_query).lower().split())
+        if any(keyword in normalized for keyword in ("谢谢", "感谢")):
+            return "不客气。如果你想继续学 Java、并发，或者别的知识点，直接发我就行。"
+        if any(keyword in normalized for keyword in ("再见", "拜拜")):
+            return "好，先这样。有需要随时来找我。"
+        if any(keyword in normalized for keyword in ("你是谁", "你能做什么")):
+            return "我是智学引擎，可以陪你答疑、讲概念、拆例子，也能帮你做学习资源和路径规划。"
+        if any(keyword in normalized for keyword in ("在吗",)):
+            return "在的。你可以直接发问题、概念或题目，我来帮你一起拆解。"
+        if recent_dialogue.get("recentMessages"):
+            return "我在，继续说就行。你也可以直接接着上一轮的问题回答。"
+        return "你好，很高兴见到你。你可以直接告诉我想学什么，或者把具体问题发过来。"
+
+    def _resolve_next_action(self, input_mode: str) -> str:
+        if input_mode == "small_talk":
+            return "wait_user"
+        if input_mode == "answer_previous_question":
+            return "continue_guidance"
+        return "ask_follow_up"
+
+    def _looks_like_question(self, text: str) -> bool:
+        normalized = str(text).strip()
+        if not normalized:
+            return False
+        if "？" in normalized or "?" in normalized:
+            return True
+        question_markers = ("什么", "怎么", "如何", "为什么", "哪些", "哪个", "能否", "可否", "吗")
+        return any(marker in normalized for marker in question_markers)
+
+    def _is_small_talk_message(self, normalized: str) -> bool:
+        keywords = (
+            "你好",
+            "您好",
+            "hi",
+            "hello",
+            "哈喽",
+            "在吗",
+            "早上好",
+            "中午好",
+            "晚上好",
+            "谢谢",
+            "感谢",
+            "再见",
+            "拜拜",
+            "你是谁",
+            "你能做什么",
+        )
+        if normalized in keywords:
+            return True
+        return len(normalized) <= 12 and any(keyword in normalized for keyword in keywords)
+
+    def _truncate_dialogue_text(self, text: str, max_length: int = 220) -> str:
+        normalized = " ".join(str(text).split())
+        if len(normalized) <= max_length:
+            return normalized
+        return normalized[: max_length - 1].rstrip() + "…"

@@ -5,7 +5,16 @@ import pytest
 import server
 from src.ai_modules.config import Settings
 from src.ai_modules.models import EngineStreamRequest
-from src.ai_modules.models.events import ProgressPayload, ProgressSSEEvent
+from src.ai_modules.models.events import (
+    DonePayload,
+    DoneSSEEvent,
+    ProgressPayload,
+    ProgressSSEEvent,
+    ResourceFilePayload,
+    ResourceFileSSEEvent,
+    ResultChunkPayload,
+    ResultChunkSSEEvent,
+)
 
 
 def test_health_endpoint(client) -> None:
@@ -31,7 +40,67 @@ def test_sse_event_serialization() -> None:
     assert '"taskId": "task_001"' in serialized
 
 
-def test_stream_endpoint_returns_expected_event_order(client) -> None:
+def test_stream_endpoint_returns_expected_event_order(client, monkeypatch) -> None:
+    class StubSupervisor:
+        def resolve_route(self, service_type, params):
+            del service_type, params
+            return None
+
+        async def stream(self, request, cancelled=None):
+            del cancelled
+            yield ProgressSSEEvent(
+                taskId=request.task_id,
+                traceId=request.trace_id,
+                seq=1,
+                payload=ProgressPayload(stage="accepted", percent=10, message="任务已接收"),
+            )
+            yield ResultChunkSSEEvent(
+                taskId=request.task_id,
+                traceId=request.trace_id,
+                seq=2,
+                payload=ResultChunkPayload(text="开始生成资源"),
+            )
+            yield ProgressSSEEvent(
+                taskId=request.task_id,
+                traceId=request.trace_id,
+                seq=3,
+                payload=ProgressPayload(stage="generation", percent=60, message="生成中"),
+            )
+            yield ResultChunkSSEEvent(
+                taskId=request.task_id,
+                traceId=request.trace_id,
+                seq=4,
+                payload=ResultChunkPayload(text="批判审查通过"),
+            )
+            yield ResultChunkSSEEvent(
+                taskId=request.task_id,
+                traceId=request.trace_id,
+                seq=5,
+                payload=ResultChunkPayload(text="安全审查通过"),
+            )
+            yield ResourceFileSSEEvent(
+                taskId=request.task_id,
+                traceId=request.trace_id,
+                seq=6,
+                payload=ResourceFilePayload(
+                    assetType="DOCUMENT",
+                    title="联合索引导学文档",
+                    summary="结构化导学",
+                    displayMode="download",
+                    fileName="document.md",
+                    localPath="sandbox/document.md",
+                    mimeType="text/markdown",
+                ),
+            )
+            yield DoneSSEEvent(
+                taskId=request.task_id,
+                traceId=request.trace_id,
+                seq=7,
+                payload=DonePayload(status="SUCCESS", summary="资源生成完成"),
+            )
+
+    monkeypatch.setattr(server, "SUPERVISOR", StubSupervisor())
+
     payload = {
         "serviceType": "RESOURCE_GENERATION",
         "params": {"resourceType": "DOCUMENT"},
@@ -178,8 +247,8 @@ def test_stream_endpoint_emits_error_and_failed_done_when_supervisor_raises(clie
             del service_type, params
             return None
 
-        async def stream(self, request):
-            del request
+        async def stream(self, request, cancelled=None):
+            del request, cancelled
             raise RuntimeError("boom")
             yield  # pragma: no cover
 
