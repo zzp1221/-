@@ -19,10 +19,21 @@ public class TaskExecutionConfiguration {
 
     @Bean
     public TaskExecutor smartEngineTaskExecutor() {
+        return buildExecutor("smart-engine-", 16);
+    }
+
+    @Bean
+    public TaskExecutor conversationTaskExecutor() {
+        // Reserve dedicated capacity for tutoring streams so they do not queue
+        // behind long-running smart-engine tasks.
+        return buildExecutor("conversation-", 8);
+    }
+
+    private TaskExecutor buildExecutor(String threadNamePrefix, int concurrencyLimit) {
         SimpleAsyncTaskExecutor executor = new SimpleAsyncTaskExecutor();
         executor.setVirtualThreads(true);
-        executor.setConcurrencyLimit(16);
-        executor.setThreadNamePrefix("smart-engine-");
+        executor.setConcurrencyLimit(concurrencyLimit);
+        executor.setThreadNamePrefix(threadNamePrefix);
         return executor;
     }
 }

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import time
 from typing import Any, ClassVar, Protocol
@@ -172,6 +173,8 @@ class OpenAICompatibleStructuredGenerator:
 
     _shared_clients: ClassVar[dict[str, httpx.Client]] = {}
     _shared_async_clients: ClassVar[dict[str, httpx.AsyncClient]] = {}
+    _response_cache: ClassVar[dict[str, tuple[float, BaseModel]]] = {}
+    CACHE_TTL_SECONDS: ClassVar[int] = 24 * 60 * 60
 
     def __init__(
         self,
@@ -485,6 +488,15 @@ class OpenAICompatibleStructuredGenerator:
         user_prompt: str,
         max_tokens: int | None = None,
     ) -> Any:
+        cache_key = self._build_cache_key(
+            model_cls=model_cls,
+            system_prompt=system_prompt,
+            user_prompt=user_prompt,
+            max_tokens=max_tokens,
+        )
+        cached = self._get_cached_response(cache_key)
+        if cached is not None:
+            return cached
         last_error: Exception | None = None
         for attempt in range(self.max_retries + 1):
             try:
@@ -494,7 +506,9 @@ class OpenAICompatibleStructuredGenerator:
                     user_prompt=user_prompt,
                     max_tokens=max_tokens,
                 )
-                return model_cls.model_validate(payload)
+                validated = model_cls.model_validate(payload)
+                self._store_cached_response(cache_key, validated)
+                return validated
             except ValidationError as exc:
                 last_error = exc
                 LOGGER.warning(
@@ -521,6 +535,15 @@ class OpenAICompatibleStructuredGenerator:
         user_prompt: str,
         max_tokens: int | None = None,
     ) -> Any:
+        cache_key = self._build_cache_key(
+            model_cls=model_cls,
+            system_prompt=system_prompt,
+            user_prompt=user_prompt,
+            max_tokens=max_tokens,
+        )
+        cached = self._get_cached_response(cache_key)
+        if cached is not None:
+            return cached
         last_error: Exception | None = None
         for attempt in range(self.max_retries + 1):
             try:
@@ -530,7 +553,9 @@ class OpenAICompatibleStructuredGenerator:
                     user_prompt=user_prompt,
                     max_tokens=max_tokens,
                 )
-                return model_cls.model_validate(payload)
+                validated = model_cls.model_validate(payload)
+                self._store_cached_response(cache_key, validated)
+                return validated
             except ValidationError as exc:
                 last_error = exc
                 LOGGER.warning(
@@ -547,6 +572,41 @@ class OpenAICompatibleStructuredGenerator:
         raise RuntimeError(
             f"{self.provider_name} structured validation failed for {model_cls.__name__}: {last_error}"
         ) from last_error
+
+    def _build_cache_key(
+        self,
+        *,
+        model_cls: type[BaseModel],
+        system_prompt: str,
+        user_prompt: str,
+        max_tokens: int | None,
+    ) -> str:
+        return json.dumps(
+            {
+                "provider": self.provider_name,
+                "baseUrl": self.base_url,
+                "model": self.model_name,
+                "modelClass": model_cls.__name__,
+                "systemPrompt": system_prompt,
+                "userPrompt": user_prompt,
+                "maxTokens": max_tokens,
+            },
+            ensure_ascii=False,
+            sort_keys=True,
+        )
+
+    def _get_cached_response(self, cache_key: str) -> BaseModel | None:
+        cached = self._response_cache.get(cache_key)
+        if cached is None:
+            return None
+        cached_at, model = cached
+        if time.time() - cached_at > self.CACHE_TTL_SECONDS:
+            self._response_cache.pop(cache_key, None)
+            return None
+        return model.model_copy(deep=True)
+
+    def _store_cached_response(self, cache_key: str, model: BaseModel) -> None:
+        self._response_cache[cache_key] = (time.time(), model.model_copy(deep=True))
 
     def _call_and_parse_json(
         self,

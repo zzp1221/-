@@ -70,6 +70,7 @@ export default function Layout() {
   const moreMenuRef = useRef<HTMLDivElement>(null);
   const [profilePanelOpen, setProfilePanelOpen] = useState(false);
   const [servicePanelOpen, setServicePanelOpen] = useState(false);
+  const lastOpenedDrawerRef = useRef<'profile' | 'service' | null>(null);
 
   const isAuthenticated = Boolean(currentUser);
 
@@ -198,12 +199,14 @@ export default function Layout() {
   const handleOpenProfilePanel = useCallback(() => {
     setMoreMenuOpen(false);
     closeSidebar();
+    lastOpenedDrawerRef.current = 'profile';
     setProfilePanelOpen(true);
   }, []);
 
   const handleOpenServicePanel = useCallback(() => {
     setMoreMenuOpen(false);
     closeSidebar();
+    lastOpenedDrawerRef.current = 'service';
     setServicePanelOpen(true);
   }, []);
 
@@ -567,6 +570,7 @@ export default function Layout() {
           open={profilePanelOpen}
           currentUser={currentUser}
           onClose={() => setProfilePanelOpen(false)}
+          zIndex={lastOpenedDrawerRef.current === 'profile' ? 41 : 40}
         />
       </Suspense>
 
@@ -575,6 +579,7 @@ export default function Layout() {
           open={servicePanelOpen}
           isAuthenticated={isAuthenticated}
           onClose={() => setServicePanelOpen(false)}
+          zIndex={lastOpenedDrawerRef.current === 'service' ? 41 : 40}
         />
       </Suspense>
     </div>

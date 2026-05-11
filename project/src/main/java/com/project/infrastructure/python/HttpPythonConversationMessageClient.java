@@ -73,12 +73,22 @@ public class HttpPythonConversationMessageClient implements PythonConversationMe
 
     @Override
     public List<ConversationMessageItemResponse> listMessages(UUID conversationId, UUID userId) {
+        return listMessages(conversationId, userId, null, null);
+    }
+
+    @Override
+    public List<ConversationMessageItemResponse> listMessages(UUID conversationId, UUID userId, Integer page, Integer size) {
         try {
-            URI uri = UriComponentsBuilder
+            UriComponentsBuilder builder = UriComponentsBuilder
                 .fromUriString(appProperties.getPythonAgent().getBaseUrl() + "/internal/conversations/" + conversationId + "/messages")
-                .queryParam("userId", userId)
-                .build(true)
-                .toUri();
+                .queryParam("userId", userId);
+            if (page != null) {
+                builder.queryParam("page", page);
+            }
+            if (size != null) {
+                builder.queryParam("size", size);
+            }
+            URI uri = builder.build(true).toUri();
             HttpRequest request = HttpRequest.newBuilder()
                 .uri(uri)
                 .header("Accept", "application/json")

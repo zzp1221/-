@@ -15,6 +15,8 @@ import com.project.domain.profile.UserProfileCurrentRepository;
 import com.project.security.JwtAuthenticatedUser;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.core.task.TaskExecutor;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -41,20 +43,20 @@ public class ConversationService {
     private final QnaSessionRepository qnaSessionRepository;
     private final PythonAgentClient pythonAgentClient;
     private final PythonConversationMessageClient pythonConversationMessageClient;
-    private final TaskExecutor smartEngineTaskExecutor;
+    private final TaskExecutor conversationTaskExecutor;
     private final UserProfileCurrentRepository userProfileCurrentRepository;
 
     public ConversationService(
         QnaSessionRepository qnaSessionRepository,
         PythonAgentClient pythonAgentClient,
         PythonConversationMessageClient pythonConversationMessageClient,
-        TaskExecutor smartEngineTaskExecutor,
+        @Qualifier("conversationTaskExecutor") TaskExecutor conversationTaskExecutor,
         UserProfileCurrentRepository userProfileCurrentRepository
     ) {
         this.qnaSessionRepository = qnaSessionRepository;
         this.pythonAgentClient = pythonAgentClient;
         this.pythonConversationMessageClient = pythonConversationMessageClient;
-        this.smartEngineTaskExecutor = smartEngineTaskExecutor;
+        this.conversationTaskExecutor = conversationTaskExecutor;
         this.userProfileCurrentRepository = userProfileCurrentRepository;
     }
 
@@ -72,9 +74,10 @@ public class ConversationService {
     }
 
     @Transactional(readOnly = true)
-    public List<ConversationHistoryItemResponse> listRecentConversations(JwtAuthenticatedUser currentUser) {
-        return qnaSessionRepository.findRecentByUserId(currentUser.userId()).stream()
-            .limit(12)
+    public List<ConversationHistoryItemResponse> listRecentConversations(JwtAuthenticatedUser currentUser, Integer page, Integer size) {
+        int resolvedPage = normalizePage(page);
+        int resolvedSize = normalizePageSize(size, 12, 50);
+        return qnaSessionRepository.findRecentByUserId(currentUser.userId(), PageRequest.of(resolvedPage, resolvedSize)).stream()
             .map(session -> new ConversationHistoryItemResponse(
                 session.getId(),
                 resolveConversationTitle(session),
@@ -87,10 +90,20 @@ public class ConversationService {
     }
 
     @Transactional(readOnly = true)
-    public List<ConversationMessageItemResponse> listConversationMessages(JwtAuthenticatedUser currentUser, UUID conversationId) {
+    public List<ConversationMessageItemResponse> listConversationMessages(
+        JwtAuthenticatedUser currentUser,
+        UUID conversationId,
+        Integer page,
+        Integer size
+    ) {
         qnaSessionRepository.findByIdAndUserId(conversationId, currentUser.userId())
             .orElseThrow(() -> new ApplicationException("CONVERSATION_NOT_FOUND", "会话不存在", HttpStatus.NOT_FOUND));
-        return pythonConversationMessageClient.listMessages(conversationId, currentUser.userId());
+        return pythonConversationMessageClient.listMessages(
+            conversationId,
+            currentUser.userId(),
+            normalizePage(page),
+            normalizePageSize(size, 100, 200)
+        );
     }
 
     private static final int MAX_HISTORY_MESSAGES = 20;
@@ -122,7 +135,7 @@ public class ConversationService {
         AtomicInteger sequence = new AtomicInteger(0);
         StringBuilder assistantReply = new StringBuilder();
 
-        smartEngineTaskExecutor.execute(() -> {
+        conversationTaskExecutor.execute(() -> {
             try {
                 pythonAgentClient.stream(
                     new SmartEngineInvocation(
@@ -353,6 +366,17 @@ public class ConversationService {
 
     private String truncate(String message, int maxLength) {
         return message.length() <= maxLength ? message : message.substring(0, maxLength);
+    }
+
+    private int normalizePage(Integer page) {
+        return page == null || page < 0 ? 0 : page;
+    }
+
+    private int normalizePageSize(Integer size, int defaultValue, int maxValue) {
+        if (size == null || size <= 0) {
+            return defaultValue;
+        }
+        return Math.min(size, maxValue);
     }
 
     private String buildConversationTitle(String message) {

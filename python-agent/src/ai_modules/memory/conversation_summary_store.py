@@ -36,6 +36,8 @@ class ConversationSummaryStore(Protocol):
 
     async def save_summary(self, document: ConversationSummaryDocument) -> None: ...
 
+    async def upsert_summary(self, document: ConversationSummaryDocument) -> None: ...
+
     async def get_latest_summary(
         self,
         *,
@@ -51,6 +53,13 @@ class InMemoryConversationSummaryStore:
         self.documents: list[ConversationSummaryDocument] = []
 
     async def save_summary(self, document: ConversationSummaryDocument) -> None:
+        await self.upsert_summary(document)
+
+    async def upsert_summary(self, document: ConversationSummaryDocument) -> None:
+        for index, existing in enumerate(self.documents):
+            if self._same_summary_key(existing, document):
+                self.documents[index] = document
+                return
         self.documents.append(document)
 
     async def get_latest_summary(
@@ -63,6 +72,16 @@ class InMemoryConversationSummaryStore:
             if document.conversation_id == conversation_id and document.user_id == user_id:
                 return document
         return None
+
+    def _same_summary_key(
+        self,
+        existing: ConversationSummaryDocument,
+        incoming: ConversationSummaryDocument,
+    ) -> bool:
+        return (
+            existing.conversation_id == incoming.conversation_id
+            and existing.user_id == incoming.user_id
+        )
 
 
 class MongoConversationSummaryStore:
@@ -91,9 +110,18 @@ class MongoConversationSummaryStore:
         return self._collection
 
     async def save_summary(self, document: ConversationSummaryDocument) -> None:
+        await self.upsert_summary(document)
+
+    async def upsert_summary(self, document: ConversationSummaryDocument) -> None:
+        criteria: dict[str, Any] = {
+            "conversationId": document.conversation_id,
+            "userId": document.user_id,
+        }
         await asyncio.to_thread(
-            self.collection.insert_one,
-            document.model_dump(by_alias=True),
+            self.collection.update_one,
+            criteria,
+            {"$set": document.model_dump(by_alias=True)},
+            True,
         )
 
     async def get_latest_summary(

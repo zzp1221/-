@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import AsyncIterator
 import logging
 from typing import Any
@@ -105,7 +106,6 @@ class RetrievalAgent(PlaceholderAgent):
             params["retrievalRawResult"] = raw_result
 
             # Step 2: Channel results (deterministic, parallel)
-            import asyncio
             grep_task = asyncio.to_thread(self.service.channel_results, raw_result, "grep")
             vector_task = asyncio.to_thread(self.service.channel_results, raw_result, "vector")
             graph_task = asyncio.to_thread(self.service.channel_results, raw_result, "graph")
@@ -141,8 +141,11 @@ class RetrievalAgent(PlaceholderAgent):
         except Exception:
             LOGGER.warning("Direct retrieval failed, falling back to service retrieval.", exc_info=True)
 
-        retrieval_response = self.service.retrieve(
-            query=query, rewritten_query=rewritten_query, keywords=keywords,
+        retrieval_response = await asyncio.to_thread(
+            self.service.retrieve,
+            query=query,
+            rewritten_query=rewritten_query,
+            keywords=keywords,
         )
         summary_text = await self._safe_summarize(
             retrieval_response=retrieval_response, system_prompt=system_prompt,
@@ -279,7 +282,7 @@ class RetrievalAgent(PlaceholderAgent):
         keywords: list[str],
     ) -> dict[str, Any]:
         async def operation() -> dict[str, Any]:
-            return self.service.retrieve_raw(rewritten_query)
+            return await asyncio.to_thread(self.service.retrieve_raw, rewritten_query)
 
         async def fallback_operation() -> dict[str, Any]:
             fallback_payload = self.service.fallback_raw_result(

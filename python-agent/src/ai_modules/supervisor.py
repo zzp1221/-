@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import asyncio
 import copy
+import json
 from collections.abc import AsyncIterator
+from pathlib import Path
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -60,6 +62,7 @@ class PythonAgentSupervisor:
             "evaluation": EvaluationAgent(),
             "resource_push": ResourcePushAgent(),
         }
+        self.route_templates = self._load_route_templates()
 
     def resolve_route(self, service_type: str, params: dict) -> RoutePlan:
         requested_resource_type = self._resolve_resource_type(params)
@@ -73,24 +76,29 @@ class PythonAgentSupervisor:
             "VIDEO": "video_generator",
         }.get(requested_resource_type, "document_generator")
 
-        route_map = {
-            "PROFILE_BUILD": ["tutor", "profile"],
-            "RESOURCE_GENERATION": ["query_rewrite", "retrieval", generation_agent],
-            "RESOURCE_PUSH": ["resource_push"],
-            "VIDEO_GENERATION": ["query_rewrite", "retrieval", "video_generator"],
-            "PRACTICE_JUDGE": ["practice", "judge", "profile"],
-            "PATH_PLANNING": ["path_planning"],
-            "EVALUATION": ["evaluation"],
-            "LEARNING_EVALUATION": ["evaluation"],
-            "TUTORING": ["query_rewrite", "retrieval", "tutor", "profile"],
-        }
-        if service_type not in route_map:
+        route_template = self.route_templates.get(service_type)
+        if route_template is None:
             raise ValueError(f"Unsupported serviceType: {service_type}")
+        resolved_route = [
+            generation_agent if agent_name == "{generation_agent}" else agent_name
+            for agent_name in route_template
+        ]
 
         return RoutePlan(
             serviceType=service_type,
-            agentNames=route_map[service_type],
+            agentNames=resolved_route,
         )
+
+    def _load_route_templates(self) -> dict[str, list[str]]:
+        config_path = Path(__file__).with_name("supervisor_routes.json")
+        with config_path.open("r", encoding="utf-8") as handle:
+            loaded = json.load(handle)
+        route_templates: dict[str, list[str]] = {}
+        for service_type, agent_names in loaded.items():
+            if not isinstance(service_type, str) or not isinstance(agent_names, list):
+                continue
+            route_templates[service_type.strip().upper()] = [str(agent_name) for agent_name in agent_names]
+        return route_templates
 
     def _resolve_resource_type(self, params: dict) -> str:
         resource_type = params.get("resourceType")

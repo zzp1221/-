@@ -428,6 +428,75 @@ def test_generation_service_synthesizes_video_audio_from_final_script(
     assert captured["text"].startswith("今天我们用联合索引来理解最左前缀原则")
 
 
+def test_generation_service_chunks_long_video_script_for_tts(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured_chunks: list[str] = []
+
+    class LongScriptGenerator(FakePrimaryGenerator):
+        def generate_video_script(self, **kwargs) -> VideoScriptPayload:
+            del kwargs
+            long_text = ("第一段讲解联合索引的最左前缀原则。 " * 120).strip()
+            return VideoScriptPayload.model_validate(
+                {
+                    "title": "长视频讲解",
+                    "totalDuration": 120,
+                    "segments": [
+                        {
+                            "id": 1,
+                            "type": "intro",
+                            "text": long_text,
+                            "duration": 120,
+                            "visualHint": "show_title_card",
+                        }
+                    ],
+                    "fullText": long_text,
+                    "videoStyle": "hybrid",
+                }
+            )
+
+    class FakeMimoClient:
+        def synthesize_speech_sync(self, **kwargs) -> bytes:
+            captured_chunks.append(kwargs["text"])
+            return b"z" * 256
+
+    monkeypatch.setattr("src.ai_modules.llms.mimo_client.MiMoClient", FakeMimoClient)
+
+    service = ResourceGenerationService(
+        sandbox_root=tmp_path,
+        content_chain=ContentGenerationChain(primary_generator=LongScriptGenerator()),
+    )
+    snapshot = SystemSnapshot(
+        current_course="Java 程序设计",
+        current_chapter="并发编程",
+        course_progress=0.3,
+        student_name="张三",
+        student_level="BASIC",
+        knowledge_gaps=["线程同步"],
+        preferred_style="visual",
+        recent_mistakes=[],
+        session_id="task-video",
+        conversation_length=1,
+        total_tokens_used=0,
+        wiki_pages_count=10,
+        last_index_update="2026-05-02",
+        recent_activities=[],
+    )
+
+    params = {
+        "taskId": "task-video",
+        "query": "并发编程",
+        "topic": "并发编程",
+        "style": "talking_head",
+    }
+    service.build_asset(asset_type="VIDEO", params=params, snapshot=snapshot)
+
+    assert len(captured_chunks) >= 2
+    assert all(len(chunk) <= ResourceGenerationService.VIDEO_TTS_CHUNK_LIMIT for chunk in captured_chunks)
+    assert "".join(chunk.replace("\n", " ") for chunk in captured_chunks).replace(" ", "").startswith("第一段讲解联合索引的最左前缀原则")
+
+
 def test_generation_service_rejects_unknown_asset_type(tmp_path: Path) -> None:
     service = ResourceGenerationService(sandbox_root=tmp_path)
     snapshot = SystemSnapshot(
@@ -569,3 +638,54 @@ def test_structured_generator_retries_when_schema_validation_fails(
     assert asset.title == "联合索引延伸阅读"
     assert asset.summary == "结构化阅读摘要"
     assert asset.body == "结构化阅读正文"
+
+
+def test_structured_generator_caches_identical_requests(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    attempts = {"count": 0}
+
+    def fake_post_chat_completion(
+        self,
+        *,
+        messages,
+        temperature=0.3,
+        max_tokens=None,
+        response_format=None,
+    ):
+        del self, messages, temperature, max_tokens, response_format
+        attempts["count"] += 1
+        return {
+            "choices": [
+                {
+                    "message": {
+                        "content": '{"title":"联合索引延伸阅读","summary":"缓存命中","body":"缓存正文"}'
+                    }
+                }
+            ]
+        }
+
+    monkeypatch.setattr(
+        OpenAICompatibleStructuredGenerator,
+        "_post_chat_completion",
+        fake_post_chat_completion,
+    )
+    OpenAICompatibleStructuredGenerator._response_cache.clear()
+
+    generator = OpenAICompatibleStructuredGenerator()
+    first = generator.generate_reading_asset(
+        title="联合索引延伸阅读",
+        topic="联合索引",
+        snapshot={"current_course": "数据库原理"},
+        sources=[{"title": "数据库索引导学"}],
+    )
+    second = generator.generate_reading_asset(
+        title="联合索引延伸阅读",
+        topic="联合索引",
+        snapshot={"current_course": "数据库原理"},
+        sources=[{"title": "数据库索引导学"}],
+    )
+
+    assert attempts["count"] == 1
+    assert first.body == "缓存正文"
+    assert second.body == "缓存正文"

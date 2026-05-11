@@ -345,8 +345,32 @@ class HybridRetrievalService:
                 )
             )
 
-        ranked = sorted(scored_documents, key=lambda item: item[0], reverse=True)
+        ranked = self._dedupe_ranked_documents(scored_documents)
         return [document for _, document in ranked[:5]]
+
+    def _dedupe_ranked_documents(
+        self,
+        scored_documents: list[tuple[float, RetrievalDocument]],
+    ) -> list[tuple[float, RetrievalDocument]]:
+        deduped: dict[str, tuple[float, RetrievalDocument]] = {}
+        for score, document in scored_documents:
+            dedupe_key = self._document_dedupe_key(document)
+            existing = deduped.get(dedupe_key)
+            if existing is None or score > existing[0]:
+                deduped[dedupe_key] = (score, document)
+        return sorted(deduped.values(), key=lambda item: item[0], reverse=True)
+
+    def _document_dedupe_key(self, document: RetrievalDocument) -> str:
+        title_key = self._normalize_similarity_text(document.title)
+        if title_key:
+            return f"title:{title_key}"
+        snippet_key = self._normalize_similarity_text(document.snippet or "")
+        if snippet_key:
+            return f"snippet:{snippet_key[:120]}"
+        return f"slug:{document.slug}"
+
+    def _normalize_similarity_text(self, value: str) -> str:
+        return re.sub(r"\s+", "", (value or "").strip().lower())
 
     def _phrase_anchor(self, keywords: list[str]) -> str:
         return keywords[-1] if keywords else ""

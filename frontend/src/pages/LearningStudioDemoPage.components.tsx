@@ -681,6 +681,9 @@ function recommendationTypeLabel(resourceType?: string): string {
       return '外部视频';
     case 'CODE_CASE':
       return '代码案例';
+    case 'PPT':
+    case 'SLIDES':
+      return 'PPT 课件';
     case 'PRACTICAL_CASE':
       return '实操案例';
     case 'READING':

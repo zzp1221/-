@@ -6,7 +6,7 @@ import type { VideoCardStyle } from '../components/VideoCard';
 
 export type EngineService = 'resource' | 'path' | 'push' | 'assessment';
 export type ResourceType = 'EXPLANATION' | 'CODE_CASE' | 'QUIZ' | 'MINDMAP' | 'READING' | 'VIDEO';
-export type PushResourceType = 'EXPLANATION' | 'CODE_CASE' | 'PRACTICAL_CASE' | 'READING' | 'VIDEO';
+export type PushResourceType = 'EXPLANATION' | 'CODE_CASE' | 'PRACTICAL_CASE' | 'READING' | 'PPT' | 'VIDEO';
 export type QnaState = 'QNA_IDLE' | 'QNA_STREAMING';
 export type EngineState =
   | 'ENGINE_IDLE'
@@ -263,7 +263,7 @@ export const pushResourceTypeOptions: PushResourceTypeButtonConfig[] = [
   { type: 'EXPLANATION', label: '讲解文档' },
   { type: 'CODE_CASE', label: '代码案例' },
   { type: 'PRACTICAL_CASE', label: '实操案例' },
-  { type: 'READING', label: '拓展阅读' },
+  { type: 'PPT', label: 'PPT 课件' },
   { type: 'VIDEO', label: '视频' },
 ];
 

@@ -29,6 +29,28 @@ class EmptyRetriever:
         return {"query": query, "top": []}
 
 
+class DuplicateTitleRetriever:
+    def retrieve(self, query: str) -> dict:
+        return {
+            "query": query,
+            "channels": {
+                "grep": {
+                    "priority": [
+                        ("doc-a", "联合索引", 0.95, ["联合索引"]),
+                    ]
+                },
+                "vector": [
+                    ("doc-b", "联合索引", 0.91, {"snippet": "联合索引用于提升多字段查询效率"}),
+                ],
+                "graph": [],
+            },
+            "top": [
+                ("doc-a", "联合索引", 0.95, {"snippet": "联合索引用于提升多字段查询效率"}),
+                ("doc-b", "联合索引", 0.91, {"snippet": "联合索引用于提升多字段查询效率"}),
+            ],
+        }
+
+
 def test_query_rewrite_service_injects_learning_context() -> None:
     service = QueryRewriteService()
 
@@ -87,3 +109,16 @@ def test_hybrid_retrieval_service_falls_back_when_no_results() -> None:
     )
 
     assert result.documents[0].channel == "fallback"
+
+
+def test_hybrid_retrieval_service_deduplicates_same_title_documents() -> None:
+    service = HybridRetrievalService(retriever=DuplicateTitleRetriever())
+
+    result = service.retrieve(
+        query="联合索引",
+        rewritten_query="数据库原理 索引 联合索引",
+        keywords=["数据库原理", "索引", "联合索引"],
+    )
+
+    assert len(result.documents) == 1
+    assert result.documents[0].title == "联合索引"

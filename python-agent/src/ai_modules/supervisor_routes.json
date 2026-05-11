@@ -1,0 +1,41 @@
+{
+  "PROFILE_BUILD": [
+    "tutor",
+    "profile"
+  ],
+  "RESOURCE_GENERATION": [
+    "query_rewrite",
+    "retrieval",
+    "{generation_agent}"
+  ],
+  "RESOURCE_PUSH": [
+    "resource_push"
+  ],
+  "VIDEO_GENERATION": [
+    "query_rewrite",
+    "retrieval",
+    "video_generator"
+  ],
+  "PRACTICE_JUDGE": [
+    "practice",
+    "judge",
+    "profile"
+  ],
+  "PATH_PLANNING": [
+    "path_planning"
+  ],
+  "EVALUATION": [
+    "evaluation",
+    "path_planning"
+  ],
+  "LEARNING_EVALUATION": [
+    "evaluation",
+    "path_planning"
+  ],
+  "TUTORING": [
+    "query_rewrite",
+    "retrieval",
+    "tutor",
+    "profile"
+  ]
+}

@@ -7,7 +7,11 @@ from src.ai_modules.memory import (
     InMemoryConversationSummaryStore,
     MongoConversationSummaryStore,
 )
-from src.ai_modules.runtime import ConversationCompactor, SystemSnapshot
+from src.ai_modules.runtime import (
+    ConversationCompactor,
+    StructuredConversationSummary,
+    SystemSnapshot,
+)
 
 
 def _build_snapshot() -> SystemSnapshot:
@@ -148,7 +152,85 @@ async def test_tutor_agent_loads_and_persists_structured_summary() -> None:
     ]
 
     assert "联合索引" in events[1].payload.text
-    assert len(store.documents) >= 2
+    assert len(store.documents) == 1
+    saved = store.documents[0]
+    assert "索引" in saved.topic_focus
+    assert saved.summary_text
+
+
+def test_conversation_compactor_merges_previous_summary_across_compactions() -> None:
+    compactor = ConversationCompactor(token_budget=20, keep_recent_turns=2)
+    previous_summary = StructuredConversationSummary(
+        topicFocus=["synchronized", "线程安全"],
+        learnerGoal="掌握 Java 并发基础",
+        knownGaps=["分不清 volatile 和 synchronized"],
+        unresolvedQuestions=["什么时候更适合用 volatile？"],
+        preferredHelpStyle="step_by_step",
+        lastUserMessage="volatile 和 synchronized 有什么不同",
+        recentProgress=["已讲线程和进程区别"],
+        summaryText="旧摘要",
+    )
+    messages = [
+        {"role": "user", "content": "死锁是怎么产生的，怎么避免"},
+        {"role": "assistant", "content": "可以从互斥、占有并等待几个条件来理解"},
+        {"role": "user", "content": "线程池的核心参数有哪些"},
+        {"role": "assistant", "content": "核心线程数、最大线程数、阻塞队列等"},
+    ]
+
+    result = compactor.compact(messages, previous_summary=previous_summary)
+
+    assert result.was_compacted is True
+    assert "synchronized" in result.structured_summary.topic_focus
+    assert "死锁" in result.structured_summary.topic_focus
+    assert result.structured_summary.learner_goal == "掌握 Java 并发基础"
+    assert "什么时候更适合用 volatile？" in result.structured_summary.unresolved_questions
+    assert len(result.structured_summary.summary_text) <= 500
+
+
+def test_conversation_compactor_extracts_chinese_topic_focus_terms() -> None:
+    compactor = ConversationCompactor(token_budget=1000, keep_recent_turns=4)
+    result = compactor.compact(
+        [
+            {"role": "user", "content": "什么是线程安全"},
+            {"role": "user", "content": "死锁是怎么产生的，怎么避免"},
+            {"role": "user", "content": "线程池的核心参数有哪些"},
+        ]
+    )
+
+    assert "线程安全" in result.structured_summary.topic_focus
+    assert "死锁" in result.structured_summary.topic_focus
+    assert "线程池核心参数" in result.structured_summary.topic_focus
+
+
+def test_conversation_compactor_extracts_mixed_language_topic_focus_terms() -> None:
+    compactor = ConversationCompactor(token_budget=1000, keep_recent_turns=4)
+    result = compactor.compact(
+        [
+            {"role": "user", "content": "synchronized 关键字怎么用"},
+            {"role": "user", "content": "volatile 和 synchronized 有什么不同"},
+            {"role": "user", "content": "CountDownLatch 和 CyclicBarrier 区别"},
+        ]
+    )
+
+    topic_focus = result.structured_summary.topic_focus
+    assert "synchronized" in topic_focus
+    assert "volatile" in topic_focus
+    assert "CountDownLatch" in topic_focus
+    assert "CyclicBarrier" in topic_focus
+
+
+def test_conversation_compactor_extracts_follow_up_topic_focus_terms() -> None:
+    compactor = ConversationCompactor(token_budget=1000, keep_recent_turns=4)
+    result = compactor.compact(
+        [
+            {"role": "user", "content": "那我前面问的 synchronized 具体怎么用，能再举个例子吗"},
+            {"role": "user", "content": "回到死锁问题，除了避免还有别的解决办法吗"},
+        ]
+    )
+
+    topic_focus = result.structured_summary.topic_focus
+    assert "synchronized" in topic_focus
+    assert "死锁" in topic_focus
 
 
 @pytest.mark.asyncio
@@ -157,7 +239,16 @@ async def test_mongo_summary_store_maps_save_and_load() -> None:
         def __init__(self) -> None:
             self.saved: list[dict] = []
 
-        def insert_one(self, payload: dict) -> None:
+        def update_one(self, criteria: dict, update: dict, upsert: bool):
+            assert upsert is True
+            payload = update["$set"]
+            for index, item in enumerate(self.saved):
+                if (
+                    item.get("conversationId") == criteria.get("conversationId")
+                    and item.get("userId") == criteria.get("userId")
+                ):
+                    self.saved[index] = payload
+                    return
             self.saved.append(payload)
 
         def find_one(self, criteria: dict, sort: list[tuple[str, int]]):

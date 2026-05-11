@@ -12,6 +12,7 @@ import httpx
 
 from src.ai_modules.agents.base import PlaceholderAgent
 from src.ai_modules.config import get_settings
+from src.ai_modules.generation import ResourceGenerationService
 from src.ai_modules.models import (
     ProgressPayload,
     ProgressSSEEvent,
@@ -44,11 +45,12 @@ class PushResourceCandidate:
 
 
 class ResourcePushAgent(PlaceholderAgent):
-    """Recommend external resources directly from Tavily results."""
+    """Recommend external resources or generate downloadable push assets."""
 
     def __init__(self) -> None:
         super().__init__("Resource Push Agent", "resource_push")
         self.settings = get_settings()
+        self.resource_generation_service = ResourceGenerationService()
 
     async def run(
         self,
@@ -77,6 +79,82 @@ class ResourcePushAgent(PlaceholderAgent):
         )
 
         preferred_type = self._normalize_text(params.get("resourceType")).upper()
+        if preferred_type in {"PPT", "SLIDES"}:
+            yield ProgressSSEEvent(
+                taskId=task_id,
+                traceId=trace_id,
+                seq=seq + 1,
+                payload=ProgressPayload(
+                    stage=self.stage_name,
+                    percent=40,
+                    message="正在生成可下载 PPT 课件",
+                ),
+            )
+            asset = await asyncio.to_thread(
+                self._build_ppt_asset,
+                params=params,
+                profile_context=profile_context,
+                snapshot=snapshot,
+            )
+            params["pushedResources"] = [
+                {
+                    "title": asset.title,
+                    "resourceType": asset.asset_type,
+                    "fileName": asset.file_name,
+                    "downloadUrl": None,
+                    "summaryText": asset.summary,
+                    "matchedTerms": self._build_terms("SLIDES", profile_context)[:4],
+                    "rerankReason": "基于当前学习画像生成 PPT 课件",
+                    "rerankScore": 1.0,
+                    "sourceName": "generated",
+                    "thumbnailUrl": None,
+                }
+            ]
+            yield ProgressSSEEvent(
+                taskId=task_id,
+                traceId=trace_id,
+                seq=seq + 2,
+                payload=ProgressPayload(
+                    stage=self.stage_name,
+                    percent=70,
+                    message=f"已生成 {self._resource_type_label(asset.asset_type)}，正在准备下载链接",
+                ),
+            )
+            yield ResultChunkSSEEvent(
+                taskId=task_id,
+                traceId=trace_id,
+                seq=seq + 3,
+                payload=ResultChunkPayload(
+                    text=(
+                        f"已基于当前学习画像生成 {self._resource_type_label(asset.asset_type)}：{asset.title}。"
+                        "任务完成后可直接下载课件文件。"
+                    ),
+                ),
+            )
+            yield ResourceFileSSEEvent(
+                taskId=task_id,
+                traceId=trace_id,
+                seq=seq + 4,
+                payload=ResourceFilePayload(
+                    assetType=asset.asset_type,
+                    title=asset.title,
+                    summary=asset.summary,
+                    displayMode=asset.display_mode,
+                    fileName=asset.file_name,
+                    localPath=asset.local_path,
+                    mimeType=asset.mime_type,
+                    inlineContent=asset.inline_content,
+                    language=asset.language,
+                    explanation=asset.explanation,
+                    thumbnailPath=asset.thumbnail_path,
+                    thumbnailFileName=asset.thumbnail_file_name,
+                    thumbnailMimeType=asset.thumbnail_mime_type,
+                    durationSeconds=asset.duration_seconds,
+                    knowledgePoint=asset.knowledge_point,
+                ),
+            )
+            return
+
         yield ProgressSSEEvent(
             taskId=task_id,
             traceId=trace_id,
@@ -165,6 +243,36 @@ class ResourcePushAgent(PlaceholderAgent):
                 ),
             )
             next_seq += 1
+
+    def _build_ppt_asset(
+        self,
+        *,
+        params: dict[str, Any],
+        profile_context: dict[str, Any],
+        snapshot: Any,
+    ):
+        generated_params = dict(params)
+        current_course = self._normalize_text(profile_context.get("currentCourse"))
+        current_chapter = self._normalize_text(profile_context.get("currentChapter"))
+        primary_weak_point = self._normalize_text(profile_context.get("primaryWeakPoint"))
+        topic = current_chapter or primary_weak_point or current_course or "学习主题"
+        generated_params["resourceType"] = "SLIDES"
+        generated_params["course"] = generated_params.get("course") or current_course or getattr(snapshot, "current_course", "")
+        generated_params["topic"] = generated_params.get("topic") or topic
+        generated_params["query"] = generated_params.get("query") or f"{generated_params['course']} {topic} PPT课件".strip()
+        learning_context = generated_params.get("learningContext")
+        if not isinstance(learning_context, dict):
+            learning_context = {}
+        generated_params["learningContext"] = {
+            **learning_context,
+            "course": learning_context.get("course") or generated_params["course"],
+            "chapter": learning_context.get("chapter") or topic,
+        }
+        return self.resource_generation_service.build_asset(
+            asset_type="SLIDES",
+            params=generated_params,
+            snapshot=snapshot,
+        )
 
     def _build_query(self, params: dict[str, Any], profile_context: dict[str, Any]) -> str:
         parts = [
@@ -469,7 +577,9 @@ class ResourcePushAgent(PlaceholderAgent):
             "EXPLANATION": "讲解文档",
             "CODE_CASE": "代码案例",
             "PRACTICAL_CASE": "实操案例",
+            "PPT": "PPT课件",
             "READING": "拓展阅读",
+            "SLIDES": "PPT课件",
             "VIDEO": "视频",
         }.get(preferred_type, preferred_type or "资源")
 

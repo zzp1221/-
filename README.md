@@ -256,3 +256,7 @@ cd frontend && npx tsc --noEmit && npx vite build
 - [部署指南](docs/DEPLOYMENT.md) — 完整的生产环境部署文档
 - [实验日志](docs/experiment_log.md) — 改动记录与验证结果
 - [SSE 事件协议](contracts/sse-events.schema.json) — 流式通信 JSON Schema
+
+## 开源许可
+
+本项目使用了 [DH_live](https://github.com/DeepTechLab/DH_live) 开源项目，该项目基于 [MIT License](https://opensource.org/licenses/MIT) 许可。

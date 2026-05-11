@@ -11,6 +11,7 @@ import com.project.domain.task.SmartEngineTask;
 import com.project.security.JwtAuthenticatedUser;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.core.task.TaskExecutor;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -42,7 +43,7 @@ public class SmartEngineOrchestratorService {
         TaskStateMachineService taskStateMachineService,
         PythonAgentClient pythonAgentClient,
         SseEmitterService sseEmitterService,
-        TaskExecutor smartEngineTaskExecutor,
+        @Qualifier("smartEngineTaskExecutor") TaskExecutor smartEngineTaskExecutor,
         IdempotencyService idempotencyService,
         AuditService auditService,
         UserProfileCurrentRepository userProfileCurrentRepository

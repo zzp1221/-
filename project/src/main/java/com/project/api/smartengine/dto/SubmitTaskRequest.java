@@ -13,6 +13,7 @@ import java.util.UUID;
 public record SubmitTaskRequest(
     @NotNull UUID conversationId,
     @NotNull ServiceType serviceType,
+    @NotNull
     Map<String, Object> params
 ) {
     public Map<String, Object> safeParams() {

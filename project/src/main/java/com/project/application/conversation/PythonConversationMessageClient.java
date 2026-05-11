@@ -13,4 +13,6 @@ public interface PythonConversationMessageClient {
     void appendMessage(UUID conversationId, UUID userId, String role, String content);
 
     List<ConversationMessageItemResponse> listMessages(UUID conversationId, UUID userId);
+
+    List<ConversationMessageItemResponse> listMessages(UUID conversationId, UUID userId, Integer page, Integer size);
 }

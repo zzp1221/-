@@ -16,6 +16,7 @@ import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -48,9 +49,13 @@ public class ConversationController {
 
     @GetMapping
     @Operation(summary = "List recent conversations")
-    public ResponseEntity<List<ConversationHistoryItemResponse>> listRecentConversations(Authentication authentication) {
+    public ResponseEntity<List<ConversationHistoryItemResponse>> listRecentConversations(
+        Authentication authentication,
+        @RequestParam(required = false) Integer page,
+        @RequestParam(required = false) Integer size
+    ) {
         return ResponseEntity.ok(
-            conversationService.listRecentConversations(AuthenticatedUserResolver.require(authentication))
+            conversationService.listRecentConversations(AuthenticatedUserResolver.require(authentication), page, size)
         );
     }
 
@@ -58,10 +63,12 @@ public class ConversationController {
     @Operation(summary = "List persisted conversation messages")
     public ResponseEntity<List<ConversationMessageItemResponse>> listConversationMessages(
         Authentication authentication,
-        @PathVariable UUID conversationId
+        @PathVariable UUID conversationId,
+        @RequestParam(required = false) Integer page,
+        @RequestParam(required = false) Integer size
     ) {
         JwtAuthenticatedUser principal = AuthenticatedUserResolver.require(authentication);
-        return ResponseEntity.ok(conversationService.listConversationMessages(principal, conversationId));
+        return ResponseEntity.ok(conversationService.listConversationMessages(principal, conversationId, page, size));
     }
 
     @PostMapping(path = "/{conversationId}/messages/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)

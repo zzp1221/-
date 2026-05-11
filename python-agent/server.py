@@ -98,6 +98,10 @@ async def _sandbox_cleanup_loop() -> None:
 app = FastAPI(title=SETTINGS.app_name, lifespan=lifespan)
 
 
+def _public_error_message(_: Exception) -> str:
+    return "Python Agent 执行失败，请稍后重试"
+
+
 async def _supervisor_event_stream(engine_request: EngineStreamRequest) -> AsyncIterator[str]:
     """Yield SSE events produced by the placeholder supervisor."""
     with TRACER.start_as_current_span("internal.smart_engine.stream"):
@@ -148,7 +152,7 @@ async def _supervisor_event_stream(engine_request: EngineStreamRequest) -> Async
                         seq=seq,
                         payload=ErrorPayload(
                             code="PYTHON_AGENT_ERROR",
-                            message=str(exc) or "Python Agent 执行失败",
+                            message=_public_error_message(exc),
                         ),
                     ).to_sse()
                 )
@@ -262,12 +266,16 @@ async def append_conversation_message(
 async def list_conversation_messages(
     conversation_id: str,
     user_id: str | None = Query(default=None, alias="userId"),
+    page: int | None = Query(default=None, ge=0),
+    size: int | None = Query(default=None, ge=1, le=200),
 ) -> JSONResponse:
     """Return the persisted transcript for a conversation."""
 
     documents = await MESSAGE_STORE.list_messages(
         conversation_id=conversation_id,
         user_id=user_id,
+        page=page,
+        size=size,
     )
     return JSONResponse(
         [

@@ -1,6 +1,7 @@
 package com.project.domain.conversation;
 
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.Query;
 
 import java.util.List;
@@ -22,5 +23,5 @@ public interface QnaSessionRepository extends JpaRepository<QnaSession, UUID> {
             session.lastMessageAt desc,
             session.updatedAt desc
         """)
-    List<QnaSession> findRecentByUserId(UUID userId);
+    List<QnaSession> findRecentByUserId(UUID userId, Pageable pageable);
 }

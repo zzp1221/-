@@ -46,6 +46,8 @@ class ConversationMessageStore(Protocol):
         *,
         conversation_id: str,
         user_id: str | None,
+        page: int | None = None,
+        size: int | None = None,
     ) -> list[ConversationMessageDocument]: ...
 
 
@@ -63,12 +65,19 @@ class InMemoryConversationMessageStore:
         *,
         conversation_id: str,
         user_id: str | None,
+        page: int | None = None,
+        size: int | None = None,
     ) -> list[ConversationMessageDocument]:
-        return [
+        documents = [
             document
             for document in self.documents
             if document.conversation_id == conversation_id and document.user_id == user_id
         ]
+        if page is None or size is None:
+            return documents
+        start = page * size
+        end = start + size
+        return documents[start:end]
 
 
 class MongoConversationMessageStore:
@@ -117,16 +126,25 @@ class MongoConversationMessageStore:
         *,
         conversation_id: str,
         user_id: str | None,
+        page: int | None = None,
+        size: int | None = None,
     ) -> list[ConversationMessageDocument]:
         criteria: dict[str, Any] = {"conversationId": conversation_id}
         if user_id is not None:
             criteria["userId"] = user_id
 
+        find_kwargs: dict[str, Any] = {
+            "sort": [("createdAt", 1)],
+        }
+        if page is not None and size is not None:
+            find_kwargs["skip"] = page * size
+            find_kwargs["limit"] = size
+
         records = await asyncio.to_thread(
             lambda: list(
                 self.collection.find(
                     criteria,
-                    sort=[("createdAt", 1)],
+                    **find_kwargs,
                 )
             )
         )

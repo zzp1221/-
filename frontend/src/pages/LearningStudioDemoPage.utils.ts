@@ -858,6 +858,9 @@ function localizeResourceTypeLabel(value: string): string {
     case 'DOCUMENT':
     case 'EXPLANATION':
       return '讲解文档';
+    case 'PPT':
+    case 'SLIDES':
+      return 'PPT 课件';
     case 'READING':
       return '拓展阅读';
     case 'MINDMAP':
@@ -906,8 +909,10 @@ function localizeNarrativeText(value: string): string {
     [/\bexample_first\b/g, '先例子后原理'],
     [/\bvisual_first\b/g, '先图示后讲解'],
     [/\bDOCUMENT\b/g, '讲解文档'],
+    [/\bPPT\b/g, 'PPT课件'],
     [/\bREADING\b/g, '拓展阅读'],
     [/\bMINDMAP\b/g, '思维导图'],
+    [/\bSLIDES\b/g, 'PPT课件'],
     [/\bCODE_CASE\b/g, '代码案例'],
     [/\bCODE\b/g, '代码案例'],
     [/\bQUIZ\b/g, '练习题'],
@@ -970,10 +975,11 @@ export function buildServiceParams(service: EngineService, payload: ServiceForms
       CODE_CASE: '代码案例',
       EXPLANATION: '讲解文档',
       PRACTICAL_CASE: '实操案例',
-      READING: '拓展阅读',
+      PPT: 'PPT课件',
+      READING: 'PPT课件',
       VIDEO: '视频',
     };
-    const preferredType = payload.pushForm.preferredType;
+    const preferredType = payload.pushForm.preferredType === 'READING' ? 'PPT' : payload.pushForm.preferredType;
     const composedQuery = `基于学习画像自动推送${preferredTypeLabelMap[preferredType] ?? preferredType}`;
     return {
       resourceType: preferredType,
@@ -1234,6 +1240,9 @@ function resourceTypeLabel(resourceType: string): string {
       return '讲解文档';
     case 'CODE_CASE':
       return '代码案例';
+    case 'PPT':
+    case 'SLIDES':
+      return 'PPT课件';
     case 'QUIZ':
       return '练习题';
     case 'MINDMAP':

@@ -22,6 +22,7 @@ from src.ai_modules.runtime import (
     ConversationCompactor,
     PermissionLevel,
     RecoveryEngine,
+    StructuredConversationSummary,
     SnapshotBuilder,
     SystemSnapshot,
     ToolRegistry,
@@ -59,7 +60,14 @@ class TutorAgent(PlaceholderAgent):
         del service_type
         conversation = self._extract_conversation(params)
         user_query = self._resolve_user_query(params)
-        compaction_result = self.compactor.compact(conversation)
+        persisted_summary = await self._load_persisted_summary(
+            conversation_id=self._conversation_id(params, task_id),
+            user_id=params.get("userId"),
+        )
+        compaction_result = self.compactor.compact(
+            conversation,
+            previous_summary=self._build_previous_summary(persisted_summary),
+        )
         params["compactedConversation"] = compaction_result.compacted_messages
         params["structuredConversationSummary"] = compaction_result.structured_summary.model_dump(
             by_alias=True
@@ -77,12 +85,8 @@ class TutorAgent(PlaceholderAgent):
         params["recentDialogueContext"] = recent_dialogue
         params["inputMode"] = input_mode
 
-        persisted_summary = await self._load_persisted_summary(
-            conversation_id=self._conversation_id(params, task_id),
-            user_id=params.get("userId"),
-        )
         if compaction_result.was_compacted:
-            await self._persist_summary(
+            await self._upsert_summary(
                 params=params,
                 task_id=task_id,
                 structured_summary=compaction_result.structured_summary.model_dump(by_alias=True),
@@ -490,7 +494,18 @@ class TutorAgent(PlaceholderAgent):
             return None
         return document.model_dump(by_alias=True)
 
-    async def _persist_summary(
+    def _build_previous_summary(
+        self,
+        persisted_summary: dict[str, Any] | None,
+    ) -> StructuredConversationSummary | None:
+        if not persisted_summary:
+            return None
+        try:
+            return StructuredConversationSummary.model_validate(persisted_summary)
+        except Exception:
+            return None
+
+    async def _upsert_summary(
         self,
         *,
         params: dict[str, Any],
@@ -513,6 +528,10 @@ class TutorAgent(PlaceholderAgent):
             summaryText=structured_summary.get("summaryText", ""),
         )
         try:
+            upsert = getattr(self.summary_store, "upsert_summary", None)
+            if callable(upsert):
+                await upsert(document)
+                return
             await self.summary_store.save_summary(document)
         except Exception:
             return
