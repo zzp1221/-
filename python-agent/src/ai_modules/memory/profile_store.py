@@ -819,10 +819,10 @@ class PostgresProfileStore:
     def _generate_embedding(self, text: str) -> list[float] | None:
         if self._embedding_fn is not None:
             return self._embedding_fn(text)
-        api_key = self.settings.bailian_api_key
+        api_key = self.settings.effective_embedding_api_key
         if not api_key or not text.strip():
             return None
-        os.environ.setdefault("DASHSCOPE_API_KEY", api_key)
+        os.environ["DASHSCOPE_API_KEY"] = api_key
         try:
             from dashscope import MultiModalEmbedding
 

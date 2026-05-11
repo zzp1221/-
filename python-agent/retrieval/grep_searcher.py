@@ -1,6 +1,7 @@
 """
 Grep (keyword) search channel with phrase-first matching + token-level fallback.
 """
+import json
 import re
 
 from retrieval.fmm_tokenizer import FMMTokenizer
@@ -9,6 +10,9 @@ from retrieval.fmm_tokenizer import FMMTokenizer
 class GrepSearcher:
     """Phrase-first: complete query as contiguous substring → priority.
     Token-level ILIKE matching only as fallback → normal."""
+
+    _SYNONYM_SCORE_FACTOR = 0.92
+    _SYNONYM_IDF_FALLBACK = 0.8
 
     def __init__(self, tokenizer: FMMTokenizer):
         self.tokenizer = tokenizer
@@ -67,39 +71,124 @@ class GrepSearcher:
 
         return {"priority": priority, "normal": normal}
 
-    def _term_phrase_search(self, cur, query_lower: str, domain: str) -> list:
+    def _decode_json_list(self, value) -> list[str]:
+        if isinstance(value, list):
+            return [str(item).strip() for item in value if str(item).strip()]
+        if isinstance(value, str):
+            try:
+                parsed = json.loads(value)
+            except json.JSONDecodeError:
+                return [value.strip()] if value.strip() else []
+            if isinstance(parsed, list):
+                return [str(item).strip() for item in parsed if str(item).strip()]
+        return []
+
+    def _lookup_synonym_terms(self, cur, query_lower: str, domain: str) -> list[tuple[str, float]]:
+        cleaned = self._clean_query(query_lower)
+        candidates = {
+            self._normalize_phrase(query_lower),
+            self._normalize_phrase(cleaned),
+        }
+        if cleaned:
+            tokens = self.tokenizer.tokenize(cleaned)
+            candidates.update(
+                self._normalize_phrase(token.text)
+                for token in tokens
+                if token.term_type != "CHAR" and len(token.text) >= 2
+            )
+        candidates = {term for term in candidates if len(term) >= 2}
+        if not candidates:
+            return []
+
+        cur.execute("""
+            SELECT canonical_term, variants
+            FROM rag.synonym_group
+            WHERE is_active = true AND domain = %s
+        """, (domain,))
+        expanded: dict[str, float] = {}
+        for canonical_term, variants in cur.fetchall():
+            group_terms = [canonical_term, *self._decode_json_list(variants)]
+            normalized_group = {
+                self._normalize_phrase(term): term
+                for term in group_terms
+                if self._normalize_phrase(term)
+            }
+            if not (set(normalized_group.keys()) & candidates):
+                continue
+            for normalized, term in normalized_group.items():
+                if normalized in candidates or len(normalized) < 2:
+                    continue
+                expanded[term] = self._SYNONYM_SCORE_FACTOR
+        return sorted(
+            expanded.items(),
+            key=lambda item: len(self._normalize_phrase(item[0])),
+            reverse=True,
+        )
+
+    def _term_phrase_search(
+        self,
+        cur,
+        query_lower: str,
+        domain: str,
+        extra_terms: list[tuple[str, float]] | None = None,
+    ) -> list:
         """Search for FMM-recognized terms as individual phrases in titles/content."""
         cleaned = self._clean_query(query_lower)
         if not cleaned:
-            return []
+            terms = []
+        else:
+            tokens = self.tokenizer.tokenize(cleaned)
+            terms = [
+                {
+                    "text": token.text,
+                    "idf": token.idf,
+                    "score_factor": 1.0,
+                }
+                for token in tokens
+                if token.term_type != "CHAR" and len(token.text) >= 2
+            ]
 
-        tokens = self.tokenizer.tokenize(cleaned)
-        terms = [t for t in tokens if t.term_type != "CHAR" and len(t.text) >= 2]
+        seen_terms = {self._normalize_phrase(term["text"]) for term in terms}
+        for text, score_factor in extra_terms or []:
+            normalized = self._normalize_phrase(text)
+            if normalized in seen_terms or len(normalized) < 2:
+                continue
+            terms.append(
+                {
+                    "text": text,
+                    "idf": self.tokenizer.get_idf(normalized) or self._SYNONYM_IDF_FALLBACK,
+                    "score_factor": score_factor,
+                }
+            )
+            seen_terms.add(normalized)
+
         if not terms:
             return []
 
         # For each recognized term, search as phrase in titles and content
         phrase_results: dict[str, dict] = {}
-        for token in terms:
+        for term in terms:
+            term_text = term["text"]
+            score_factor = term["score_factor"]
             # Title match (higher priority)
             cur.execute("""
                 SELECT source_ref AS slug, title
                 FROM rag.knowledge_document
                 WHERE title ILIKE %s AND domain = %s
-            """, (f"%{token.text}%", domain))
+            """, (f"%{term_text}%", domain))
             for slug, title in cur.fetchall():
                 priority_score, coverage = self._compute_phrase_priority(
-                    title=title, query=token.text, body_match=False,
+                    title=title, query=term_text, body_match=False,
                 )
                 # Boost by IDF: more specific terms get higher priority
-                boosted_score = priority_score + token.idf * 10
+                boosted_score = (priority_score + term["idf"] * 10) * score_factor
                 current = phrase_results.get(slug)
                 if current is None or boosted_score > current["priority_score"]:
                     phrase_results[slug] = {
                         "title": title,
-                        "coverage": coverage,
+                        "coverage": round(coverage * score_factor, 4),
                         "priority_score": boosted_score,
-                        "tokens": [token.text],
+                        "tokens": [term_text],
                     }
 
             # Content match (lower priority)
@@ -108,19 +197,19 @@ class GrepSearcher:
                 FROM rag.knowledge_chunk kc
                 JOIN rag.knowledge_document kd ON kd.id = kc.document_id
                 WHERE kc.content ILIKE %s AND kd.domain = %s
-            """, (f"%{token.text}%", domain))
+            """, (f"%{term_text}%", domain))
             for slug, title in cur.fetchall():
                 if slug in phrase_results:
                     continue  # title match already exists, skip lower-priority content match
                 priority_score, coverage = self._compute_phrase_priority(
-                    title=title, query=token.text, body_match=True,
+                    title=title, query=term_text, body_match=True,
                 )
-                boosted_score = priority_score + token.idf * 5
+                boosted_score = (priority_score + term["idf"] * 5) * score_factor
                 phrase_results[slug] = {
                     "title": title,
-                    "coverage": coverage,
+                    "coverage": round(coverage * score_factor, 4),
                     "priority_score": boosted_score,
-                    "tokens": [token.text],
+                    "tokens": [term_text],
                 }
 
         ranked = sorted(
@@ -205,18 +294,53 @@ class GrepSearcher:
             for slug, info in ranked
         ]
 
-    def _token_search(self, cur, query_lower: str, domain: str,
-                      coverage_min: float) -> list:
+    def _token_search(
+        self,
+        cur,
+        query_lower: str,
+        domain: str,
+        coverage_min: float,
+        extra_terms: list[tuple[str, float]] | None = None,
+    ) -> list:
         """Fallback: token-level ILIKE with IDF-weighted coverage scoring."""
         tokens = self.tokenizer.tokenize(query_lower)
         if not tokens:
             return []
 
-        known = [t for t in tokens if t.term_type != "CHAR"]
+        known = [
+            {
+                "text": token.text,
+                "idf": token.idf,
+                "score_factor": 1.0,
+            }
+            for token in tokens
+            if token.term_type != "CHAR"
+        ]
         if not known:
-            known = tokens
+            known = [
+                {
+                    "text": token.text,
+                    "idf": token.idf,
+                    "score_factor": 1.0,
+                }
+                for token in tokens
+            ]
 
-        total_idf = sum(t.idf for t in known)
+        seen_terms = {self._normalize_phrase(token["text"]) for token in known}
+        for text, score_factor in extra_terms or []:
+            normalized = self._normalize_phrase(text)
+            if normalized in seen_terms or len(normalized) < 2:
+                continue
+            known.append(
+                {
+                    "text": text,
+                    "idf": (self.tokenizer.get_idf(normalized) or self._SYNONYM_IDF_FALLBACK) * score_factor,
+                    "score_factor": score_factor,
+                }
+            )
+            seen_terms.add(normalized)
+
+        total_idf = sum(token["idf"] for token in known)
         if total_idf == 0:
             return []
 
@@ -227,12 +351,12 @@ class GrepSearcher:
                 FROM rag.knowledge_chunk kc
                 JOIN rag.knowledge_document kd ON kd.id = kc.document_id
                 WHERE kc.content ILIKE %s AND kd.domain = %s
-            """, (f"%{token.text}%", domain))
+            """, (f"%{token['text']}%", domain))
             for slug, title in cur.fetchall():
                 if slug not in matched_docs:
                     matched_docs[slug] = {"title": title, "tokens_matched": set(), "idf_sum": 0.0}
-                matched_docs[slug]["tokens_matched"].add(token.text)
-                matched_docs[slug]["idf_sum"] += token.idf
+                matched_docs[slug]["tokens_matched"].add(token["text"])
+                matched_docs[slug]["idf_sum"] += token["idf"]
 
         results = []
         for slug, doc in matched_docs.items():

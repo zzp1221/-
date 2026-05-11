@@ -1,12 +1,14 @@
 """
 Hybrid Retriever: orchestrates grep + vector + graph channels with RRF fusion.
 """
+import os
 import psycopg2
 from retrieval.fmm_tokenizer import FMMTokenizer
 from retrieval.grep_searcher import GrepSearcher
 from retrieval.vector_searcher import VectorSearcher
 from retrieval.graph_expander import GraphExpander
 from retrieval.rrf_fusion import RRFFusion
+from src.ai_modules.config import get_settings
 
 
 class HybridRetriever:
@@ -30,10 +32,17 @@ class HybridRetriever:
     def _init(self, cur):
         if self._initialized:
             return
+        settings = get_settings()
+        embedding_api_key = settings.effective_embedding_api_key
+        if embedding_api_key:
+            os.environ["DASHSCOPE_API_KEY"] = embedding_api_key
         self._tokenizer = FMMTokenizer()
         n = self._tokenizer.load_from_db(cur, self.domain)
         self._grep = GrepSearcher(self._tokenizer)
-        self._vector = VectorSearcher()
+        self._vector = VectorSearcher(
+            dimension=settings.knowledge_embedding_dimension,
+            model=settings.knowledge_embedding_model_name,
+        )
         self._graph = GraphExpander()
         self._rrf = RRFFusion()
         self._initialized = True

@@ -1,5 +1,5 @@
-﻿"""
-Vectorize wiki pages using DashScope qwen3-vl-embedding API.
+"""
+Vectorize wiki pages using the configured embedding model.
 Generates 1024-dim embeddings and writes to rag.knowledge_document + rag.knowledge_chunk.
 Usage: python vectorize_wiki.py [--dry-run] [--limit N]
 """
@@ -155,7 +155,7 @@ def generate_embeddings(texts: list[str], dimension: int = RUNTIME_CONFIG.embedd
 def estimate_tokens(text: str) -> int:
     """Rough token estimation for mixed Chinese/English text."""
     # Chinese chars ~1.5 per token, others ~4 per token
-    chinese = sum(1 for c in text if "涓€" <= c <= "榭?)
+    chinese = sum(1 for c in text if ord(c) > 0x2000)
     other = len(text) - chinese
     return int(chinese / 1.5 + other / 4)
 
@@ -176,7 +176,7 @@ def main():
 
     print("=" * 60)
     print("Wiki Vectorization 鈫?PostgreSQL" + (" (INCREMENTAL)" if incremental else ""))
-    print(f"Model: qwen3-vl-embedding | Dimension: {DIMENSION}")
+    print(f"Model: {RUNTIME_CONFIG.embedding_model_name} | Dimension: {DIMENSION}")
     print("=" * 60)
 
     if dry_run:

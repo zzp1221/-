@@ -8,6 +8,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 import psycopg2
 from retrieval.hybrid_retriever import HybridRetriever
 from retrieval.vector_searcher import VectorSearcher
+from src.ai_modules.config import get_settings
 
 DB_CONFIG = {"dbname": "zhixue", "user": "postgres", "password": "123456", "host": "localhost", "port": 5432}
 
@@ -301,8 +302,12 @@ def test_new_course_coverage():
 
 
 def main():
+    settings = get_settings()
     print("RAG Quality & Recommendation Test — 50 Questions")
-    print(f"Model: qwen3-vl-embedding (1024-dim)")
+    print(
+        f"Model: {settings.knowledge_embedding_model_name} "
+        f"({settings.knowledge_embedding_dimension}-dim)"
+    )
     print(f"DB: {DB_CONFIG['host']}:{DB_CONFIG['port']}/{DB_CONFIG['dbname']}")
     print()
 

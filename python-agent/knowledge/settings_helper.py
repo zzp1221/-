@@ -29,7 +29,7 @@ class PostgresRuntimeConfig(BaseModel):
 class KnowledgeRuntimeConfig(BaseModel):
     """Validated runtime configuration for knowledge scripts."""
 
-    dashscope_api_key: str = Field(min_length=1)
+    embedding_api_key: str = Field(min_length=1)
     embedding_model_name: str = Field(min_length=1)
     embedding_dimension: int = Field(gt=0)
     retrieval_domain: str = Field(min_length=1)
@@ -41,7 +41,7 @@ def load_knowledge_runtime_config() -> KnowledgeRuntimeConfig:
 
     settings = get_settings()
     return KnowledgeRuntimeConfig(
-        dashscope_api_key=settings.bailian_api_key,
+        embedding_api_key=settings.effective_embedding_api_key,
         embedding_model_name=settings.knowledge_embedding_model_name,
         embedding_dimension=settings.knowledge_embedding_dimension,
         retrieval_domain=settings.retrieval_domain,
@@ -53,5 +53,5 @@ def configure_dashscope_api_key() -> KnowledgeRuntimeConfig:
     """Load config and export the DashScope key for SDK-based callers."""
 
     config = load_knowledge_runtime_config()
-    os.environ["DASHSCOPE_API_KEY"] = config.dashscope_api_key
+    os.environ["DASHSCOPE_API_KEY"] = config.embedding_api_key
     return config

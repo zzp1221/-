@@ -1,16 +1,18 @@
 """
 Vector (semantic) search channel using pgvector cosine similarity.
 """
-import os
 from dashscope import MultiModalEmbedding
+
+from src.ai_modules.config import get_settings
 
 
 class VectorSearcher:
     """Semantic search via pgvector <=> cosine distance on knowledge_chunk embeddings."""
 
-    def __init__(self, dimension: int = 1024, model: str = "qwen3-vl-embedding"):
-        self.dimension = dimension
-        self.model = model
+    def __init__(self, dimension: int | None = None, model: str | None = None):
+        settings = get_settings()
+        self.dimension = dimension or settings.knowledge_embedding_dimension
+        self.model = model or settings.knowledge_embedding_model_name
 
     def _embed(self, text: str) -> list[float]:
         resp = MultiModalEmbedding.call(

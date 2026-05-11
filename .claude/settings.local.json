@@ -109,7 +109,11 @@
       "Bash(awk '{print $5, $NF}')",
       "Bash(awk '{sum+=$5; print $5, $NF} END {print \"Total:\", sum}')",
       "Bash(PYTHONPATH=. python -m pytest tests/test_conversation_memory_compaction_e2e.py -v)",
-      "Bash(PYTHONPATH=. python -m pytest tests/test_conversation_memory_compaction_e2e.py::test_full_conversation_memory_and_compaction -v -s)"
+      "Bash(PYTHONPATH=. python -m pytest tests/test_conversation_memory_compaction_e2e.py::test_full_conversation_memory_and_compaction -v -s)",
+      "Bash(sed 's/<[^>]*>//g')",
+      "Bash(pg_dump -h localhost -U postgres -d zhixue --no-owner --no-privileges -Fc -f vector_data_new.dump -t 'rag.*' -t 'app.learning_resource' -t 'app.resource_document' -t 'app.resource_chunk')",
+      "Bash(echo \"Exit: $?\")",
+      "Bash(awk '$4 > 1000000 {print $4}')"
     ]
   }
 }

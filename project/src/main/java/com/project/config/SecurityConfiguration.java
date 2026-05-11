@@ -4,6 +4,7 @@ import com.project.infrastructure.ratelimit.IpRateLimitFilter;
 import com.project.infrastructure.ratelimit.RateLimitFilter;
 import com.project.security.JwtAuthenticationFilter;
 import com.project.security.RestAuthenticationEntryPoint;
+import jakarta.servlet.DispatcherType;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.security.config.Customizer;
@@ -38,6 +39,7 @@ public class SecurityConfiguration {
             .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
             .exceptionHandling(exceptions -> exceptions.authenticationEntryPoint(authenticationEntryPoint))
             .authorizeHttpRequests(authorize -> authorize
+                .dispatcherTypeMatchers(DispatcherType.ASYNC, DispatcherType.ERROR).permitAll()
                 .requestMatchers(
                     "/actuator/health",
                     "/actuator/info",

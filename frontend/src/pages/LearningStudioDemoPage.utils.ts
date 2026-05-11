@@ -935,7 +935,9 @@ export function buildServiceParams(service: EngineService, payload: ServiceForms
     const resourceForm = payload.resourceForm;
     const includeVideo = resourceForm.resourceType === 'VIDEO';
     const normalizedResourceType = normalizeResourceType(resourceForm.resourceType);
-    const resourceTypeLabelText = resourceTypeLabel(resourceForm.resourceType);
+    const resourceTypeLabelText = resourceForm.resourceType === 'READING'
+      ? 'PPT课件'
+      : resourceTypeLabel(resourceForm.resourceType);
     const difficultyLabel = resourceDifficultyLabel(resourceForm.difficulty);
     const query = [
       resourceForm.course,
@@ -975,11 +977,10 @@ export function buildServiceParams(service: EngineService, payload: ServiceForms
       CODE_CASE: '代码案例',
       EXPLANATION: '讲解文档',
       PRACTICAL_CASE: '实操案例',
-      PPT: 'PPT课件',
-      READING: 'PPT课件',
+      READING: '拓展阅读',
       VIDEO: '视频',
     };
-    const preferredType = payload.pushForm.preferredType === 'READING' ? 'PPT' : payload.pushForm.preferredType;
+    const preferredType = payload.pushForm.preferredType;
     const composedQuery = `基于学习画像自动推送${preferredTypeLabelMap[preferredType] ?? preferredType}`;
     return {
       resourceType: preferredType,
@@ -1264,6 +1265,8 @@ function normalizeResourceType(resourceType: string): string {
       return 'CODE';
     case 'QUIZ':
       return 'QUIZ';
+    case 'READING':
+      return 'SLIDES';
     default:
       return resourceType;
   }

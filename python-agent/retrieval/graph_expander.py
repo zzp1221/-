@@ -1,9 +1,6 @@
 """
 Graph expansion channel: traverse rag.wiki_link from seed pages.
 """
-from collections import defaultdict
-
-
 class GraphExpander:
     """Expand from seed slugs via WIKILINK and SHARED_TAG relations."""
 

@@ -346,6 +346,17 @@ ON rag.wiki_link(from_page_id, relation_type, weight DESC);
 CREATE INDEX IF NOT EXISTS idx_wiki_link_to_type
 ON rag.wiki_link(to_page_id, relation_type, weight DESC);
 
+CREATE TABLE IF NOT EXISTS rag.wiki_page_graph_features (
+  page_id            UUID PRIMARY KEY REFERENCES rag.wiki_page(id) ON DELETE CASCADE,
+  community_id       BIGINT NOT NULL,
+  pagerank_score     NUMERIC(12,8) NOT NULL DEFAULT 0,
+  in_degree          INT NOT NULL DEFAULT 0,
+  updated_at         TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_wiki_page_graph_features_community
+ON rag.wiki_page_graph_features(community_id, pagerank_score DESC);
+
 CREATE TABLE IF NOT EXISTS rag.term_lexicon (
   id                BIGSERIAL PRIMARY KEY,
   domain            TEXT NOT NULL,

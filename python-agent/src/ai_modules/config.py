@@ -60,6 +60,15 @@ class Settings(BaseSettings):
         default="",
         validation_alias=AliasChoices("OPENAI_COMPATIBLE_API_KEY", "BAILIAN_API_KEY"),
     )
+    embedding_api_key: str = Field(
+        default="",
+        validation_alias=AliasChoices(
+            "EMBEDDING_API_KEY",
+            "KNOWLEDGE_EMBEDDING_API_KEY",
+            "BAILIAN_API_KEY",
+            "OPENAI_COMPATIBLE_API_KEY",
+        ),
+    )
     openai_compatible_base_url: str = Field(
         default="https://dashscope.aliyuncs.com/compatible-mode/v1",
         validation_alias=AliasChoices("OPENAI_COMPATIBLE_BASE_URL", "BAILIAN_BASE_URL"),
@@ -179,7 +188,7 @@ class Settings(BaseSettings):
         alias="RETRIEVAL_DOMAIN",
     )
     knowledge_embedding_model_name: str = Field(
-        default="qwen3-vl-embedding",
+        default="",
         alias="KNOWLEDGE_EMBEDDING_MODEL_NAME",
     )
     knowledge_embedding_dimension: int = Field(
@@ -209,6 +218,10 @@ class Settings(BaseSettings):
     @property
     def bailian_api_key(self) -> str:
         return self.openai_compatible_api_key
+
+    @property
+    def effective_embedding_api_key(self) -> str:
+        return self.embedding_api_key or self.bailian_api_key
 
     @property
     def bailian_base_url(self) -> str:
