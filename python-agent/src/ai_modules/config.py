@@ -60,15 +60,6 @@ class Settings(BaseSettings):
         default="",
         validation_alias=AliasChoices("OPENAI_COMPATIBLE_API_KEY", "BAILIAN_API_KEY"),
     )
-    embedding_api_key: str = Field(
-        default="",
-        validation_alias=AliasChoices(
-            "EMBEDDING_API_KEY",
-            "KNOWLEDGE_EMBEDDING_API_KEY",
-            "BAILIAN_API_KEY",
-            "OPENAI_COMPATIBLE_API_KEY",
-        ),
-    )
     openai_compatible_base_url: str = Field(
         default="https://dashscope.aliyuncs.com/compatible-mode/v1",
         validation_alias=AliasChoices("OPENAI_COMPATIBLE_BASE_URL", "BAILIAN_BASE_URL"),
@@ -188,7 +179,7 @@ class Settings(BaseSettings):
         alias="RETRIEVAL_DOMAIN",
     )
     knowledge_embedding_model_name: str = Field(
-        default="",
+        default="qwen3-vl-embedding",
         alias="KNOWLEDGE_EMBEDDING_MODEL_NAME",
     )
     knowledge_embedding_dimension: int = Field(
@@ -198,6 +189,8 @@ class Settings(BaseSettings):
     sandbox_root: str = Field(default="sandbox-temp", alias="SANDBOX_ROOT")
     tavily_api_key: str = Field(default="", alias="TAVILY_API_KEY")
     tavily_base_url: str = Field(default="https://api.tavily.com/search", alias="TAVILY_BASE_URL")
+
+    enable_local_judge: bool = Field(default=False, alias="ENABLE_LOCAL_JUDGE")
 
     otel_exporter_otlp_endpoint: str = Field(
         default="",
@@ -218,10 +211,6 @@ class Settings(BaseSettings):
     @property
     def bailian_api_key(self) -> str:
         return self.openai_compatible_api_key
-
-    @property
-    def effective_embedding_api_key(self) -> str:
-        return self.embedding_api_key or self.bailian_api_key
 
     @property
     def bailian_base_url(self) -> str:

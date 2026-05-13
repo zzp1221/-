@@ -664,54 +664,6 @@ class EvaluationAgent(PlaceholderAgent):
         normalized = [f"- {item}" for item in items if str(item).strip()]
         return normalized or ["- 暂无明显信号"]
 
-    def _fallback_evaluation(
-        self,
-        *,
-        params: dict[str, Any],
-        snapshot: SystemSnapshot,
-        aggregated_behavior: dict[str, Any] | None = None,
-    ) -> EvaluationPayload:
-        profile = params.get("profile", {})
-        gaps = self._unique_items(
-            [
-                *list(profile.get("knowledgeGaps", [])),
-                *list((aggregated_behavior or {}).get("candidateWeaknesses", [])),
-                *list(snapshot.knowledge_gaps),
-            ]
-        )
-        level = str(profile.get("studentLevel") or snapshot.student_level or "BASIC")
-        focus = self._unique_items(
-            list((aggregated_behavior or {}).get("recommendedFocus", [])) or gaps[:3]
-        )
-        strengths = self._unique_items(
-            list((aggregated_behavior or {}).get("candidateStrengths", []))
-        )
-        dimensions = [
-            EvaluationDimension(
-                name="knowledge_foundation",
-                level=level,
-                evidence=f"当前识别到的薄弱点: {', '.join(gaps) or '暂无'}",
-                recommendation="优先复习核心概念和适用条件。",
-            ),
-            EvaluationDimension(
-                name="problem_solving",
-                level="BASIC" if gaps else "INTERMEDIATE",
-                evidence=f"近期错误: {', '.join(snapshot.recent_mistakes) or '暂无'}",
-                recommendation="做题前先判断条件，再给出理由。",
-            ),
-        ]
-        return EvaluationPayload(
-            overallLevel=level,
-            strengths=strengths or ["愿意配合练习", "具备基础学习上下文"],
-            weaknesses=gaps or ["薄弱点待补充"],
-            nextFocus=focus or ["核心概念", "适用条件"],
-            dimensions=dimensions,
-            summaryText=(
-                f"当前评估等级为 {level}，"
-                f"建议优先聚焦 {', '.join((focus or gaps[:3])[:3]) or '核心概念与适用条件'}。"
-            ),
-        )
-
     def _unique_items(self, items: list[Any]) -> list[str]:
         seen: set[str] = set()
         normalized: list[str] = []

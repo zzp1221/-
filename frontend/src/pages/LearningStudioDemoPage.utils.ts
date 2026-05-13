@@ -858,9 +858,6 @@ function localizeResourceTypeLabel(value: string): string {
     case 'DOCUMENT':
     case 'EXPLANATION':
       return '讲解文档';
-    case 'PPT':
-    case 'SLIDES':
-      return 'PPT 课件';
     case 'READING':
       return '拓展阅读';
     case 'MINDMAP':
@@ -909,10 +906,8 @@ function localizeNarrativeText(value: string): string {
     [/\bexample_first\b/g, '先例子后原理'],
     [/\bvisual_first\b/g, '先图示后讲解'],
     [/\bDOCUMENT\b/g, '讲解文档'],
-    [/\bPPT\b/g, 'PPT课件'],
     [/\bREADING\b/g, '拓展阅读'],
     [/\bMINDMAP\b/g, '思维导图'],
-    [/\bSLIDES\b/g, 'PPT课件'],
     [/\bCODE_CASE\b/g, '代码案例'],
     [/\bCODE\b/g, '代码案例'],
     [/\bQUIZ\b/g, '练习题'],
@@ -935,9 +930,7 @@ export function buildServiceParams(service: EngineService, payload: ServiceForms
     const resourceForm = payload.resourceForm;
     const includeVideo = resourceForm.resourceType === 'VIDEO';
     const normalizedResourceType = normalizeResourceType(resourceForm.resourceType);
-    const resourceTypeLabelText = resourceForm.resourceType === 'READING'
-      ? 'PPT课件'
-      : resourceTypeLabel(resourceForm.resourceType);
+    const resourceTypeLabelText = resourceTypeLabel(resourceForm.resourceType);
     const difficultyLabel = resourceDifficultyLabel(resourceForm.difficulty);
     const query = [
       resourceForm.course,
@@ -1241,9 +1234,6 @@ function resourceTypeLabel(resourceType: string): string {
       return '讲解文档';
     case 'CODE_CASE':
       return '代码案例';
-    case 'PPT':
-    case 'SLIDES':
-      return 'PPT课件';
     case 'QUIZ':
       return '练习题';
     case 'MINDMAP':
@@ -1265,8 +1255,6 @@ function normalizeResourceType(resourceType: string): string {
       return 'CODE';
     case 'QUIZ':
       return 'QUIZ';
-    case 'READING':
-      return 'SLIDES';
     default:
       return resourceType;
   }

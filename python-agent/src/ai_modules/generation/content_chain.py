@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import json
 import logging
 import time
 from typing import Any, ClassVar, Protocol
@@ -173,8 +172,6 @@ class OpenAICompatibleStructuredGenerator:
 
     _shared_clients: ClassVar[dict[str, httpx.Client]] = {}
     _shared_async_clients: ClassVar[dict[str, httpx.AsyncClient]] = {}
-    _response_cache: ClassVar[dict[str, tuple[float, BaseModel]]] = {}
-    CACHE_TTL_SECONDS: ClassVar[int] = 24 * 60 * 60
 
     def __init__(
         self,
@@ -331,18 +328,19 @@ class OpenAICompatibleStructuredGenerator:
         section_plans: list[dict[str, Any]],
         sources: list[dict[str, Any]],
     ) -> GeneratedSectionBundle:
-        return self._call_and_validate_json(
-            model_cls=GeneratedSectionBundle,
-            span_name=f"{self.provider_name}.generate_document_sections",
-            system_prompt=build_document_system_prompt(),
-            user_prompt=build_document_user_prompt(
-                title=title,
-                topic=topic,
-                snapshot=snapshot,
-                section_plans=section_plans,
-                sources=sources,
-            ),
-            max_tokens=2200,
+        return GeneratedSectionBundle.model_validate(
+            self._call_and_parse_json(
+                span_name=f"{self.provider_name}.generate_document_sections",
+                system_prompt=build_document_system_prompt(),
+                user_prompt=build_document_user_prompt(
+                    title=title,
+                    topic=topic,
+                    snapshot=snapshot,
+                    section_plans=section_plans,
+                    sources=sources,
+                ),
+                max_tokens=2200,
+            )
         )
 
     def generate_reading_asset(
@@ -353,17 +351,18 @@ class OpenAICompatibleStructuredGenerator:
         snapshot: dict[str, Any],
         sources: list[dict[str, Any]],
     ) -> GeneratedTextAsset:
-        return self._call_and_validate_json(
-            model_cls=GeneratedTextAsset,
-            span_name=f"{self.provider_name}.generate_reading_asset",
-            system_prompt=build_reading_system_prompt(),
-            user_prompt=build_reading_user_prompt(
-                title=title,
-                topic=topic,
-                snapshot=snapshot,
-                sources=sources,
-            ),
-            max_tokens=1600,
+        return GeneratedTextAsset.model_validate(
+            self._call_and_parse_json(
+                span_name=f"{self.provider_name}.generate_reading_asset",
+                system_prompt=build_reading_system_prompt(),
+                user_prompt=build_reading_user_prompt(
+                    title=title,
+                    topic=topic,
+                    snapshot=snapshot,
+                    sources=sources,
+                ),
+                max_tokens=1600,
+            )
         )
 
     def generate_slides_asset(
@@ -374,17 +373,18 @@ class OpenAICompatibleStructuredGenerator:
         snapshot: dict[str, Any],
         sources: list[dict[str, Any]],
     ) -> GeneratedSlideDeck:
-        return self._call_and_validate_json(
-            model_cls=GeneratedSlideDeck,
-            span_name=f"{self.provider_name}.generate_slides_asset",
-            system_prompt=build_slides_system_prompt(),
-            user_prompt=build_slides_user_prompt(
-                title=title,
-                topic=topic,
-                snapshot=snapshot,
-                sources=sources,
-            ),
-            max_tokens=1800,
+        return GeneratedSlideDeck.model_validate(
+            self._call_and_parse_json(
+                span_name=f"{self.provider_name}.generate_slides_asset",
+                system_prompt=build_slides_system_prompt(),
+                user_prompt=build_slides_user_prompt(
+                    title=title,
+                    topic=topic,
+                    snapshot=snapshot,
+                    sources=sources,
+                ),
+                max_tokens=1800,
+            )
         )
 
     def generate_mindmap_asset(
@@ -416,17 +416,18 @@ class OpenAICompatibleStructuredGenerator:
         snapshot: dict[str, Any],
         sources: list[dict[str, Any]],
     ) -> GeneratedCodeAsset:
-        return self._call_and_validate_json(
-            model_cls=GeneratedCodeAsset,
-            span_name=f"{self.provider_name}.generate_code_asset",
-            system_prompt=build_code_system_prompt(),
-            user_prompt=build_code_user_prompt(
-                title=title,
-                topic=topic,
-                snapshot=snapshot,
-                sources=sources,
-            ),
-            max_tokens=2200,
+        return GeneratedCodeAsset.model_validate(
+            self._call_and_parse_json(
+                span_name=f"{self.provider_name}.generate_code_asset",
+                system_prompt=build_code_system_prompt(),
+                user_prompt=build_code_user_prompt(
+                    title=title,
+                    topic=topic,
+                    snapshot=snapshot,
+                    sources=sources,
+                ),
+                max_tokens=2200,
+            )
         )
 
     def generate_video_script(
@@ -439,19 +440,20 @@ class OpenAICompatibleStructuredGenerator:
         duration_seconds: int,
         style: str,
     ) -> VideoScriptPayload:
-        return self._call_and_validate_json(
-            model_cls=VideoScriptPayload,
-            span_name=f"{self.provider_name}.generate_video_script",
-            system_prompt=build_video_script_system_prompt(),
-            user_prompt=build_video_script_user_prompt(
-                title=title,
-                topic=topic,
-                snapshot=snapshot,
-                sources=sources,
-                duration_seconds=duration_seconds,
-                style=style,
-            ),
-            max_tokens=2200,
+        return VideoScriptPayload.model_validate(
+            self._call_and_parse_json(
+                span_name=f"{self.provider_name}.generate_video_script",
+                system_prompt=build_video_script_system_prompt(),
+                user_prompt=build_video_script_user_prompt(
+                    title=title,
+                    topic=topic,
+                    snapshot=snapshot,
+                    sources=sources,
+                    duration_seconds=duration_seconds,
+                    style=style,
+                ),
+                max_tokens=2200,
+            )
         )
 
     async def generate_video_script_async(
@@ -464,149 +466,21 @@ class OpenAICompatibleStructuredGenerator:
         duration_seconds: int,
         style: str,
     ) -> VideoScriptPayload:
-        return await self._call_and_validate_json_async(
-            model_cls=VideoScriptPayload,
-            span_name=f"{self.provider_name}.generate_video_script",
-            system_prompt=build_video_script_system_prompt(),
-            user_prompt=build_video_script_user_prompt(
-                title=title,
-                topic=topic,
-                snapshot=snapshot,
-                sources=sources,
-                duration_seconds=duration_seconds,
-                style=style,
-            ),
-            max_tokens=2200,
+        return VideoScriptPayload.model_validate(
+            await self._call_and_parse_json_async(
+                span_name=f"{self.provider_name}.generate_video_script",
+                system_prompt=build_video_script_system_prompt(),
+                user_prompt=build_video_script_user_prompt(
+                    title=title,
+                    topic=topic,
+                    snapshot=snapshot,
+                    sources=sources,
+                    duration_seconds=duration_seconds,
+                    style=style,
+                ),
+                max_tokens=2200,
+            )
         )
-
-    def _call_and_validate_json(
-        self,
-        *,
-        model_cls: type[BaseModel],
-        span_name: str,
-        system_prompt: str,
-        user_prompt: str,
-        max_tokens: int | None = None,
-    ) -> Any:
-        cache_key = self._build_cache_key(
-            model_cls=model_cls,
-            system_prompt=system_prompt,
-            user_prompt=user_prompt,
-            max_tokens=max_tokens,
-        )
-        cached = self._get_cached_response(cache_key)
-        if cached is not None:
-            return cached
-        last_error: Exception | None = None
-        for attempt in range(self.max_retries + 1):
-            try:
-                payload = self._call_and_parse_json(
-                    span_name=span_name,
-                    system_prompt=system_prompt,
-                    user_prompt=user_prompt,
-                    max_tokens=max_tokens,
-                )
-                validated = model_cls.model_validate(payload)
-                self._store_cached_response(cache_key, validated)
-                return validated
-            except ValidationError as exc:
-                last_error = exc
-                LOGGER.warning(
-                    "%s structured validation attempt %s failed for %s: %s",
-                    self.provider_name,
-                    attempt + 1,
-                    model_cls.__name__,
-                    exc,
-                )
-                if attempt >= self.max_retries:
-                    break
-                time.sleep(self.backoff_seconds * (2**attempt))
-
-        raise RuntimeError(
-            f"{self.provider_name} structured validation failed for {model_cls.__name__}: {last_error}"
-        ) from last_error
-
-    async def _call_and_validate_json_async(
-        self,
-        *,
-        model_cls: type[BaseModel],
-        span_name: str,
-        system_prompt: str,
-        user_prompt: str,
-        max_tokens: int | None = None,
-    ) -> Any:
-        cache_key = self._build_cache_key(
-            model_cls=model_cls,
-            system_prompt=system_prompt,
-            user_prompt=user_prompt,
-            max_tokens=max_tokens,
-        )
-        cached = self._get_cached_response(cache_key)
-        if cached is not None:
-            return cached
-        last_error: Exception | None = None
-        for attempt in range(self.max_retries + 1):
-            try:
-                payload = await self._call_and_parse_json_async(
-                    span_name=span_name,
-                    system_prompt=system_prompt,
-                    user_prompt=user_prompt,
-                    max_tokens=max_tokens,
-                )
-                validated = model_cls.model_validate(payload)
-                self._store_cached_response(cache_key, validated)
-                return validated
-            except ValidationError as exc:
-                last_error = exc
-                LOGGER.warning(
-                    "%s structured validation attempt %s failed for %s: %s",
-                    self.provider_name,
-                    attempt + 1,
-                    model_cls.__name__,
-                    exc,
-                )
-                if attempt >= self.max_retries:
-                    break
-                await asyncio.sleep(self.backoff_seconds * (2**attempt))
-
-        raise RuntimeError(
-            f"{self.provider_name} structured validation failed for {model_cls.__name__}: {last_error}"
-        ) from last_error
-
-    def _build_cache_key(
-        self,
-        *,
-        model_cls: type[BaseModel],
-        system_prompt: str,
-        user_prompt: str,
-        max_tokens: int | None,
-    ) -> str:
-        return json.dumps(
-            {
-                "provider": self.provider_name,
-                "baseUrl": self.base_url,
-                "model": self.model_name,
-                "modelClass": model_cls.__name__,
-                "systemPrompt": system_prompt,
-                "userPrompt": user_prompt,
-                "maxTokens": max_tokens,
-            },
-            ensure_ascii=False,
-            sort_keys=True,
-        )
-
-    def _get_cached_response(self, cache_key: str) -> BaseModel | None:
-        cached = self._response_cache.get(cache_key)
-        if cached is None:
-            return None
-        cached_at, model = cached
-        if time.time() - cached_at > self.CACHE_TTL_SECONDS:
-            self._response_cache.pop(cache_key, None)
-            return None
-        return model.model_copy(deep=True)
-
-    def _store_cached_response(self, cache_key: str, model: BaseModel) -> None:
-        self._response_cache[cache_key] = (time.time(), model.model_copy(deep=True))
 
     def _call_and_parse_json(
         self,

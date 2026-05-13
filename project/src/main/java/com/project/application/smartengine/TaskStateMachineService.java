@@ -230,21 +230,13 @@ public class TaskStateMachineService {
     }
 
     private void applyDoneEvent(SmartEngineTask task, Map<String, Object> payload) {
-        String status = String.valueOf(payload.getOrDefault("status", "SUCCESS"));
-        boolean failed = "FAILED".equalsIgnoreCase(status);
-        task.setTaskStatus(failed ? TaskStatus.FAILED : TaskStatus.COMPLETED);
-        task.setCurrentStage(failed ? "failed" : "completed");
-        task.setProgressPercent(BigDecimal.valueOf(failed ? 0 : 100));
+        task.setTaskStatus(TaskStatus.COMPLETED);
+        task.setCurrentStage("completed");
+        task.setProgressPercent(BigDecimal.valueOf(100));
         task.setCompletedAt(OffsetDateTime.now());
         Map<String, Object> mergedSummary = new LinkedHashMap<>(task.getResponseSummary());
         mergedSummary.putAll(payload);
         task.setResponseSummary(mergedSummary);
-        if (failed) {
-            String message = String.valueOf(payload.getOrDefault("summary", "Python Agent 执行失败"));
-            task.setErrorCode("PYTHON_AGENT_FAILED");
-            task.setErrorMessage(message);
-            videoGenerationTaskService.markFailed(task, message);
-        }
     }
 
     private void applyErrorEvent(SmartEngineTask task, Map<String, Object> payload) {

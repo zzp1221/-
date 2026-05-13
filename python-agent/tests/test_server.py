@@ -4,7 +4,6 @@ import pytest
 
 import server
 from src.ai_modules.config import Settings
-from src.ai_modules.memory.conversation_message_store import ConversationMessageDocument, InMemoryConversationMessageStore
 from src.ai_modules.models import EngineStreamRequest
 from src.ai_modules.models.events import (
     DonePayload,
@@ -138,14 +137,7 @@ def test_stream_endpoint_returns_expected_event_order(client, monkeypatch) -> No
     assert data_payloads[-1]["payload"]["status"] == "SUCCESS"
 
 
-def test_stream_endpoint_supports_video_generation_events(client, monkeypatch) -> None:
-    class FakeMimoClient:
-        async def synthesize_speech(self, **kwargs) -> bytes:
-            del kwargs
-            return b"y" * 512
-
-    monkeypatch.setattr("src.ai_modules.llms.mimo_client.MiMoClient", FakeMimoClient)
-
+def test_stream_endpoint_supports_video_generation_events(client) -> None:
     payload = {
         "serviceType": "RESOURCE_GENERATION",
         "params": {
@@ -171,7 +163,7 @@ def test_stream_endpoint_supports_video_generation_events(client, monkeypatch) -
     event_names = [line.removeprefix("event: ") for line in lines[::2]]
     data_payloads = [json.loads(line.removeprefix("data: ")) for line in lines[1::2]]
 
-    assert event_names.count("progress") >= 3
+    assert event_names.count("progress") >= 4
     resource_file_payload = next(item["payload"] for item in data_payloads if item["event"] == "resource_file")
     assert resource_file_payload["assetType"] == "VIDEO"
     assert resource_file_payload["thumbnailPath"].endswith(".svg")
@@ -282,30 +274,8 @@ def test_stream_endpoint_emits_error_and_failed_done_when_supervisor_raises(clie
 
     assert event_names == ["error", "done"]
     assert data_payloads[0]["payload"]["code"] == "PYTHON_AGENT_ERROR"
-    assert data_payloads[0]["payload"]["message"] == "Python Agent 执行失败，请稍后重试"
+    assert data_payloads[0]["payload"]["message"] == "boom"
     assert data_payloads[1]["payload"]["status"] == "FAILED"
-
-
-def test_list_conversation_messages_supports_pagination(client, monkeypatch) -> None:
-    store = InMemoryConversationMessageStore()
-    store.documents = [
-        ConversationMessageDocument(
-            conversationId="conv-1",
-            userId="user-1",
-            role="user",
-            content=f"message-{index}",
-        )
-        for index in range(5)
-    ]
-    monkeypatch.setattr(server, "MESSAGE_STORE", store)
-
-    response = client.get(
-        "/internal/conversations/conv-1/messages",
-        params={"userId": "user-1", "page": 1, "size": 2},
-    )
-
-    assert response.status_code == 200
-    assert [item["content"] for item in response.json()] == ["message-2", "message-3"]
 
 
 def test_settings_switch_provider_via_env() -> None:

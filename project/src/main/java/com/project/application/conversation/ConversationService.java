@@ -39,24 +39,28 @@ public class ConversationService {
 
     private static final long DEFAULT_TIMEOUT_MS = 0L;
     private static final Logger LOGGER = LoggerFactory.getLogger(ConversationService.class);
+    private static final int DEFAULT_CONVERSATION_PAGE = 0;
+    private static final int DEFAULT_CONVERSATION_SIZE = 12;
+    private static final int DEFAULT_MESSAGE_PAGE = 0;
+    private static final int DEFAULT_MESSAGE_SIZE = 50;
 
     private final QnaSessionRepository qnaSessionRepository;
     private final PythonAgentClient pythonAgentClient;
     private final PythonConversationMessageClient pythonConversationMessageClient;
-    private final TaskExecutor conversationTaskExecutor;
+    private final TaskExecutor smartEngineTaskExecutor;
     private final UserProfileCurrentRepository userProfileCurrentRepository;
 
     public ConversationService(
         QnaSessionRepository qnaSessionRepository,
         PythonAgentClient pythonAgentClient,
         PythonConversationMessageClient pythonConversationMessageClient,
-        @Qualifier("conversationTaskExecutor") TaskExecutor conversationTaskExecutor,
+        @Qualifier("conversationTaskExecutor") TaskExecutor smartEngineTaskExecutor,
         UserProfileCurrentRepository userProfileCurrentRepository
     ) {
         this.qnaSessionRepository = qnaSessionRepository;
         this.pythonAgentClient = pythonAgentClient;
         this.pythonConversationMessageClient = pythonConversationMessageClient;
-        this.conversationTaskExecutor = conversationTaskExecutor;
+        this.smartEngineTaskExecutor = smartEngineTaskExecutor;
         this.userProfileCurrentRepository = userProfileCurrentRepository;
     }
 
@@ -74,10 +78,15 @@ public class ConversationService {
     }
 
     @Transactional(readOnly = true)
-    public List<ConversationHistoryItemResponse> listRecentConversations(JwtAuthenticatedUser currentUser, Integer page, Integer size) {
-        int resolvedPage = normalizePage(page);
-        int resolvedSize = normalizePageSize(size, 12, 50);
-        return qnaSessionRepository.findRecentByUserId(currentUser.userId(), PageRequest.of(resolvedPage, resolvedSize)).stream()
+    public List<ConversationHistoryItemResponse> listRecentConversations(
+        JwtAuthenticatedUser currentUser,
+        Integer page,
+        Integer size
+    ) {
+        return qnaSessionRepository.findRecentByUserId(
+                currentUser.userId(),
+                PageRequest.of(normalizePage(page), normalizeSize(size, DEFAULT_CONVERSATION_SIZE))
+            ).stream()
             .map(session -> new ConversationHistoryItemResponse(
                 session.getId(),
                 resolveConversationTitle(session),
@@ -102,7 +111,7 @@ public class ConversationService {
             conversationId,
             currentUser.userId(),
             normalizePage(page),
-            normalizePageSize(size, 100, 200)
+            normalizeSize(size, DEFAULT_MESSAGE_SIZE)
         );
     }
 
@@ -135,7 +144,7 @@ public class ConversationService {
         AtomicInteger sequence = new AtomicInteger(0);
         StringBuilder assistantReply = new StringBuilder();
 
-        conversationTaskExecutor.execute(() -> {
+        smartEngineTaskExecutor.execute(() -> {
             try {
                 pythonAgentClient.stream(
                     new SmartEngineInvocation(
@@ -369,14 +378,11 @@ public class ConversationService {
     }
 
     private int normalizePage(Integer page) {
-        return page == null || page < 0 ? 0 : page;
+        return page == null || page < 0 ? DEFAULT_CONVERSATION_PAGE : page;
     }
 
-    private int normalizePageSize(Integer size, int defaultValue, int maxValue) {
-        if (size == null || size <= 0) {
-            return defaultValue;
-        }
-        return Math.min(size, maxValue);
+    private int normalizeSize(Integer size, int defaultSize) {
+        return size == null || size <= 0 ? defaultSize : size;
     }
 
     private String buildConversationTitle(String message) {

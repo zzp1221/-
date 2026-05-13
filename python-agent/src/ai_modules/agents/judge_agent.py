@@ -226,34 +226,28 @@ class JudgeAgent(PlaceholderAgent):
         params: dict[str, Any],
     ) -> dict[str, Any]:
         del tool_input
-        try:
-            return await self.objective_judge_generator.judge(
-                questions=self._questions(params),
-                answers=self._answers(params),
+        objective_results: list[dict[str, Any]] = []
+        subjective_questions: list[dict[str, Any]] = []
+        for question in self._questions(params):
+            answer = self._answers(params).get(question.question_id, "")
+            if question.question_type == "SHORT_ANSWER":
+                subjective_questions.append(question.model_dump(by_alias=True))
+                continue
+            is_correct = self._normalize_text(answer) == self._normalize_text(question.answer)
+            objective_results.append(
+                JudgeItemResult(
+                    questionId=question.question_id,
+                    questionType=question.question_type,
+                    learnerAnswer=answer,
+                    correctAnswer=question.answer,
+                    isCorrect=is_correct,
+                    score=20.0 if is_correct else 0.0,
+                    knowledgeTags=question.knowledge_tags,
+                    reason="答案匹配标准答案" if is_correct else "答案与标准答案不一致",
+                    feedback="这道客观题判断正确。" if is_correct else "先回到题目条件，确认再作答。",
+                    profileDelta=self._build_profile_delta(question=question, is_correct=is_correct),
+                ).model_dump(by_alias=True)
             )
-        except Exception:
-            objective_results: list[dict[str, Any]] = []
-            subjective_questions: list[dict[str, Any]] = []
-            for question in self._questions(params):
-                answer = self._answers(params).get(question.question_id, "")
-                if question.question_type == "SHORT_ANSWER":
-                    subjective_questions.append(question.model_dump(by_alias=True))
-                    continue
-                is_correct = self._normalize_text(answer) == self._normalize_text(question.answer)
-                objective_results.append(
-                    JudgeItemResult(
-                        questionId=question.question_id,
-                        questionType=question.question_type,
-                        learnerAnswer=answer,
-                        correctAnswer=question.answer,
-                        isCorrect=is_correct,
-                        score=20.0 if is_correct else 0.0,
-                        knowledgeTags=question.knowledge_tags,
-                        reason="答案匹配标准答案" if is_correct else "答案与标准答案不一致",
-                        feedback="这道客观题判断正确。" if is_correct else "先回到题目条件，确认再作答。",
-                        profileDelta=self._build_profile_delta(question=question, is_correct=is_correct),
-                    ).model_dump(by_alias=True)
-                )
             return {"items": objective_results, "pendingSubjective": subjective_questions}
 
     async def _tool_evaluate_subjective(

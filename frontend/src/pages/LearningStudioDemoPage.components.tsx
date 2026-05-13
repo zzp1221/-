@@ -1,4 +1,4 @@
-import { memo, useEffect, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Activity, ArrowDown, Brain, BookOpen, CheckCircle2, Clock3, ExternalLink, FileText, LoaderCircle, SendHorizontal, Sparkles, Target, TrendingUp, TriangleAlert, XCircle } from 'lucide-react';
 import CodeBlock from '../components/CodeBlock';
@@ -33,7 +33,7 @@ import {
 import { request } from '../api/request';
 import { normalizeCopyText } from './LearningStudioDemoPage.utils';
 
-export const ServiceDynamicForm = memo(function ServiceDynamicForm(props: {
+export function ServiceDynamicForm(props: {
   service: EngineService | null;
   resourceForm: ResourceForm;
   pathForm: PathForm;
@@ -203,9 +203,9 @@ export const ServiceDynamicForm = memo(function ServiceDynamicForm(props: {
       </div>
     </div>
   );
-});
+}
 
-export const ServiceSubmitPanel = memo(function ServiceSubmitPanel(props: {
+export function ServiceSubmitPanel(props: {
   disabled: boolean;
   onSubmit: () => void;
   onStop?: () => void;
@@ -271,7 +271,7 @@ export const ServiceSubmitPanel = memo(function ServiceSubmitPanel(props: {
       ) : null}
     </div>
   );
-});
+}
 
 function InlineResourcePanel(props: { resource: InlineResourceView }) {
   if (props.resource.kind === 'code') {
@@ -417,7 +417,7 @@ function PracticeQuestionPanel(props: {
   );
 }
 
-export const TaskResultPanel = memo(function TaskResultPanel(props: {
+export function TaskResultPanel(props: {
   service: EngineService | null;
   taskSummary: string;
   serviceResultLines: string[];
@@ -602,7 +602,7 @@ export const TaskResultPanel = memo(function TaskResultPanel(props: {
       ) : null}
     </div>
   );
-});
+}
 
 function ExternalResourceRecommendationCard(props: { item: TempDownloadLink }) {
   const actionLabel = recommendationActionLabel(props.item.resourceType);
@@ -681,9 +681,6 @@ function recommendationTypeLabel(resourceType?: string): string {
       return '外部视频';
     case 'CODE_CASE':
       return '代码案例';
-    case 'PPT':
-    case 'SLIDES':
-      return 'PPT 课件';
     case 'PRACTICAL_CASE':
       return '实操案例';
     case 'READING':
@@ -704,7 +701,7 @@ function extractFileName(url: string, fallbackTitle: string): string {
   }
 }
 
-export const RealtimeProfile = memo(function RealtimeProfile(props: {
+export function RealtimeProfile(props: {
   profile: ProfileSnapshot | null;
   summary: string;
   updatedAt: string;
@@ -849,7 +846,7 @@ export const RealtimeProfile = memo(function RealtimeProfile(props: {
       </div>
     </div>
   );
-});
+}
 
 function ProfileStatCard(props: {
   icon: ReactNode;
@@ -953,7 +950,7 @@ function ProfileTimeline(props: { timeline: ProfileTimelinePoint[] }) {
   );
 }
 
-export const ChatPanel = memo(function ChatPanel({ messages }: { messages: ChatMessage[] }) {
+export function ChatPanel({ messages }: { messages: ChatMessage[] }) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null);
   const [autoFollow, setAutoFollow] = useState(true);
@@ -1071,9 +1068,9 @@ export const ChatPanel = memo(function ChatPanel({ messages }: { messages: ChatM
       ) : null}
     </div>
   );
-});
+}
 
-export const InputPanel = memo(function InputPanel(props: {
+export function InputPanel(props: {
   value: string;
   busy: boolean;
   placeholder: string;
@@ -1130,7 +1127,7 @@ export const InputPanel = memo(function InputPanel(props: {
       </div>
     </div>
   );
-});
+}
 
 function ProfileCell({ label, value }: { label: string; value: ReactNode }) {
   return (

@@ -258,6 +258,7 @@ test-output/
 *.pth
 *.pt
 *.ckpt
+*.gguf
 *.h5
 *.hdf5
 *.pb
@@ -294,6 +295,8 @@ vector_data.dump
 vector_data/
 *.vectors.npy
 *.embeddings
+python-agent/grpo_output/
+python-agent/sft_output/
 
 # ============================================================
 # 9. Docker

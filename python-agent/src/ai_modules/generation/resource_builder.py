@@ -5,7 +5,6 @@ from __future__ import annotations
 import asyncio
 import json
 import base64
-import re
 from dataclasses import asdict
 from pathlib import Path
 from typing import Any
@@ -65,8 +64,6 @@ class SectionPlan(BaseModel):
 
 class ResourceGenerationService:
     """Write structured asset outputs to the local sandbox directory."""
-
-    VIDEO_TTS_CHUNK_LIMIT = 1500
 
     def __init__(
         self,
@@ -138,9 +135,11 @@ class ResourceGenerationService:
 
             try:
                 mimo_client = MiMoClient()
-                tts_audio_bytes = await self._synthesize_video_tts_async(
-                    mimo_client=mimo_client,
-                    script_text=script_payload.full_text,
+                tts_audio_bytes = await mimo_client.synthesize_speech(
+                    text=script_payload.full_text[:1600],
+                    style_description="用清晰自然的语速播报，声音沉稳专业，适合教学场景",
+                    voice="mimo_default",
+                    audio_format="mp3",
                 )
             except Exception as exc:
                 raise RuntimeError(
@@ -500,34 +499,6 @@ class ResourceGenerationService:
             sources=sources,
             fallback_builder=self,
         )
-        fallback_pptx_bytes = self._build_pptx_bytes(
-            title=generated_slides.title,
-            topic=topic,
-            slides=[
-                {
-                    "title": slide.title,
-                    "bullets": list(slide.bullets),
-                    "speakerNotes": slide.speaker_notes,
-                }
-                for slide in generated_slides.slides
-            ],
-            course=str(snapshot.current_course),
-        )
-        if fallback_pptx_bytes is not None:
-            file_name = self._scoped_file_name("slides", "pptx", params)
-            path = self._write_bytes(file_name, fallback_pptx_bytes)
-            slide_count = self._count_pptx_slides(fallback_pptx_bytes)
-            return GeneratedAsset(
-                assetType="SLIDES",
-                title=generated_slides.title,
-                summary=generated_slides.summary,
-                displayMode="DOWNLOAD_CARD",
-                fileName=file_name,
-                localPath=str(path),
-                previewText=f"PPT 演示文稿 · {slide_count} 页 · {topic}",
-                mimeType="application/vnd.openxmlformats-officedocument.presentationml.presentation",
-            )
-
         slide_lines: list[str] = []
         for index, slide in enumerate(generated_slides.slides, start=1):
             slide_lines.extend(
@@ -810,9 +781,11 @@ class ResourceGenerationService:
 
             try:
                 mimo_client = MiMoClient()
-                tts_audio_bytes = self._synthesize_video_tts_sync(
-                    mimo_client=mimo_client,
-                    script_text=script_payload.full_text,
+                tts_audio_bytes = mimo_client.synthesize_speech_sync(
+                    text=script_payload.full_text[:1600],
+                    style_description="用清晰自然的语速播报，声音沉稳专业，适合教学场景",
+                    voice="mimo_default",
+                    audio_format="mp3",
                 )
             except Exception as exc:
                 raise RuntimeError(
@@ -881,59 +854,6 @@ class ResourceGenerationService:
 
     def _safe_task_id(self, task_id: str) -> str:
         return "".join(ch if ch.isalnum() or ch in ("-", "_") else "_" for ch in task_id)
-
-    async def _synthesize_video_tts_async(self, *, mimo_client: Any, script_text: str) -> bytes:
-        audio_chunks: list[bytes] = []
-        for chunk in self._split_tts_script(script_text):
-            audio_chunks.append(
-                await mimo_client.synthesize_speech(
-                    text=chunk,
-                    style_description="用清晰自然的语速播报，声音沉稳专业，适合教学场景",
-                    voice="mimo_default",
-                    audio_format="mp3",
-                )
-            )
-        return b"".join(audio_chunks)
-
-    def _synthesize_video_tts_sync(self, *, mimo_client: Any, script_text: str) -> bytes:
-        audio_chunks: list[bytes] = []
-        for chunk in self._split_tts_script(script_text):
-            audio_chunks.append(
-                mimo_client.synthesize_speech_sync(
-                    text=chunk,
-                    style_description="用清晰自然的语速播报，声音沉稳专业，适合教学场景",
-                    voice="mimo_default",
-                    audio_format="mp3",
-                )
-            )
-        return b"".join(audio_chunks)
-
-    def _split_tts_script(self, script_text: str) -> list[str]:
-        normalized = (script_text or "").strip()
-        if not normalized:
-            return [""]
-
-        fragments = [fragment.strip() for fragment in re.split(r"(?<=[。！？!?；;])|\n+", normalized) if fragment.strip()]
-        if not fragments:
-            fragments = [normalized]
-
-        chunks: list[str] = []
-        current = ""
-        for fragment in fragments:
-            candidate = fragment if not current else f"{current}\n{fragment}"
-            if len(candidate) <= self.VIDEO_TTS_CHUNK_LIMIT:
-                current = candidate
-                continue
-            if current:
-                chunks.append(current)
-                current = ""
-            while len(fragment) > self.VIDEO_TTS_CHUNK_LIMIT:
-                chunks.append(fragment[: self.VIDEO_TTS_CHUNK_LIMIT])
-                fragment = fragment[self.VIDEO_TTS_CHUNK_LIMIT :].strip()
-            current = fragment
-        if current:
-            chunks.append(current)
-        return chunks or [normalized[: self.VIDEO_TTS_CHUNK_LIMIT]]
 
     def _normalize_duration_seconds(self, value: Any) -> int:
         try:

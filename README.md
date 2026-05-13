@@ -6,37 +6,37 @@
 
 **智能辅导** — 15+ 专业 Agent 协同工作，支持多轮对话、SSE 流式逐字渲染、长会话记忆压缩
 
-**RAG 知识检索** — 三通道混合检索（向量相似度 + 关键词匹配 + 知识图谱遍历），覆盖 14 门计算机学科、642+ 知识块，hits@3 ≥ 90%
+**RAG 知识检索** — 三通道混合检索（短语优先 grep + 向量语义 + 知识图谱遍历），覆盖 20 门计算机学科、986+ 知识块，hits@3 100%
 
-**多格式资源生成** — 文档 / PPT / 阅读材料 / 思维导图 / 代码示例 / 数字人视频（6 种格式）
+**多格式资源生成** — 文档 / 课件 / 阅读材料 / 思维导图 / 代码示例 / 数字人视频（6 种格式）
 
 **学习画像** — 用户能力雷达图、薄弱点追踪，每次辅导/练习后自动更新
 
 **学习路径规划** — 基于评估结果自动生成个性化学习计划
 
-**练习与评测** — 自动出题、评分、反馈
+**练习与评测** — 自动出题、评分、反馈，客观题字符串比对 + 主观题本地 GGUF 模型评分
 
 ## 技术架构
 
 ```
 ┌──────────────┐     ┌──────────────────┐     ┌──────────────────┐
 │   Frontend   │────▶│   Java Backend   │────▶│  Python AI Agent │
-│  React + Vite │     │  Spring Boot 3.3  │     │  FastAPI + LangGraph │
+│  React + Vite │     │  Spring Boot 3.3  │     │  FastAPI + SSE   │
 │  Port 80     │     │  Port 8081       │     │  Port 8000       │
 └──────────────┘     └──────────────────┘     └──────────────────┘
                               │                         │
                     ┌─────────┼─────────┐       ┌──────┴──────┐
                     │         │         │       │  LLM Providers │
-               PostgreSQL   MongoDB   Redis    │ DashScope /  │
-               + pgvector   对话/消息  缓存     │ MiMo / Spark │
+               PostgreSQL   MongoDB   Redis    │ OpenAI Compatible /│
+               + pgvector   对话/消息  缓存     │ MiMo / Spark     │
                Port 5432   Port 27017 Port 6379 └─────────────┘
 ```
 
 | 层 | 技术栈 | 端口 |
 |---|---|---|
-| 前端 | TypeScript, React 18, Vite 5, Tailwind CSS 4, Nginx | 80 |
+| 前端 | TypeScript, React 19, Vite, Tailwind CSS, Nginx | 80 |
 | 后端 | Java 21, Spring Boot 3.3, Spring Security (JWT), Maven | 8081 |
-| AI Agent | Python 3.11, FastAPI, LangGraph, LangChain, DashScope | 8000 |
+| AI Agent | Python 3.14, FastAPI, SSE 流式, DashScope Embedding | 8000 |
 | 向量库 | PostgreSQL 16 + pgvector (1024 维 IVFFlat 索引) | 5432 |
 | 文档库 | MongoDB 7 (对话历史、消息、流事件) | 27017 |
 | 缓存 | Redis 7 (限流、幂等、缓存, AOF 持久化) | 6379 |
@@ -56,7 +56,7 @@
 
 支持 3 家 LLM 提供商，可按 Agent 组件独立配置模型：
 
-- **DashScope / 百炼** — OpenAI 兼容接口
+- **OpenAI 兼容接口** — 百炼 / DeepSeek / 通用 OpenAI Compatible
 - **小米 MiMo** — 支持 PPTX 直出
 - **讯飞星火**
 
@@ -64,9 +64,9 @@
 
 ### 知识覆盖
 
-14 门计算机学科，642+ 知识块：
+20 门计算机学科，986+ 知识块：
 
-信息安全、分布式系统、操作系统、数据库原理、数据结构、离散数学、程序设计、算法设计与分析、编译原理、计算机图形学、计算机组成原理、计算机网络、软件工程、视频资源
+操作系统、数据结构、计算机网络、计算机组成原理、编译原理、数据库原理、软件工程、算法设计与分析、程序设计、离散数学、人工智能、机器学习、信息安全、分布式系统、计算机图形学、C语言深入、Go语言、Rust语言、Java深入、JavaScript/TypeScript、Python深入、程序设计语言原理
 
 ### 向量化流程
 
@@ -76,22 +76,23 @@
 wiki/*.md ──①──▶ rag.wiki_page ──②──▶ rag.knowledge_document + rag.knowledge_chunk
    │              (结构化存储)              (1024 维向量)
    │
-   └── rag.wiki_link (知识图谱: WIKILINK / SHARED_TAG / SHARED_SOURCE)
+   └── rag.wiki_link (知识图谱: WIKILINK / SHARED_TAG)
 ```
 
 **阶段一：结构化导入** (`python-agent/knowledge/import_wiki_to_db.py`)
-- 解析 `wiki/` 目录下的 Markdown 文件（含 YAML frontmatter）
-- 写入 `rag.wiki_page`（标题、正文、学科、难度、标签）
+- 从 `knowledge/wiki_topics.json` 读取主题定义，生成 `wiki/` 目录下的 Markdown 文件
+- 解析 Markdown（含 YAML frontmatter），写入 `rag.wiki_page`
 - 自动提取 `[[wikilink]]` 双链，构建 `rag.wiki_link` 知识图谱
-- 同步填充 `rag.term_lexicon` 术语词典（用于关键词检索分词）
+- 同步填充 `rag.term_lexicon` 术语词典（用于 FMM 分词）
+- 支持 `--incremental` 增量模式，跳过已存在页面
 
 **阶段二：向量化** (`python-agent/knowledge/vectorize_wiki.py`)
-- 从 `rag.wiki_page` 读取未向量化的页面
+- 只向量化知识文档的**标题**（title embeddings 远优于 content embeddings）
 - 调用 DashScope `qwen3-vl-embedding` 模型生成 1024 维稠密向量
 - 批量写入 `rag.knowledge_document` + `rag.knowledge_chunk`
-- 每个 chunk 包含：content、embedding (VECTOR(1024))、domain、difficulty、quality_score
+- 支持 `--incremental` 增量模式，只处理未向量化页面
 
-**预置数据**：`vector_data.dump`（9.6MB pg_dump）包含全部已向量化的知识块，首次启动时由 `restore_vector_data.sh` 自动恢复，无需重新调用 Embedding API。
+**预置数据**：`vector_data.dump`（11.5MB pg_dump）包含全部已向量化的知识块和资源，首次启动时由 `restore_vector_data.sh` 自动恢复，无需重新调用 Embedding API。
 
 ### 检索架构
 
@@ -100,7 +101,8 @@ wiki/*.md ──①──▶ rag.wiki_page ──②──▶ rag.knowledge_docu
 ```
 用户查询
   │
-  ├─ Channel A: GrepSearcher ─── 关键词匹配（FMM 分词 + 术语词典）
+  ├─ Channel A: GrepSearcher ─── 短语优先匹配（完整查询 → FMM术语 → Token回退）
+  │   └── 同义词扩展 (rag.synonym_group)
   │
   ├─ Channel B: VectorSearcher ─ 语义相似度（pgvector cosine, IVFFlat 索引）
   │   └── 同时搜索 knowledge_chunk + resource_chunk
@@ -116,16 +118,30 @@ wiki/*.md ──①──▶ rag.wiki_page ──②──▶ rag.knowledge_docu
 |---|---|---|
 | `rag.knowledge_chunk` | 知识库 chunk（wiki 导入） | `embedding VECTOR(1024)` |
 | `rag.resource_chunk` | 生成资源 chunk（运行时写入） | `embedding VECTOR(1024)` |
-| `rag.user_profile_vector` | 用户学习画像向量 | `embedding VECTOR(1024)` |
 
-三张表均使用 IVFFlat 索引（`vector_cosine_ops`, lists=100）加速近似最近邻搜索。
+两张表均使用 IVFFlat 索引（`vector_cosine_ops`, lists=100）加速近似最近邻搜索。
+
+## 本地 Judge 模型
+
+Judge Agent 的客观题判分已改为字符串比对（零 LLM 调用），主观题评估支持本地 GGUF 模型：
+
+| 项目 | 值 |
+|------|-----|
+| 基座模型 | Qwen3-0.6B |
+| 训练数据 | Wiki 知识点 × 3 种答案变体 |
+| 训练方式 | SFT (1495 样本) + GRPO (200 组) |
+| 模型格式 | GGUF Q8_0 |
+| 模型大小 | 610MB |
+| 推理引擎 | llama-cpp-python |
+| 推理速度 | ~3s/次（CPU） |
+| 启用方式 | `.env` 中 `ENABLE_LOCAL_JUDGE=true` |
 
 ## 快速开始
 
 ### 环境要求
 
 - Docker 24+ & Docker Compose v2.20+
-- 至少一个 LLM API Key（DashScope / MiMo / Spark）
+- 至少一个 LLM API Key（OpenAI 兼容格式）
 
 ### Docker Compose 一键启动
 
@@ -149,7 +165,7 @@ curl -s http://localhost:8000/health             # Python Agent
 
 首次启动时，PostgreSQL 容器会自动执行：
 1. `init.sql` — 建表、建索引、建枚举
-2. `restore_vector_data.sh` — 从 `vector_data.dump` 恢复预置向量数据（642 知识块 + 资源 chunk）
+2. `restore_vector_data.sh` — 从 `vector_data.dump` 恢复预置向量数据（986 知识块 + 598 资源 chunk）
 
 ### 本地开发
 
@@ -172,21 +188,24 @@ uvicorn server:app --host 0.0.0.0 --port 8000 --reload
 
 ### 重新向量化知识库
 
-如需更新知识库内容后重新生成向量：
-
 ```bash
-cd python-agent/knowledge
+cd python-agent
 
-# 1. 导入 wiki markdown → PostgreSQL (rag.wiki_page)
-python import_wiki_to_db.py
+# 1. 生成 wiki markdown
+python knowledge/expand_wiki.py
 
-# 2. 生成 1024 维向量 → rag.knowledge_chunk
-python vectorize_wiki.py
+# 2. 导入 PostgreSQL（支持 --incremental 增量模式）
+python knowledge/import_wiki_to_db.py --incremental
 
-# 可选参数：
-#   --dry-run     预览，不写入
-#   --limit N     仅处理前 N 条
-#   --incremental 增量模式，跳过已向量化页面
+# 3. 生成 1024 维向量（支持 --incremental 增量模式）
+python knowledge/vectorize_wiki.py --incremental
+
+# 4. 更新术语词典
+python knowledge/populate_term_lexicon.py
+
+# 5. 更新向量 dump
+docker exec zhixue-postgres pg_dump -U postgres -d zhixue -Fc -f /tmp/vd.dump -t 'rag.*'
+docker cp zhixue-postgres:/tmp/vd.dump ./vector_data.dump
 ```
 
 ## 测试
@@ -225,21 +244,24 @@ cd frontend && npx tsc --noEmit && npx vite build
 │   ├── server.py            # FastAPI 入口 + SSE 流式端点
 │   ├── src/ai_modules/
 │   │   ├── agents/          # 15+ 专业 Agent (tutor, retrieval, generation, judge, profile...)
-│   │   ├── llms/            # 多 LLM 提供商适配 (DashScope, MiMo, Spark)
-│   │   ├── retrieval/       # 三通道混合检索 (vector + grep + graph + RRF)
-│   │   ├── memory/          # 对话记忆 (摘要压缩) & 学习画像
+│   │   ├── llms/            # 多 LLM 提供商适配 + 本地 GGUF 评估器
+│   │   ├── retrieval/       # 三通道混合检索 (短语优先 grep + vector + graph + RRF)
+│   │   ├── memory/          # 对话记忆 & 学习画像
 │   │   ├── generation/      # 内容生成链 (6 种资源格式)
 │   │   └── prompts/         # Agent 提示词模板
-│   └── knowledge/           # 知识库导入 & 向量化脚本
+│   ├── knowledge/           # 知识库导入 & 向量化脚本
+│   ├── retrieval/           # 检索模块 (grep/vector/graph/RRF)
+│   ├── recommendation/      # 学习资源推荐引擎
+│   └── scripts/             # 训练数据生成 & 模型训练脚本
 │
-├── wiki/                    # 知识库源文件 (14 门计算机学科 Markdown)
+├── wiki/                    # 知识库源文件 (20 门学科 Markdown, 从 JSON 生成)
 ├── contracts/               # SSE 事件 JSON Schema 契约
 ├── migrations/              # 数据库迁移脚本
 ├── tests/                   # 端到端测试
 ├── docs/                    # 文档
 ├── docker-compose.yml       # 6 服务编排
 ├── init.sql                 # PostgreSQL 完整 DDL
-└── vector_data.dump         # 预置向量数据 (pg_dump)
+└── vector_data.dump         # 预置向量数据 (pg_dump, 11.5MB)
 ```
 
 ## 安全与可靠性
@@ -253,7 +275,12 @@ cd frontend && npx tsc --noEmit && npx vite build
 
 ## 文档
 
-- [部署指南](docs/DEPLOYMENT.md) — 完整的生产环境部署文档
+- [系统架构](docs/architecture.md) — 完整架构文档
+- [部署指南](docs/deployment.md) — 生产环境部署 + 本地 Judge 模型部署
+- [Judge 模型优化](docs/judge_model_optimization.md) — 主观题本地模型微调方案
+- [查询复杂度路由](docs/query_complexity_router.md) — 查询复杂度判定优化
+- [检索排序优化](docs/retrieval_ltr_optimization.md) — Learning-to-Rank 检索排序
+- [比赛材料提交指南](docs/competition_submission_guide.md) — 提交文件清单
 - [实验日志](docs/experiment_log.md) — 改动记录与验证结果
 - [SSE 事件协议](contracts/sse-events.schema.json) — 流式通信 JSON Schema
 

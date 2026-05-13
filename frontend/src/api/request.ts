@@ -15,7 +15,7 @@ interface Result<T = unknown> {
 
 const SUCCESS_CODES = new Set<ResultCode>([0, 200, '0', '200', 'SUCCESS']);
 
-export class ApiError extends Error {
+class ApiError extends Error {
   readonly code: ResultCode;
   readonly traceId?: string;
   readonly httpStatus?: number;
@@ -66,7 +66,7 @@ export function getAuthToken(): string {
   return window.localStorage.getItem(AUTH_TOKEN_STORAGE_KEY)?.trim() ?? '';
 }
 
-export function getCurrentUserId(): string {
+function getCurrentUserId(): string {
   if (typeof window === 'undefined') {
     return '';
   }

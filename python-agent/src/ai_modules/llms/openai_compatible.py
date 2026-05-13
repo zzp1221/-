@@ -138,6 +138,7 @@ class OpenAICompatibleClient:
             "messages": messages,
             "temperature": temperature,
             "stream": False,
+            "thinking": {"type": "disabled"},
         }
         if tools:
             payload["tools"] = tools

@@ -1,4 +1,4 @@
-export interface RawSseEvent {
+interface RawSseEvent {
   event: string;
   data: string;
 }
@@ -99,7 +99,7 @@ export async function streamSse(url: string, options: StreamSseOptions): Promise
   options.onError(lastError ?? new Error('SSE 流执行失败，已达最大重试次数'));
 }
 
-export function parseSseEventBlock(block: string, defaultEvent = 'message'): RawSseEvent | null {
+function parseSseEventBlock(block: string, defaultEvent = 'message'): RawSseEvent | null {
   if (!block.trim()) {
     return null;
   }

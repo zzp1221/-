@@ -183,6 +183,11 @@ class SubjectiveJudgeEvaluatorFactory:
     @staticmethod
     def create() -> SupportsSubjectiveJudgeEvaluator:
         settings = get_settings()
+        if settings.enable_local_judge:
+            from src.ai_modules.llms.local_subjective_evaluator import (
+                LocalSubjectiveJudgeEvaluator,
+            )
+            return LocalSubjectiveJudgeEvaluator()
         provider_name = settings.resolve_component_provider("judge_llm")
         if settings.provider_ready(provider_name):
             return OpenAICompatibleSubjectiveJudgeEvaluator()

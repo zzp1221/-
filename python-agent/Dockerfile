@@ -6,6 +6,7 @@ ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
 ENV PYTHONPATH=/app
 ENV PIP_NO_CACHE_DIR=1
+ENV ENABLE_LOCAL_JUDGE=false
 
 RUN apt-get update && apt-get install -y --no-install-recommends curl \
  && rm -rf /var/lib/apt/lists/*
@@ -16,6 +17,9 @@ RUN pip install --upgrade pip \
 
 COPY . /app
 RUN chmod +x /app/entrypoint.sh
+
+# Copy local judge model (optional, used when ENABLE_LOCAL_JUDGE=true)
+COPY grpo_output/judge_model.gguf /app/models/judge_model.gguf
 
 EXPOSE 8000
 

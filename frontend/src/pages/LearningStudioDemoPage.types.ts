@@ -255,7 +255,7 @@ export const resourceTypeButtons: ResourceTypeButtonConfig[] = [
   { type: 'CODE_CASE', label: '代码案例' },
   { type: 'QUIZ', label: '练习题' },
   { type: 'MINDMAP', label: '思维导图' },
-  { type: 'READING', label: 'PPT 课件' },
+  { type: 'READING', label: '拓展阅读' },
   { type: 'VIDEO', label: '数字人视频' },
 ];
 
