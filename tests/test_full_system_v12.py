@@ -207,7 +207,7 @@ async def part_b_e2e_test():
         "RESOURCE_GENERATION": ["query_rewrite", "retrieval", "document_generator"],
         "PRACTICE_JUDGE": ["practice", "judge", "profile"],
         "PATH_PLANNING": ["path_planning"],
-        "EVALUATION": ["evaluation", "path_planning"],
+        "EVALUATION": ["evaluation"],
         "PROFILE_BUILD": ["tutor", "profile"],
     }
     for stype, expected in routes.items():

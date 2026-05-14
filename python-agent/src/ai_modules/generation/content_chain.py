@@ -178,20 +178,22 @@ class OpenAICompatibleStructuredGenerator:
         *,
         api_key: str | None = None,
         model_name: str | None = None,
+        provider_name: str | None = None,
         max_retries: int = 2,
         backoff_seconds: float = 0.5,
     ) -> None:
         settings = get_settings()
-        self.provider_name = settings.normalize_provider_name(settings.model_provider)
-        if self.provider_name == "spark":
-            self.api_key = api_key or settings.spark_api_key
-            self.base_url = settings.spark_base_url.rstrip("/")
-            self.model_name = model_name or settings.spark_model_name
-        else:
-            self.provider_name = "openai_compatible"
-            self.api_key = api_key or settings.openai_compatible_api_key
-            self.base_url = settings.openai_compatible_base_url.rstrip("/")
-            self.model_name = model_name or settings.model_name
+        self.provider_name = settings.normalize_provider_name(
+            provider_name or settings.resolve_component_provider("generation_llm")
+        )
+        provider_config = settings.provider_endpoint_config(self.provider_name)
+        self.api_key = api_key or settings.provider_api_key(self.provider_name)
+        self.base_url = provider_config.base_url.rstrip("/")
+        self.model_name = model_name or settings.resolve_component_model(
+            "generation_llm",
+            default_logical_model="main_chat_model",
+            provider_name=self.provider_name,
+        )
         self.max_retries = max_retries
         self.backoff_seconds = backoff_seconds
 

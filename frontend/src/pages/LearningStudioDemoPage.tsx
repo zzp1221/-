@@ -145,6 +145,44 @@ function hasLockedTask(snapshot: EngineTaskSnapshot): boolean {
   return Boolean(snapshot.taskId) && !isTaskTerminal(snapshot);
 }
 
+function dedupeResultLines(lines: string[]): string[] {
+  const seen = new Set<string>();
+  const normalized: string[] = [];
+  for (const raw of lines) {
+    const line = String(raw).trim();
+    if (!line || seen.has(line)) {
+      continue;
+    }
+    seen.add(line);
+    normalized.push(line);
+  }
+  return normalized;
+}
+
+function sanitizeEngineSnapshot(snapshot: EngineTaskSnapshot): EngineTaskSnapshot {
+  const normalized: EngineTaskSnapshot = {
+    ...snapshot,
+    serviceResultLines: dedupeResultLines(snapshot.serviceResultLines),
+  };
+  if (normalized.engineState === 'ENGINE_SUBMITTING' && !normalized.taskId) {
+    return createEmptyEngineTaskSnapshot('ENGINE_FORM_EDITING');
+  }
+  return normalized;
+}
+
+function buildPersistedEngineSnapshots(
+  selectedService: EngineService | null,
+  snapshots: Record<EngineService, EngineTaskSnapshot>,
+): Record<EngineService, EngineTaskSnapshot> {
+  const next = createInitialEngineSnapshots();
+  (Object.entries(snapshots) as Array<[EngineService, EngineTaskSnapshot]>).forEach(([service, snapshot]) => {
+    const normalized = sanitizeEngineSnapshot(snapshot);
+    const shouldPersist = service === selectedService || hasLockedTask(normalized);
+    next[service] = shouldPersist ? normalized : createEmptyEngineTaskSnapshot();
+  });
+  return next;
+}
+
 function normalizeRestoredQnaMessages(snapshot: PersistedQnaSnapshot): ChatMessage[] {
   if (!Array.isArray(snapshot.qnaMessages) || snapshot.qnaMessages.length === 0) {
     return [{ id: 'qna-greeting', role: 'assistant', content: QNA_GREETING }];
@@ -247,7 +285,6 @@ export default function LearningStudioDemoPage({ mode }: { mode: 'qna' | 'engine
     preferredType: 'CODE_CASE',
   });
   const [assessmentForm, setAssessmentForm] = useState<AssessmentForm>({
-    range: '30d',
     dimensions: defaultAssessmentDimensions,
   });
 
@@ -1104,6 +1141,9 @@ export default function LearningStudioDemoPage({ mode }: { mode: 'qna' | 'engine
       taskStatus: '已提交判题任务',
       taskSummary: '',
       serviceResultLines: [],
+      downloadLinks: [],
+      videoResult: null,
+      inlineResource: null,
       judgeResult: null,
     }));
 
@@ -1186,14 +1226,18 @@ export default function LearningStudioDemoPage({ mode }: { mode: 'qna' | 'engine
 
     try {
       const snapshot = JSON.parse(raw) as PersistedEngineTaskSnapshot;
+      const persistedSnapshots = buildPersistedEngineSnapshots(
+        snapshot.selectedService ?? null,
+        snapshot.snapshots ?? createInitialEngineSnapshots(),
+      );
       setSelectedService(snapshot.selectedService ?? null);
       setConversationId(snapshot.conversationId ?? window.sessionStorage.getItem(ACTIVE_CONVERSATION_ID_STORAGE_KEY) ?? '');
       setServiceSnapshots({
         ...createInitialEngineSnapshots(),
-        ...snapshot.snapshots,
+        ...persistedSnapshots,
       });
 
-      (Object.entries(snapshot.snapshots ?? {}) as Array<[EngineService, EngineTaskSnapshot]>).forEach(([service, item]) => {
+      (Object.entries(persistedSnapshots) as Array<[EngineService, EngineTaskSnapshot]>).forEach(([service, item]) => {
         if (item.taskId && (item.engineState === 'ENGINE_RUNNING' || item.engineState === 'ENGINE_SUBMITTING')) {
           void monitorTask(service, item.taskId);
         }
@@ -1211,7 +1255,7 @@ export default function LearningStudioDemoPage({ mode }: { mode: 'qna' | 'engine
     const snapshot: PersistedEngineTaskSnapshot = {
       selectedService,
       conversationId,
-      snapshots: serviceSnapshots,
+      snapshots: buildPersistedEngineSnapshots(selectedService, serviceSnapshots),
     };
 
     const isEmptySnapshot =
@@ -1236,14 +1280,14 @@ export default function LearningStudioDemoPage({ mode }: { mode: 'qna' | 'engine
   if (mode === 'qna') {
     if (!hasStartedConversation) {
       return (
-        <div className="mx-auto flex h-[calc(100vh-12rem)] w-full max-w-[1120px] flex-col items-center justify-center px-4">
+        <div className="mx-auto flex h-[calc(100dvh-12rem)] w-full max-w-[1120px] flex-col items-center justify-center px-4">
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.5 }}
             className="text-center"
           >
-            <div className="mx-auto mb-6 flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-br from-indigo-500 to-violet-600 shadow-xl shadow-indigo-500/25">
+            <div className="mx-auto mb-6 flex h-16 w-16 items-center justify-center rounded-2xl bg-primary-600 shadow-sm">
               <Sparkles className="h-7 w-7 text-white" />
             </div>
             <h1 className="mb-3 text-3xl font-semibold tracking-tight text-slate-800 dark:text-white md:text-[56px]">你好，我是智学引擎</h1>
@@ -1264,7 +1308,7 @@ export default function LearningStudioDemoPage({ mode }: { mode: 'qna' | 'engine
     }
 
     return (
-      <div className="mx-auto flex h-[calc(100vh-8rem)] w-full max-w-[1120px] flex-col md:h-[calc(100vh-9.5rem)]">
+      <div className="mx-auto flex h-[calc(100dvh-8rem)] w-full max-w-[1120px] flex-col md:h-[calc(100dvh-9.5rem)]">
         <ChatPanel messages={qnaMessages} />
         <InputPanel
           value={qnaInput}
@@ -1306,11 +1350,11 @@ export default function LearningStudioDemoPage({ mode }: { mode: 'qna' | 'engine
                 onClick={() => withAuth(() => handleSelectService(item.id))}
                 className={`group flex flex-col items-center gap-1.5 rounded-2xl border px-4 py-3 text-sm transition-all duration-200 md:flex-row md:gap-2 md:px-4 md:py-2 ${
                   active
-                    ? 'border-indigo-300 bg-indigo-50 text-indigo-700 shadow-sm dark:border-indigo-700 dark:bg-indigo-500/10 dark:text-indigo-400'
-                    : 'border-slate-200 bg-white text-slate-600 hover:border-indigo-200 hover:bg-indigo-50/50 hover:text-indigo-600 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-400 dark:hover:border-indigo-700 dark:hover:bg-indigo-500/5'
+                    ? 'border-primary-300 bg-primary-50 text-primary-700 shadow-sm dark:border-primary-700 dark:bg-primary-900/50 dark:text-primary-300'
+                    : 'border-slate-200 bg-white text-slate-600 hover:border-primary-200 hover:bg-primary-50/50 hover:text-primary-600 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-400 dark:hover:border-primary-700 dark:hover:bg-primary-900/20'
                 }`}
               >
-                <item.icon className={`h-5 w-5 md:h-4 md:w-4 ${active ? 'text-indigo-600 dark:text-indigo-400' : 'text-slate-400 group-hover:text-indigo-500 dark:text-slate-500'}`} />
+                <item.icon className={`h-5 w-5 md:h-4 md:w-4 ${active ? 'text-primary-600 dark:text-primary-400' : 'text-slate-400 group-hover:text-primary-500 dark:text-slate-500'}`} />
                 <span className="text-xs md:text-sm">{item.label}</span>
               </button>
             );

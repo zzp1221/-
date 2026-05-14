@@ -290,10 +290,69 @@ def test_generation_service_writes_non_document_assets_from_llm_output(tmp_path:
     assert mindmap_asset.display_mode == "INLINE_MERMAID"
     assert mindmap_asset.local_path is None
     assert "mindmap" in mindmap_asset.inline_content
-    assert "root((联合索引))" in mindmap_asset.inline_content
+    assert 'root["联合索引"]' in mindmap_asset.inline_content
+    assert 'node_1["定义"]' in mindmap_asset.inline_content
     assert code_asset.display_mode == "INLINE_CODE"
     assert code_asset.local_path is None
     assert "百炼代码案例" in code_asset.inline_content
+
+
+def test_generation_service_rebuilds_safe_mermaid_mindmap(tmp_path: Path) -> None:
+    class BrokenMindmapGenerator(FakePrimaryGenerator):
+        def generate_mindmap_asset(self, **kwargs) -> GeneratedMindMap:
+            del kwargs
+            return GeneratedMindMap.model_validate(
+                {
+                    "title": "并发编程思维导图",
+                    "summary": "修复 Mermaid 语法问题",
+                    "root": '线程池 "核心"',
+                    "children": [
+                        {
+                            "name": '阻塞队列(BlockingQueue)',
+                            "children": [{"name": '拒绝策略 "CallerRuns"'}],
+                        }
+                    ],
+                    "mermaid": 'mindmap\n  root((线程池 "核心"))\n    阻塞队列(BlockingQueue)\n',
+                }
+            )
+
+    service = ResourceGenerationService(
+        sandbox_root=tmp_path,
+        content_chain=ContentGenerationChain(primary_generator=BrokenMindmapGenerator()),
+    )
+    snapshot = SystemSnapshot(
+        current_course="Java 程序设计",
+        current_chapter="并发编程",
+        course_progress=0.3,
+        student_name="张三",
+        student_level="INTERMEDIATE",
+        knowledge_gaps=["线程池"],
+        preferred_style="visual_first",
+        recent_mistakes=[],
+        session_id="task-mindmap-safe",
+        conversation_length=1,
+        total_tokens_used=0,
+        wiki_pages_count=10,
+        last_index_update="2026-05-02",
+        recent_activities=[],
+    )
+
+    asset = service.build_asset(
+        asset_type="MINDMAP",
+        params={
+            "taskId": "task-mindmap-safe",
+            "query": "并发编程",
+            "rewrittenQuery": "Java 并发编程",
+            "retrievalResult": {"documents": [{"title": "线程池", "channel": "hybrid"}]},
+        },
+        snapshot=snapshot,
+    )
+
+    assert asset.display_mode == "INLINE_MERMAID"
+    assert asset.inline_content.startswith("mindmap\n")
+    assert 'root["线程池 \\"核心\\""]' in asset.inline_content
+    assert 'node_1["阻塞队列(BlockingQueue)"]' in asset.inline_content
+    assert 'node_2["拒绝策略 \\"CallerRuns\\""]' in asset.inline_content
 
 
 def test_generation_service_requires_tts_audio_for_video_asset(tmp_path: Path) -> None:

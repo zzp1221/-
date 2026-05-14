@@ -1,4 +1,5 @@
 import json
+from pathlib import Path
 
 import pytest
 
@@ -274,8 +275,22 @@ def test_stream_endpoint_emits_error_and_failed_done_when_supervisor_raises(clie
 
     assert event_names == ["error", "done"]
     assert data_payloads[0]["payload"]["code"] == "PYTHON_AGENT_ERROR"
-    assert data_payloads[0]["payload"]["message"] == "boom"
+    assert data_payloads[0]["payload"]["message"] == "Python Agent 执行失败，请稍后重试"
     assert data_payloads[1]["payload"]["status"] == "FAILED"
+
+
+def test_file_cancelled_tasks_supports_cross_worker_marker(tmp_path: Path) -> None:
+    cancelled_tasks = server.FileCancelledTasks(tmp_path)
+
+    assert "task-001" not in cancelled_tasks
+
+    cancelled_tasks.add("task-001")
+
+    assert "task-001" in cancelled_tasks
+
+    cancelled_tasks.discard("task-001")
+
+    assert "task-001" not in cancelled_tasks
 
 
 def test_settings_switch_provider_via_env() -> None:

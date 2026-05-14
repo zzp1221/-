@@ -68,7 +68,7 @@ export default function ProfileDrawer({ open, currentUser, onClose, zIndex = 40 
             animate={{ x: 0 }}
             exit={{ x: 480 }}
             transition={{ duration: 0.25, ease: 'easeOut' }}
-            className="fixed right-0 top-0 flex h-screen w-full max-w-[520px] flex-col border-l border-slate-200/60 bg-white/95 backdrop-blur-xl shadow-2xl dark:border-slate-700/60 dark:bg-slate-900/95"
+            className="fixed right-0 top-0 flex h-[100dvh] w-full max-w-[520px] flex-col border-l border-slate-200/60 bg-white/95 backdrop-blur-xl shadow-2xl dark:border-slate-700/60 dark:bg-slate-900/95"
             style={{ zIndex }}
           >
             <div className="flex items-center justify-between border-b border-slate-100 px-5 py-3 dark:border-slate-800">

@@ -263,6 +263,8 @@ class _BaseGenerationAgent(PlaceholderAgent):
                 else asset.inline_content
                 if asset.inline_content
                 else Path(asset.local_path).read_text(encoding="utf-8")
+                if self._should_read_local_asset_text(asset)
+                else asset.preview_text
             )
             return {
                 "asset": asset.model_dump(by_alias=True),
@@ -275,6 +277,18 @@ class _BaseGenerationAgent(PlaceholderAgent):
         params["generatedAsset"] = draft["asset"]
         params["generatedContent"] = draft["generatedContent"]
         return draft
+
+    @staticmethod
+    def _should_read_local_asset_text(asset: Any) -> bool:
+        if not getattr(asset, "local_path", None):
+            return False
+        mime_type = str(getattr(asset, "mime_type", "") or "").lower()
+        if mime_type.startswith("text/"):
+            return True
+        if mime_type in {"application/json", "application/javascript"}:
+            return True
+        suffix = Path(str(asset.local_path)).suffix.lower()
+        return suffix in {".md", ".txt", ".json", ".js", ".ts", ".tsx", ".py", ".java", ".xml", ".html", ".css"}
 
     async def _tool_review_content(
         self,

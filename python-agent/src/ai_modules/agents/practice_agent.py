@@ -124,6 +124,10 @@ class PracticeAgent(PlaceholderAgent):
         params: dict[str, Any],
         system_prompt: str,
     ) -> dict[str, Any]:
+        existing_batch = self._existing_question_batch(params)
+        if existing_batch is not None:
+            return existing_batch
+
         # Step 1: Generate questions (1 LLM call)
         raw_batch = await self._tool_generate_questions(tool_input={}, params=params)
 
@@ -260,6 +264,15 @@ class PracticeAgent(PlaceholderAgent):
                 for question in tool_input.get("questions", [])
             ],
         ).model_dump(by_alias=True)
+
+    def _existing_question_batch(self, params: dict[str, Any]) -> dict[str, Any] | None:
+        raw_batch = params.get("practiceQuestionBatch")
+        if not isinstance(raw_batch, dict):
+            return None
+        questions = raw_batch.get("questions")
+        if not isinstance(questions, list) or not questions:
+            return None
+        return QuestionBatchPayload.model_validate(raw_batch).model_dump(by_alias=True)
 
     def _resolve_topic(self, params: dict[str, Any]) -> str:
         learning_context = params.get("learningContext", {})

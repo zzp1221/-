@@ -63,6 +63,20 @@ class SubjectiveJudgeEvaluation(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
 
+class SpecializedAnalysisPayload(BaseModel):
+    """Structured dimension-specific analysis for assessment answers."""
+
+    title: str
+    summary: str
+    dimension: str = ""
+    strengths: list[str] = Field(default_factory=list)
+    weaknesses: list[str] = Field(default_factory=list)
+    next_actions: list[str] = Field(default_factory=list, alias="nextActions")
+    markdown: str = ""
+
+    model_config = ConfigDict(populate_by_name=True)
+
+
 class JudgeResultPayload(BaseModel):
     """Payload for aggregated judging output."""
 
@@ -70,6 +84,11 @@ class JudgeResultPayload(BaseModel):
     summary: str
     total_score: float = Field(alias="totalScore")
     accuracy: float
+    assessment_dimension: str = Field(default="", alias="assessmentDimension")
+    specialized_analysis: SpecializedAnalysisPayload | None = Field(
+        default=None,
+        alias="specializedAnalysis",
+    )
     items: list[JudgeItemResult]
 
     model_config = ConfigDict(populate_by_name=True)

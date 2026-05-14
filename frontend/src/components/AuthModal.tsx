@@ -84,7 +84,7 @@ export default function AuthModal(props: AuthModalProps) {
     }
   };
 
-  const inputClass = "w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-sm outline-none transition-all duration-200 focus:border-indigo-400 focus:ring-2 focus:ring-indigo-500/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:focus:border-indigo-500";
+  const inputClass = "w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-sm outline-none transition-all duration-200 focus:border-primary-400 focus:ring-2 focus:ring-primary-500/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:focus:border-primary-500";
 
   return (
     <AnimatePresence>
@@ -108,7 +108,7 @@ export default function AuthModal(props: AuthModalProps) {
             {/* Header */}
             <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4 dark:border-slate-800">
               <div className="flex items-center gap-2.5">
-                <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-gradient-to-br from-indigo-500 to-violet-600 shadow-lg shadow-indigo-500/25">
+                <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-gradient-to-br from-primary-500 to-primary-600 shadow-lg shadow-primary-500/25">
                   <Sparkles className="h-4 w-4 text-white" />
                 </div>
                 <h3 className="text-base font-semibold text-slate-800 dark:text-white">智学引擎</h3>
@@ -136,7 +136,7 @@ export default function AuthModal(props: AuthModalProps) {
                 onClick={() => setTab('login')}
                 className={`relative rounded-lg px-3 py-2 text-sm font-medium transition-all duration-200 ${
                   tab === 'login'
-                    ? 'bg-white text-indigo-700 shadow-sm dark:bg-slate-900 dark:text-indigo-400'
+                    ? 'bg-white text-primary-700 shadow-sm dark:bg-slate-900 dark:text-primary-400'
                     : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-300'
                 }`}
               >
@@ -147,7 +147,7 @@ export default function AuthModal(props: AuthModalProps) {
                 onClick={() => setTab('register')}
                 className={`relative rounded-lg px-3 py-2 text-sm font-medium transition-all duration-200 ${
                   tab === 'register'
-                    ? 'bg-white text-indigo-700 shadow-sm dark:bg-slate-900 dark:text-indigo-400'
+                    ? 'bg-white text-primary-700 shadow-sm dark:bg-slate-900 dark:text-primary-400'
                     : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-300'
                 }`}
               >
@@ -231,7 +231,7 @@ export default function AuthModal(props: AuthModalProps) {
               <button
                 type="submit"
                 disabled={submitting}
-                className="flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-indigo-600 to-violet-600 px-4 py-2.5 text-sm font-medium text-white shadow-lg shadow-indigo-500/25 transition-all hover:shadow-xl hover:shadow-indigo-500/30 disabled:cursor-not-allowed disabled:opacity-50 disabled:shadow-none active:scale-[0.98]"
+                className="flex w-full items-center justify-center rounded-xl bg-primary-600 px-4 py-2.5 text-sm font-medium text-white shadow-sm transition-all hover:bg-primary-700 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-70 disabled:shadow-none"
               >
                 {submitting ? (
                   <>

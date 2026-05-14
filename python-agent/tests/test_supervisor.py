@@ -610,6 +610,48 @@ async def test_supervisor_streams_practice_judge_route_with_profile_feedback() -
 
 
 @pytest.mark.asyncio
+async def test_supervisor_injects_top_level_user_and_conversation_into_agent_params() -> None:
+    class RecordingAgent(PlaceholderAgent):
+        def __init__(self) -> None:
+            super().__init__("recording profile", "profiling")
+            self.seen_user_id = None
+            self.seen_conversation_id = None
+
+        async def run(self, *, params, **kwargs):
+            self.seen_user_id = params.get("userId")
+            self.seen_conversation_id = params.get("conversationId")
+            if False:
+                yield
+
+    supervisor = PythonAgentSupervisor()
+    recording_agent = RecordingAgent()
+    supervisor.agent_registry["practice"] = _StubPracticeAgent()
+    supervisor.agent_registry["judge"] = _StubJudgeAgent()
+    supervisor.agent_registry["profile"] = recording_agent
+    request = EngineStreamRequest(
+        serviceType="PRACTICE_JUDGE",
+        userId="user-top-level",
+        conversationId="conv-top-level",
+        params={
+            "topic": "联合索引",
+            "answers": {"q1": "A"},
+        },
+        taskId="task-param-injection",
+        traceId="trace-param-injection",
+    )
+
+    events = [event async for event in supervisor.stream(request)]
+
+    assert events[-1].event == "done"
+    assert recording_agent.seen_user_id == "user-top-level"
+    assert recording_agent.seen_conversation_id == "conv-top-level"
+    assert request.params == {
+        "topic": "联合索引",
+        "answers": {"q1": "A"},
+    }
+
+
+@pytest.mark.asyncio
 async def test_supervisor_streams_tutoring_route_with_retrieval_then_tutor() -> None:
     supervisor = PythonAgentSupervisor()
     supervisor.agent_registry["query_rewrite"] = _StubRewriteAgent()
@@ -650,8 +692,6 @@ async def test_supervisor_streams_tutoring_route_with_retrieval_then_tutor() -> 
 async def test_supervisor_streams_evaluation_route() -> None:
     supervisor = PythonAgentSupervisor()
     supervisor.agent_registry["evaluation"] = _StubEvaluationAgent()
-    supervisor.agent_registry["profile"] = _StubProfileAgent()
-    supervisor.agent_registry["path_planning"] = _StubPathPlanningAgent()
     request = EngineStreamRequest(
         serviceType="EVALUATION",
         params={
@@ -669,7 +709,8 @@ async def test_supervisor_streams_evaluation_route() -> None:
 
     assert events[-1].event == "done"
     assert events[0].payload.message == "已完成能力评估"
-    assert any(event.event == "result_chunk" and "学习路径" in event.payload.text for event in events)
+    assert any(event.event == "result_chunk" and "已完成能力评估" in event.payload.text for event in events)
+    assert events[-1].payload.summary == "EVALUATION 路由完成，执行链路: evaluation"
 
 
 @pytest.mark.asyncio

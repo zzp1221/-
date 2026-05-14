@@ -25,12 +25,10 @@
     "path_planning"
   ],
   "EVALUATION": [
-    "evaluation",
-    "path_planning"
+    "evaluation"
   ],
   "LEARNING_EVALUATION": [
-    "evaluation",
-    "path_planning"
+    "evaluation"
   ],
   "TUTORING": [
     "query_rewrite",

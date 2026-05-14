@@ -8,7 +8,10 @@ ENV PYTHONPATH=/app
 ENV PIP_NO_CACHE_DIR=1
 ENV ENABLE_LOCAL_JUDGE=false
 
-RUN apt-get update && apt-get install -y --no-install-recommends curl \
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    cmake \
+    curl \
  && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt /app/requirements.txt

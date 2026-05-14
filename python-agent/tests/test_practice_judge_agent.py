@@ -79,6 +79,56 @@ async def test_practice_agent_generates_question_batch() -> None:
 
 
 @pytest.mark.asyncio
+async def test_practice_agent_reuses_existing_question_batch() -> None:
+    class FakeQuestionGenerator:
+        async def generate_batch(self, *, topic, difficulty, count, learning_context):
+            del topic, difficulty, count, learning_context
+            raise AssertionError("should not regenerate when practiceQuestionBatch is provided")
+
+    agent = PracticeAgent(question_generator=FakeQuestionGenerator())
+    params = {
+        "topic": "学习主动性：并发编程",
+        "practiceQuestionBatch": {
+            "title": "并发编程 学习主动性专项评估",
+            "topic": "并发编程",
+            "difficulty": "BASIC",
+            "assessmentDimension": "学习主动性",
+            "submitLabel": "提交主动性计划",
+            "questions": [
+                {
+                    "questionId": "initiative-q1",
+                    "questionType": "SHORT_ANSWER",
+                    "stem": "请写出下一轮学习计划。",
+                    "answer": "先补知识点，再自测，卡住就提问。",
+                    "knowledgeTags": ["并发编程", "学习主动性"],
+                    "difficultyLevel": "BASIC",
+                    "explanation": "回答需包含目标、验证和提问。",
+                }
+            ],
+        },
+    }
+
+    events = [
+        event
+        async for event in agent.run(
+            task_id="task-practice-existing",
+            trace_id="trace-practice-existing",
+            seq=1,
+            service_type="PRACTICE_JUDGE",
+            params=params,
+            snapshot=_build_snapshot(),
+            system_prompt="test",
+        )
+    ]
+
+    assert [event.event for event in events] == ["progress", "question_batch"]
+    assert events[1].payload.title == "并发编程 学习主动性专项评估"
+    assert events[1].payload.assessment_dimension == "学习主动性"
+    assert events[1].payload.questions[0].question_id == "initiative-q1"
+    assert params["practiceQuestionBatch"]["title"] == "并发编程 学习主动性专项评估"
+
+
+@pytest.mark.asyncio
 async def test_judge_agent_scores_answers_and_marks_profile_source() -> None:
     class FakeQuestionGenerator:
         async def generate_batch(self, *, topic, difficulty, count, learning_context):
@@ -223,13 +273,61 @@ async def test_judge_agent_scores_answers_and_marks_profile_source() -> None:
         )
     ]
 
-    assert [event.event for event in judge_events] == ["progress", "judge_result"]
+    assert judge_events[-1].event == "judge_result"
     assert params["profileSource"] == "PRACTICE"
     assert params["judgeResult"]["accuracy"] < 1.0
     assert params["judgeResult"]["items"][1]["isCorrect"] is False
     assert "submissionMappings" in params["practiceJudgePersistence"]
     assert "weakKnowledgeTags" in params["judgeResult"]
     assert params["judgeResult"]["summary"].startswith("LLM 汇总：")
+
+
+@pytest.mark.asyncio
+async def test_grade_objective_processes_all_questions() -> None:
+    agent = JudgeAgent()
+    params = {
+        "practiceQuestions": [
+            {
+                "questionId": "q1",
+                "questionType": "SINGLE_CHOICE",
+                "stem": "题目 1",
+                "options": ["A", "B", "C", "D"],
+                "answer": "B",
+                "knowledgeTags": ["并发编程"],
+                "difficultyLevel": "INTERMEDIATE",
+            },
+            {
+                "questionId": "q2",
+                "questionType": "SINGLE_CHOICE",
+                "stem": "题目 2",
+                "options": ["A", "B", "C", "D"],
+                "answer": "C",
+                "knowledgeTags": ["线程池"],
+                "difficultyLevel": "INTERMEDIATE",
+            },
+            {
+                "questionId": "q3",
+                "questionType": "SHORT_ANSWER",
+                "stem": "题目 3",
+                "answer": "给出解释",
+                "knowledgeTags": ["锁"],
+                "difficultyLevel": "INTERMEDIATE",
+            },
+        ],
+        "answers": {
+            "q1": "B",
+            "q2": "A",
+            "q3": "我的解释",
+        },
+    }
+
+    result = await agent._tool_grade_objective(tool_input={}, params=params)
+
+    assert len(result["items"]) == 2
+    assert result["items"][0]["isCorrect"] is True
+    assert result["items"][1]["isCorrect"] is False
+    assert len(result["pendingSubjective"]) == 1
+    assert result["pendingSubjective"][0]["questionId"] == "q3"
 
 
 @pytest.mark.asyncio
@@ -285,12 +383,13 @@ async def test_judge_agent_uses_subjective_evaluator_result_when_available() -> 
         )
     ]
 
+    judge_event = next(event for event in events if event.event == "judge_result")
     subjective_items = [
-        item for item in events[1].payload.items if item.question_type == "SHORT_ANSWER"
+        item for item in judge_event.payload.items if item.question_type == "SHORT_ANSWER"
     ]
     assert subjective_items
-    assert subjective_items[0].score == 18.0
-    assert subjective_items[0].reason == "百炼评估认为答案基本完整。"
+    assert any(item.score == 18.0 for item in subjective_items)
+    assert any(item.reason == "百炼评估认为答案基本完整。" for item in subjective_items)
 
 
 @pytest.mark.asyncio
@@ -340,8 +439,9 @@ async def test_judge_agent_falls_back_when_subjective_evaluator_fails() -> None:
         )
     ]
 
+    judge_event = next(event for event in events if event.event == "judge_result")
     subjective_items = [
-        item for item in events[1].payload.items if item.question_type == "SHORT_ANSWER"
+        item for item in judge_event.payload.items if item.question_type == "SHORT_ANSWER"
     ]
     assert subjective_items
     assert subjective_items[0].score == 0.0

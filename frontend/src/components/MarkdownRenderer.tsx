@@ -31,15 +31,15 @@ const MarkdownRenderer = memo(function MarkdownRenderer({ content, isStreaming }
   if (!safeContent.trim() && isStreaming) {
     return (
       <div className="flex items-center gap-2 py-1">
-        <span className="inline-block h-2 w-2 rounded-full bg-indigo-400 animate-pulse" style={{ animationDelay: '0ms' }} />
-        <span className="inline-block h-2 w-2 rounded-full bg-indigo-400 animate-pulse" style={{ animationDelay: '150ms' }} />
-        <span className="inline-block h-2 w-2 rounded-full bg-indigo-400 animate-pulse" style={{ animationDelay: '300ms' }} />
+        <span className="inline-block h-2 w-2 rounded-full bg-primary-400 animate-pulse" style={{ animationDelay: '0ms' }} />
+        <span className="inline-block h-2 w-2 rounded-full bg-primary-400 animate-pulse" style={{ animationDelay: '150ms' }} />
+        <span className="inline-block h-2 w-2 rounded-full bg-primary-400 animate-pulse" style={{ animationDelay: '300ms' }} />
       </div>
     );
   }
 
   return (
-    <div className="prose prose-slate max-w-none dark:prose-invert prose-headings:font-semibold prose-h1:text-xl prose-h2:text-lg prose-h3:text-base prose-p:text-[15px] prose-p:leading-7 prose-pre:my-0 prose-pre:bg-transparent prose-code:text-[13px] prose-code:before:content-none prose-code:after:content-none prose-a:text-indigo-600 dark:prose-a:text-indigo-400 prose-table:text-sm prose-table:overflow-x-auto prose-img:rounded-xl prose-li:text-[15px]">
+    <div className="prose prose-slate max-w-none dark:prose-invert prose-headings:font-semibold prose-h1:text-xl prose-h2:text-lg prose-h3:text-base prose-p:text-[15px] prose-p:leading-7 prose-pre:my-0 prose-pre:bg-transparent prose-code:text-[13px] prose-code:before:content-none prose-code:after:content-none prose-a:text-primary-600 dark:prose-a:text-primary-400 prose-table:text-sm prose-table:overflow-x-auto prose-img:rounded-xl prose-li:text-[15px]">
       <ReactMarkdown
         remarkPlugins={[remarkGfm, remarkBreaks]}
         components={{
@@ -84,7 +84,7 @@ const MarkdownRenderer = memo(function MarkdownRenderer({ content, isStreaming }
           },
           a({ href, children }) {
             return (
-              <a href={href} target="_blank" rel="noopener noreferrer" className="underline decoration-indigo-300 underline-offset-2 hover:decoration-indigo-500 dark:decoration-indigo-700">
+              <a href={href} target="_blank" rel="noopener noreferrer" className="underline decoration-primary-300 underline-offset-2 hover:decoration-primary-500 dark:decoration-primary-700">
                 {children}
               </a>
             );
@@ -101,7 +101,7 @@ const MarkdownRenderer = memo(function MarkdownRenderer({ content, isStreaming }
           },
           blockquote({ children }) {
             return (
-              <blockquote className="my-3 border-l-4 border-indigo-300 bg-indigo-50/50 py-2 pl-4 pr-3 text-[15px] italic text-slate-600 dark:border-indigo-700 dark:bg-indigo-500/5 dark:text-slate-400">
+              <blockquote className="my-3 border-l-4 border-primary-300 bg-primary-50/50 py-2 pl-4 pr-3 text-[15px] italic text-slate-600 dark:border-primary-700 dark:bg-primary-500/5 dark:text-slate-400">
                 {children}
               </blockquote>
             );

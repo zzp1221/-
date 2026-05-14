@@ -692,7 +692,7 @@ class ResourceGenerationService:
             sources=sources,
             fallback_builder=self,
         )
-        mermaid = generated_mindmap.mermaid or self._render_mindmap_mermaid(generated_mindmap)
+        mermaid = self._render_mindmap_mermaid(generated_mindmap)
         return GeneratedAsset(
             assetType="MINDMAP",
             title=generated_mindmap.title,
@@ -706,16 +706,32 @@ class ResourceGenerationService:
         )
 
     def _render_mindmap_mermaid(self, generated_mindmap: GeneratedMindMap) -> str:
-        lines = ["mindmap", f"  root(({generated_mindmap.root}))"]
+        lines = ["mindmap", f'  root["{self._escape_mermaid_label(generated_mindmap.root)}"]']
+        node_index = 0
 
         def append_nodes(nodes: list[Any], depth: int) -> None:
+            nonlocal node_index
             indent = "  " * depth
             for node in nodes:
-                lines.append(f"{indent}{node.name}")
+                node_index += 1
+                lines.append(
+                    f'{indent}node_{node_index}["{self._escape_mermaid_label(str(node.name))}"]'
+                )
                 append_nodes(node.children, depth + 1)
 
         append_nodes(generated_mindmap.children, 2)
         return "\n".join(lines) + "\n"
+
+    @staticmethod
+    def _escape_mermaid_label(label: str) -> str:
+        return (
+            str(label)
+            .replace("\\", "\\\\")
+            .replace('"', '\\"')
+            .replace("\r", " ")
+            .replace("\n", " ")
+            .strip()
+        )
 
     def _build_code(self, *, params: dict, snapshot: SystemSnapshot) -> GeneratedAsset:
         title = f"{params.get('query', '学习主题')}代码案例"

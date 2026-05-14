@@ -19,6 +19,23 @@ function ensureMermaidInitialized(): void {
   mermaidInitialized = true;
 }
 
+function normalizeMermaidChart(chart: string): string {
+  const trimmed = chart.trim();
+  if (!trimmed) {
+    return '';
+  }
+  const withoutFence = trimmed
+    .replace(/^```mermaid\s*/i, '')
+    .replace(/^```\s*/i, '')
+    .replace(/\s*```$/i, '')
+    .trim();
+  const mindmapIndex = withoutFence.toLowerCase().indexOf('mindmap');
+  if (mindmapIndex >= 0) {
+    return withoutFence.slice(mindmapIndex).trim();
+  }
+  return withoutFence;
+}
+
 export default function MermaidDiagram({ chart }: MermaidDiagramProps) {
   const id = useId().replace(/:/g, '-');
   const [svg, setSvg] = useState('');
@@ -27,14 +44,15 @@ export default function MermaidDiagram({ chart }: MermaidDiagramProps) {
   useEffect(() => {
     let cancelled = false;
     async function renderChart() {
-      if (!chart.trim()) {
+      const normalizedChart = normalizeMermaidChart(chart);
+      if (!normalizedChart) {
         setSvg('');
         setError('');
         return;
       }
       ensureMermaidInitialized();
       try {
-        const result = await mermaid.render(`mermaid-${id}`, chart);
+        const result = await mermaid.render(`mermaid-${id}`, normalizedChart);
         if (!cancelled) {
           setSvg(result.svg);
           setError('');
@@ -42,7 +60,8 @@ export default function MermaidDiagram({ chart }: MermaidDiagramProps) {
       } catch (renderError) {
         if (!cancelled) {
           setSvg('');
-          setError(renderError instanceof Error ? renderError.message : 'Mermaid 渲染失败');
+          const message = renderError instanceof Error ? renderError.message : 'Mermaid 渲染失败';
+          setError(`思维导图渲染失败：${message}`);
         }
       }
     }

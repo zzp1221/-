@@ -1,4 +1,11 @@
 #!/bin/sh
 set -e
 
-exec uvicorn server:app --host 0.0.0.0 --port 8000
+PORT="${APP_PORT:-8000}"
+WORKERS="${UVICORN_WORKERS:-$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 1)}"
+
+if [ "$WORKERS" -lt 1 ] 2>/dev/null; then
+  WORKERS=1
+fi
+
+exec uvicorn server:app --host 0.0.0.0 --port "$PORT" --workers "$WORKERS"

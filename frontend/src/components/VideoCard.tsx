@@ -21,7 +21,7 @@ export interface VideoCardProps {
 const styleLabelMap: Record<VideoCardStyle, { label: string; color: string }> = {
   talking_head: { label: '数字人讲解', color: 'bg-violet-50 text-violet-700 dark:bg-violet-500/10 dark:text-violet-400' },
   animation: { label: '动画演示', color: 'bg-sky-50 text-sky-700 dark:bg-sky-500/10 dark:text-sky-400' },
-  hybrid: { label: '混合讲解', color: 'bg-indigo-50 text-indigo-700 dark:bg-indigo-500/10 dark:text-indigo-400' },
+  hybrid: { label: '混合讲解', color: 'bg-primary-50 text-primary-700 dark:bg-primary-500/10 dark:text-primary-400' },
 };
 
 export default function VideoCard(props: VideoCardProps) {
@@ -121,7 +121,7 @@ export default function VideoCard(props: VideoCardProps) {
             onLoad={() => setLoading(false)}
           />
         ) : (
-          <div className="absolute inset-0 bg-gradient-to-br from-slate-800 via-slate-900 to-indigo-950" />
+          <div className="absolute inset-0 bg-gradient-to-br from-slate-800 via-slate-900 to-primary-950" />
         )}
 
         {/* Loading Overlay */}
@@ -132,7 +132,7 @@ export default function VideoCard(props: VideoCardProps) {
         ) : null}
 
         {/* Gradient Overlay */}
-        <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-slate-950/80 via-transparent to-transparent" />
+        <div className="absolute inset-0 bg-gradient-to-t from-slate-900/80 via-slate-900/20 to-transparent transition-opacity duration-300 group-hover:opacity-90" />
 
         {/* Top Badge */}
         <div className="pointer-events-none absolute left-4 top-4 z-10 inline-flex items-center gap-1.5 rounded-full bg-black/50 px-3 py-1.5 text-xs font-medium text-white backdrop-blur-sm">
@@ -142,7 +142,7 @@ export default function VideoCard(props: VideoCardProps) {
 
         {/* Duration Badge */}
         {durationLabel ? (
-          <div className="pointer-events-none absolute bottom-4 right-4 z-10 rounded-full bg-black/50 px-3 py-1.5 text-xs font-medium text-white backdrop-blur-sm">
+          <div className="pointer-events-none absolute bottom-4 right-4 z-10 rounded-full bg-primary-500/80 px-3 py-1.5 text-xs font-medium text-white backdrop-blur-sm">
             {durationLabel}
           </div>
         ) : null}
@@ -164,7 +164,7 @@ export default function VideoCard(props: VideoCardProps) {
               whileTap={{ scale: 0.95 }}
               className="flex h-16 w-16 items-center justify-center rounded-full bg-white/90 shadow-2xl backdrop-blur-sm"
             >
-              <Play className="ml-1 h-6 w-6 text-indigo-600" />
+              <Play className="ml-1 h-6 w-6 text-primary-600" />
             </motion.div>
           </button>
         ) : null}
@@ -232,7 +232,7 @@ export default function VideoCard(props: VideoCardProps) {
             target="_blank"
             rel="noreferrer"
             download={props.fileName || `${props.title || 'teaching-video'}.webm`}
-            className="text-xs font-medium text-indigo-600 transition-colors hover:text-indigo-700 dark:text-indigo-400 dark:hover:text-indigo-300"
+            className="text-xs font-medium text-primary-600 transition-colors hover:text-primary-700 dark:text-primary-400 dark:hover:text-primary-300"
           >
             下载视频
           </a>

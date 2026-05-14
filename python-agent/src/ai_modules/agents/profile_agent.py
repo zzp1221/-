@@ -171,6 +171,7 @@ class ProfileAgent(PlaceholderAgent):
         judge_result = params.get("judgeResult", {})
         evaluation_result = params.get("evaluationResult", {})
         practice_batch = params.get("practiceQuestionBatch", {})
+        profile_source = str(params.get("profileSource") or "CONVERSATION")
         joined_user_content = " ".join(
             str(item.get("content", ""))
             for item in messages
@@ -189,7 +190,7 @@ class ProfileAgent(PlaceholderAgent):
             "evaluationResult": evaluation_result,
             "practiceQuestionBatch": practice_batch,
             "combinedUserText": combined_text,
-            "profileSource": str(params.get("profileSource") or "CONVERSATION"),
+            "profileSource": profile_source,
         }
         try:
             dimensions = await self.profile_analyzer.analyze(context_payload=context_payload)
@@ -203,6 +204,7 @@ class ProfileAgent(PlaceholderAgent):
             judge_result=judge_result,
             practice_batch=practice_batch,
             combined_text=combined_text,
+            profile_source=profile_source,
         )
         serialized_dimensions = dimensions.model_dump(by_alias=True)
         params["analyzedProfileDimensions"] = serialized_dimensions
@@ -255,6 +257,7 @@ class ProfileAgent(PlaceholderAgent):
         judge_result: dict[str, Any],
         practice_batch: dict[str, Any],
         combined_text: str,
+        profile_source: str,
     ) -> LearnerProfileDimensions:
         weak_point_details = self._build_weak_point_details(
             dimensions=dimensions,
@@ -274,6 +277,7 @@ class ProfileAgent(PlaceholderAgent):
             structured_summary=structured_summary,
             practice_batch=practice_batch,
             combined_text=combined_text,
+            judge_result=judge_result,
         )
         learning_habits = self._derive_learning_habits(
             messages=messages,
@@ -297,6 +301,11 @@ class ProfileAgent(PlaceholderAgent):
             practice_batch=practice_batch,
             weak_point_details=weak_point_details,
         )
+        confidence_level = self._derive_confidence_level(
+            dimensions=dimensions,
+            judge_result=judge_result,
+            confidence_score=confidence_score,
+        )
         evidence = self._derive_evidence(
             structured_summary=structured_summary,
             judge_result=judge_result,
@@ -309,6 +318,7 @@ class ProfileAgent(PlaceholderAgent):
                 "weak_points": [item.topic for item in weak_point_details] or dimensions.weak_points,
                 "weak_point_details": weak_point_details,
                 "confidence_score": confidence_score,
+                "confidence_level": confidence_level,
                 "learning_habits": learning_habits,
                 "error_patterns": error_patterns,
                 "current_goal": current_goal,
@@ -316,6 +326,7 @@ class ProfileAgent(PlaceholderAgent):
                 "explanation_preference": explanation_preference,
                 "skill_mastery": skill_mastery,
                 "evidence": evidence,
+                "source": profile_source or dimensions.source,
                 "inferred_recommendations": dimensions.inferred_recommendations
                 or self._infer_recommendations(
                     weak_point_details=weak_point_details,
@@ -350,25 +361,9 @@ class ProfileAgent(PlaceholderAgent):
             self.fallback_profile_store.snapshots[user_id] = snapshot
             return snapshot
 
-        async def fallback_operation() -> LearnerProfileSnapshot:
-            snapshot = await self.fallback_profile_store.update_profile(
-                user_id=user_id,
-                dimensions=dimensions,
-                source_session_id=source_session_id,
-            )
-            await self.recovery_engine.recover_profile_update_failed(
-                user_id=user_id,
-                fallback_payload={
-                    "version": snapshot.version,
-                    "summaryText": snapshot.profile.summary_text,
-                },
-            )
-            return snapshot
-
         return await self.recovery_engine.call_with_recovery(
             failure_type=RecoveryFailureType.PROFILE_UPDATE_FAILED,
             operation=operation,
-            fallback_operation=fallback_operation,
         )
 
     def _infer_knowledge_foundation(self, text: str, profile_context: dict[str, Any]) -> str:
@@ -506,9 +501,15 @@ class ProfileAgent(PlaceholderAgent):
         weak_point_details: list[WeakPointDetail],
     ) -> float:
         score = float(dimensions.confidence_score or 0.0)
+        accuracy = self._judge_accuracy(judge_result)
+        if judge_result:
+            practice_score = 0.42 + accuracy * 0.38
+            if weak_point_details:
+                practice_score -= 0.06
+            practice_score = max(0.35, min(0.95, practice_score))
+            return min(max(0.35, min(0.95, score)), practice_score) if score > 0 else practice_score
         if score > 0:
             return max(0.35, min(0.95, score))
-        accuracy = float(judge_result.get("accuracy", 0.0) or 0.0)
         if accuracy > 0:
             return max(0.35, min(0.95, 0.45 + accuracy * 0.4))
         if dimensions.confidence_level == "HIGH":
@@ -525,28 +526,36 @@ class ProfileAgent(PlaceholderAgent):
         dimensions: LearnerProfileDimensions,
         judge_result: dict[str, Any],
     ) -> list[WeakPointDetail]:
-        if dimensions.weak_point_details:
-            return dimensions.weak_point_details
-        details: list[WeakPointDetail] = []
-        for topic in dimensions.weak_points:
-            details.append(
-                WeakPointDetail(
-                    topic=str(topic).strip(),
-                    severity=0.72,
-                    lastError=str(judge_result.get("summary") or ""),
-                )
-            )
-        for topic in judge_result.get("weakKnowledgeTags", []):
+        merged: dict[str, WeakPointDetail] = {}
+
+        def upsert(topic: str, *, severity: float, last_error: str) -> None:
             normalized = str(topic).strip()
-            if normalized and all(item.topic != normalized for item in details):
-                details.append(
-                    WeakPointDetail(
-                        topic=normalized,
-                        severity=0.8,
-                        lastError=str(judge_result.get("summary") or ""),
-                    )
+            if not normalized:
+                return
+            existing = merged.get(normalized)
+            if existing is None:
+                merged[normalized] = WeakPointDetail(
+                    topic=normalized,
+                    severity=max(0.0, min(1.0, severity)),
+                    lastError=last_error,
                 )
-        return details
+                return
+            existing.severity = max(existing.severity, max(0.0, min(1.0, severity)))
+            if last_error:
+                existing.last_error = last_error
+
+        for item in dimensions.weak_point_details:
+            upsert(item.topic, severity=float(item.severity), last_error=item.last_error)
+        for topic in dimensions.weak_points:
+            upsert(str(topic), severity=0.72, last_error=str(judge_result.get("summary") or ""))
+
+        judge_summary = str(judge_result.get("summary") or "")
+        practice_severity = max(0.82, min(0.98, 1.0 - self._judge_accuracy(judge_result) * 0.35))
+        judge_tags = list(dict.fromkeys(self._judge_weak_tags(judge_result)))
+        for topic in judge_tags:
+            upsert(topic, severity=practice_severity, last_error=judge_summary)
+
+        return sorted(merged.values(), key=lambda item: (-item.severity, item.topic))
 
     def _derive_skill_mastery(
         self,
@@ -556,14 +565,27 @@ class ProfileAgent(PlaceholderAgent):
         practice_batch: dict[str, Any],
         weak_point_details: list[WeakPointDetail],
     ) -> dict[str, float]:
-        if dimensions.skill_mastery:
-            return {name: max(0.0, min(1.0, float(score))) for name, score in dimensions.skill_mastery.items()}
+        skills = {
+            name: max(0.0, min(1.0, float(score)))
+            for name, score in (dimensions.skill_mastery or {}).items()
+        }
+        if not judge_result:
+            if skills:
+                return skills
+            topic = str(practice_batch.get("topic") or "当前主题").strip() or "当前主题"
+            mastery = 0.42
+            skills = {topic: mastery}
+            for item in weak_point_details[:3]:
+                skills.setdefault(item.topic, max(0.2, round(1 - item.severity * 0.55, 2)))
+            return skills
+
         topic = str(practice_batch.get("topic") or "当前主题").strip() or "当前主题"
-        accuracy = float(judge_result.get("accuracy", 0.0) or 0.0)
-        mastery = 0.42 if not judge_result else max(0.2, min(0.92, accuracy))
-        skills = {topic: mastery}
+        accuracy = self._judge_accuracy(judge_result)
+        practice_mastery = max(0.05, min(0.92, round(accuracy, 2)))
+        skills[topic] = min(skills.get(topic, 1.0), practice_mastery)
         for item in weak_point_details[:3]:
-            skills.setdefault(item.topic, max(0.2, round(1 - item.severity * 0.55, 2)))
+            degraded_mastery = max(0.05, round(1 - item.severity * 0.75, 2))
+            skills[item.topic] = min(skills.get(item.topic, 1.0), degraded_mastery)
         return skills
 
     def _derive_learning_habits(
@@ -621,7 +643,18 @@ class ProfileAgent(PlaceholderAgent):
         structured_summary: dict[str, Any],
         practice_batch: dict[str, Any],
         combined_text: str,
+        judge_result: dict[str, Any],
     ) -> CurrentGoalProfile:
+        practice_topic = str(practice_batch.get("topic") or "").strip()
+        if judge_result and practice_topic:
+            accuracy = self._judge_accuracy(judge_result)
+            urgency = "HIGH" if accuracy <= 0.4 or any(keyword in combined_text for keyword in ("考试", "尽快", "马上", "冲刺")) else "MEDIUM"
+            return CurrentGoalProfile(
+                shortTerm=f"掌握{practice_topic}",
+                midTerm=f"完成{practice_topic}相关迁移练习",
+                context="基于最新练习判题结果更新",
+                urgency=urgency,
+            )
         current_goal = dimensions.current_goal
         if current_goal.short_term:
             return current_goal
@@ -637,6 +670,54 @@ class ProfileAgent(PlaceholderAgent):
             context="对话学习目标抽取",
             urgency=urgency,
         )
+
+    def _derive_confidence_level(
+        self,
+        *,
+        dimensions: LearnerProfileDimensions,
+        judge_result: dict[str, Any],
+        confidence_score: float,
+    ) -> str:
+        if judge_result:
+            accuracy = self._judge_accuracy(judge_result)
+            if accuracy <= 0.4:
+                return "LOW"
+            if accuracy >= 0.8 and confidence_score >= 0.75:
+                return "HIGH"
+            return "MEDIUM"
+        if dimensions.confidence_level in {"LOW", "MEDIUM", "HIGH"}:
+            return dimensions.confidence_level
+        if confidence_score >= 0.78:
+            return "HIGH"
+        if confidence_score >= 0.58:
+            return "MEDIUM"
+        return "LOW"
+
+    def _judge_accuracy(self, judge_result: dict[str, Any]) -> float:
+        try:
+            return max(0.0, min(1.0, float(judge_result.get("accuracy", 0.0) or 0.0)))
+        except (TypeError, ValueError):
+            return 0.0
+
+    def _judge_weak_tags(self, judge_result: dict[str, Any]) -> list[str]:
+        tags = [
+            str(tag).strip()
+            for tag in judge_result.get("weakKnowledgeTags", [])
+            if str(tag).strip()
+        ]
+        if tags:
+            return tags
+        inferred: list[str] = []
+        for item in judge_result.get("items", []):
+            if not isinstance(item, dict):
+                continue
+            if bool(item.get("isCorrect")):
+                continue
+            for tag in item.get("knowledgeTags", []) or []:
+                normalized = str(tag).strip()
+                if normalized:
+                    inferred.append(normalized)
+        return list(dict.fromkeys(inferred))
 
     def _derive_preferred_resource_types(
         self,

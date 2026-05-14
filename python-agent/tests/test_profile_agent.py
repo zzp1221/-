@@ -96,7 +96,7 @@ async def test_profile_agent_updates_profile_and_caches_dimensions() -> None:
 
 
 @pytest.mark.asyncio
-async def test_profile_agent_falls_back_to_in_memory_store_when_primary_store_fails() -> None:
+async def test_profile_agent_raises_when_primary_store_update_fails() -> None:
     class BrokenProfileStore:
         async def read_profile(self, user_id: str):
             del user_id
@@ -138,28 +138,94 @@ async def test_profile_agent_falls_back_to_in_memory_store_when_primary_store_fa
         "messages": [{"role": "user", "content": "我不太懂联合索引，能慢一点吗？"}],
     }
 
-    events = [
+    with pytest.raises(RuntimeError, match="db unavailable"):
+        _ = [
+            event
+            async for event in agent.run(
+                task_id="task-profile-fallback",
+                trace_id="trace-profile-fallback",
+                seq=1,
+                service_type="PROFILE_BUILD",
+                params=params,
+                snapshot=_build_snapshot(),
+                system_prompt="test",
+            )
+        ]
+
+
+@pytest.mark.asyncio
+async def test_profile_agent_forces_practice_judge_signal_into_profile() -> None:
+    class FakeProfileAnalyzer:
+        async def analyze(self, *, context_payload):
+            del context_payload
+            return LearnerProfileDimensions(
+                knowledgeFoundation="INTERMEDIATE",
+                learningGoal="继续复习旧知识点",
+                professionalBackground="计算机专业",
+                learningPreference="step_by_step",
+                cognitiveStyle="mixed",
+                weakPoints=["银行家算法"],
+                learningPace="normal",
+                confidenceLevel="HIGH",
+                confidenceScore=0.88,
+                skillMastery={"银行家算法": 0.86},
+                currentGoal={"shortTerm": "理解银行家算法的基本概念", "midTerm": "", "context": "旧画像", "urgency": "MEDIUM"},
+                source="CONVERSATION",
+                summaryText="旧画像摘要",
+            )
+
+    store = InMemoryProfileStore()
+    agent = ProfileAgent(
+        profile_store=store,
+        llm_client=RuleBasedProfileLLM(),
+        profile_analyzer=FakeProfileAnalyzer(),
+    )
+    params = {
+        "userId": "00000000-0000-0000-0000-000000000666",
+        "conversationId": "00000000-0000-0000-0000-000000000777",
+        "profileSource": "PRACTICE",
+        "messages": [{"role": "user", "content": "我想做并发编程练习题。"}],
+        "practiceQuestionBatch": {
+            "topic": "并发编程",
+            "questions": [
+                {"questionId": "q1", "questionType": "SINGLE_CHOICE", "stem": "volatile 题", "options": ["A", "B"], "answer": "A", "knowledgeTags": ["volatile可见性"], "difficultyLevel": "medium"},
+                {"questionId": "q2", "questionType": "SHORT_ANSWER", "stem": "synchronized 锁对象", "options": [], "answer": "锁对象说明", "knowledgeTags": ["synchronized锁对象"], "difficultyLevel": "medium"},
+            ],
+        },
+        "judgeResult": {
+            "summary": "本次测试共 5 题，全部回答错误。学生在并发编程核心概念上存在明显不足。",
+            "accuracy": 0.0,
+            "weakKnowledgeTags": ["volatile可见性", "synchronized锁对象"],
+            "items": [
+                {"questionId": "q1", "isCorrect": False, "knowledgeTags": ["volatile可见性"]},
+                {"questionId": "q2", "isCorrect": False, "knowledgeTags": ["synchronized锁对象"]},
+            ],
+        },
+    }
+
+    _ = [
         event
         async for event in agent.run(
             task_id="task-profile-fallback",
-            trace_id="trace-profile-fallback",
+            trace_id="trace-profile-practice",
             seq=1,
-            service_type="PROFILE_BUILD",
+            service_type="PRACTICE_JUDGE",
             params=params,
             snapshot=_build_snapshot(),
             system_prompt="test",
         )
     ]
 
-    fallback_snapshot = await agent.fallback_profile_store.read_profile(
-        "00000000-0000-0000-0000-000000000333"
-    )
+    snapshot = await store.read_profile("00000000-0000-0000-0000-000000000666")
 
-    assert events[0].event == "progress"
-    assert events[-1].event == "result_chunk"
-    assert fallback_snapshot is not None
-    assert fallback_snapshot.version == 1
-    assert fallback_snapshot.profile.learning_pace == "steady"
+    assert snapshot is not None
+    assert snapshot.profile.source == "PRACTICE"
+    assert snapshot.profile.confidence_level == "LOW"
+    assert snapshot.profile.confidence_score <= 0.36
+    assert snapshot.profile.current_goal.short_term == "掌握并发编程"
+    assert snapshot.profile.weak_points[:2] == ["synchronized锁对象", "volatile可见性"]
+    assert snapshot.profile.skill_mastery["并发编程"] <= 0.05
+    assert snapshot.profile.skill_mastery["volatile可见性"] <= 0.27
 
 
 @pytest.mark.asyncio

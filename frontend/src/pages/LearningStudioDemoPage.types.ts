@@ -5,7 +5,7 @@ import type { ConversationStreamEventPayload } from '../api/conversation';
 import type { VideoCardStyle } from '../components/VideoCard';
 
 export type EngineService = 'resource' | 'path' | 'push' | 'assessment';
-export type ResourceType = 'EXPLANATION' | 'CODE_CASE' | 'QUIZ' | 'MINDMAP' | 'READING' | 'VIDEO';
+export type ResourceType = 'EXPLANATION' | 'CODE_CASE' | 'QUIZ' | 'MINDMAP' | 'SLIDES' | 'VIDEO';
 export type PushResourceType = 'EXPLANATION' | 'CODE_CASE' | 'PRACTICAL_CASE' | 'READING' | 'VIDEO';
 export type QnaState = 'QNA_IDLE' | 'QNA_STREAMING';
 export type EngineState =
@@ -97,7 +97,17 @@ export interface PracticeJudgeResult {
   summary: string;
   totalScore: number;
   accuracy: number;
+  assessmentDimension?: string;
   weakKnowledgeTags?: string[];
+  specializedAnalysis?: {
+    title: string;
+    summary: string;
+    dimension?: string;
+    strengths: string[];
+    weaknesses: string[];
+    nextActions: string[];
+    markdown?: string;
+  };
   items: JudgeItemResult[];
 }
 
@@ -133,7 +143,6 @@ export interface PushForm {
 }
 
 export interface AssessmentForm {
-  range: '7d' | '30d' | '60d';
   dimensions: string[];
 }
 
@@ -255,7 +264,7 @@ export const resourceTypeButtons: ResourceTypeButtonConfig[] = [
   { type: 'CODE_CASE', label: '代码案例' },
   { type: 'QUIZ', label: '练习题' },
   { type: 'MINDMAP', label: '思维导图' },
-  { type: 'READING', label: '拓展阅读' },
+  { type: 'SLIDES', label: 'PPT课件' },
   { type: 'VIDEO', label: '数字人视频' },
 ];
 

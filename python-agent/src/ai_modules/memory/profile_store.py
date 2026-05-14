@@ -599,18 +599,39 @@ class PostgresProfileStore:
         for feature in features:
             grouped.setdefault(str(feature["dimension"]), []).append(feature)
         for feature_list in grouped.values():
-            feature_list.sort(key=lambda item: (-float(item.get("confidence") or 0.0), str(item.get("feature_key") or "")))
+            feature_list.sort(
+                key=lambda item: (
+                    -float(item.get("confidence") or 0.0),
+                    -(item.get("updated_at").timestamp() if item.get("updated_at") else 0.0),
+                    str(item.get("feature_key") or ""),
+                )
+            )
 
         weak_details = [
             {
                 "topic": feature["feature_key"],
                 "severity": float((feature.get("feature_value") or {}).get("severity") or feature.get("confidence") or 0.6),
                 "lastError": str((feature.get("feature_value") or {}).get("lastError") or ""),
+                "updatedRank": item_updated_at.timestamp() if (item_updated_at := feature.get("updated_at")) else 0.0,
             }
             for feature in grouped.get("weak_points", [])
         ]
-        weak_details.sort(key=lambda item: (-float(item["severity"]), item["topic"]))
+        weak_details.sort(
+            key=lambda item: (
+                -float(item["severity"]),
+                -float(item["updatedRank"]),
+                item["topic"],
+            )
+        )
         weak_points = [item["topic"] for item in weak_details]
+        weak_details_payload = [
+            {
+                "topic": item["topic"],
+                "severity": item["severity"],
+                "lastError": item["lastError"],
+            }
+            for item in weak_details
+        ]
 
         skill_mastery = {
             feature["feature_key"]: max(
@@ -696,7 +717,7 @@ class PostgresProfileStore:
             "cognitiveStyle": cognitive_style,
             "learningPace": learning_pace,
             "weakPoints": weak_points,
-            "weakPointDetails": weak_details,
+            "weakPointDetails": weak_details_payload,
             "knowledgeGaps": weak_points,
             "skillMastery": skill_mastery,
             "learningHabits": learning_habits,

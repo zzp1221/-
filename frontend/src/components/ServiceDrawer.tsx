@@ -27,42 +27,12 @@ import {
   cleanupStreamSchedulers,
   runByApiTask,
   toUiTaskStatus,
+  createEmptyEngineTaskSnapshot,
+  createInitialEngineSnapshots,
+  hasLockedTask,
 } from '../pages/LearningStudioDemoPage.utils';
 
 const ACTIVE_CONVERSATION_ID_STORAGE_KEY = 'learning_studio_active_conversation_id';
-
-function createEmptyEngineTaskSnapshot(): EngineTaskSnapshot {
-  return {
-    engineState: 'ENGINE_IDLE',
-    taskId: '',
-    taskProgress: 0,
-    taskStatus: '未提交',
-    taskSummary: '',
-    serviceResultLines: [],
-    downloadLinks: [],
-    videoResult: null,
-    inlineResource: null,
-    practiceBatch: null,
-    judgeResult: null,
-  };
-}
-
-function createInitialEngineSnapshots(): Record<EngineService, EngineTaskSnapshot> {
-  return {
-    resource: createEmptyEngineTaskSnapshot(),
-    path: createEmptyEngineTaskSnapshot(),
-    push: createEmptyEngineTaskSnapshot(),
-    assessment: createEmptyEngineTaskSnapshot(),
-  };
-}
-
-function isTaskTerminal(snapshot: EngineTaskSnapshot): boolean {
-  return snapshot.engineState === 'ENGINE_COMPLETED' || snapshot.engineState === 'ENGINE_FAILED';
-}
-
-function hasLockedTask(snapshot: EngineTaskSnapshot): boolean {
-  return Boolean(snapshot.taskId) && !isTaskTerminal(snapshot);
-}
 
 interface ServiceDrawerProps {
   open: boolean;
@@ -93,7 +63,7 @@ export default function ServiceDrawer({ open, isAuthenticated, onClose, zIndex =
   const [resourceForm, setResourceForm] = useState<ResourceForm>(defaultResourceForm);
   const [pathForm, setPathForm] = useState<PathForm>({ targetPeriod: '14 天', weeklyHours: '8', currentProgress: '已完成基础概念，准备进入案例训练' });
   const [pushForm, setPushForm] = useState<PushForm>({ preferredType: 'CODE_CASE' });
-  const [assessmentForm, setAssessmentForm] = useState<AssessmentForm>({ range: '30d', dimensions: defaultAssessmentDimensions });
+  const [assessmentForm, setAssessmentForm] = useState<AssessmentForm>({ dimensions: defaultAssessmentDimensions });
 
   const activeEngineSnapshot = selectedService ? serviceSnapshots[selectedService] : createEmptyEngineTaskSnapshot();
   const engineBusy = selectedService ? hasLockedTask(activeEngineSnapshot) : false;
@@ -307,7 +277,19 @@ export default function ServiceDrawer({ open, isAuthenticated, onClose, zIndex =
     refs.taskStreamAbortRef.current = null;
     refs.streamQueueRef.current = [];
     cleanupStreamSchedulers(refs.streamFlushTimerRef, refs.streamRafRef);
-    updateServiceSnapshot(targetService, (c) => ({ ...c, engineState: 'ENGINE_SUBMITTING', taskId: '', taskProgress: 12, taskStatus: '已提交判题任务', taskSummary: '', serviceResultLines: [], judgeResult: null }));
+    updateServiceSnapshot(targetService, (c) => ({
+      ...c,
+      engineState: 'ENGINE_SUBMITTING',
+      taskId: '',
+      taskProgress: 12,
+      taskStatus: '已提交判题任务',
+      taskSummary: '',
+      serviceResultLines: [],
+      downloadLinks: [],
+      videoResult: null,
+      inlineResource: null,
+      judgeResult: null,
+    }));
     try {
       const ensuredId = await ensureEngineConversationId();
       const assessmentDimension = batch.assessmentDimension || (targetService === 'assessment' ? assessmentForm.dimensions[0] : '');
@@ -345,7 +327,7 @@ export default function ServiceDrawer({ open, isAuthenticated, onClose, zIndex =
             animate={{ x: 0 }}
             exit={{ x: 540 }}
             transition={{ duration: 0.25, ease: 'easeOut' }}
-            className={`fixed right-0 top-0 flex h-screen w-full ${drawerWidth} flex-col border-l border-slate-200/60 bg-white/95 backdrop-blur-xl shadow-2xl dark:border-slate-700/60 dark:bg-slate-900/95`}
+            className={`fixed right-0 top-0 flex h-[100dvh] w-full ${drawerWidth} flex-col border-l border-slate-200/60 bg-white/95 backdrop-blur-xl shadow-2xl dark:border-slate-700/60 dark:bg-slate-900/95`}
             style={{ zIndex }}
           >
             <div className="flex items-center justify-between border-b border-slate-100 px-5 py-3 dark:border-slate-800">
@@ -375,11 +357,11 @@ export default function ServiceDrawer({ open, isAuthenticated, onClose, zIndex =
                         onClick={() => handleSelectService(item.id)}
                         className={`flex flex-col items-center gap-1 rounded-xl border px-3 py-2.5 text-sm transition-all duration-200 ${
                           active
-                            ? 'border-indigo-300 bg-indigo-50 text-indigo-700 shadow-sm dark:border-indigo-700 dark:bg-indigo-500/10 dark:text-indigo-400'
-                            : 'border-slate-200 bg-white text-slate-600 hover:border-indigo-200 hover:bg-indigo-50/50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-400 dark:hover:border-indigo-700'
+                            ? 'border-primary-300 bg-primary-50 text-primary-700 shadow-sm dark:border-primary-700 dark:bg-primary-500/10 dark:text-primary-400'
+                            : 'border-slate-200 bg-white text-slate-600 hover:border-primary-200 hover:bg-primary-50/50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-400 dark:hover:border-primary-700'
                         }`}
                       >
-                        <item.icon className={`h-5 w-5 ${active ? 'text-indigo-600 dark:text-indigo-400' : 'text-slate-400'}`} />
+                        <item.icon className={`h-5 w-5 ${active ? 'text-primary-600 dark:text-primary-400' : 'text-slate-400'}`} />
                         <span className="text-xs">{item.label}</span>
                       </button>
                     );

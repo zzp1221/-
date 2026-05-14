@@ -24,6 +24,7 @@ from src.ai_modules.models.practice import (
     JudgeResultPayload,
     PracticeQuestion,
     QuestionBatchPayload,
+    SpecializedAnalysisPayload,
     SubjectiveJudgeEvaluation,
 )
 from src.ai_modules.models.planning import (
@@ -86,6 +87,7 @@ __all__ = [
     "ResultChunkSSEEvent",
     "SafetyReviewPayload",
     "SSEEvent",
+    "SpecializedAnalysisPayload",
     "SubjectiveJudgeEvaluation",
     "VideoCompleteSSEEvent",
     "VideoGenerationTaskPayload",

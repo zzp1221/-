@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import copy
 import json
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Container
 from pathlib import Path
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -137,10 +137,10 @@ class PythonAgentSupervisor:
     ) -> str:
         return self.agent_registry[agent_name].system_prompt(snapshot)
 
-    async def stream(self, request: EngineStreamRequest, cancelled: set[str] | None = None) -> AsyncIterator[SSEEvent]:
+    async def stream(self, request: EngineStreamRequest, cancelled: Container[str] | None = None) -> AsyncIterator[SSEEvent]:
         route_plan = self.resolve_route(request.service_type, request.params)
         snapshot = await self.build_snapshot(request)
-        current_params = copy.deepcopy(request.params)
+        current_params = self._seed_request_params(request)
         seq = 1
         agent_names = list(route_plan.agent_names)
         i = 0
@@ -292,3 +292,11 @@ class PythonAgentSupervisor:
             status="SUCCESS",
             summary=f"{service_type} 路由完成，执行链路: {' -> '.join(agent_names)}",
         )
+
+    def _seed_request_params(self, request: EngineStreamRequest) -> dict:
+        seeded_params = copy.deepcopy(request.params)
+        if request.user_id and not seeded_params.get("userId"):
+            seeded_params["userId"] = request.user_id
+        if request.conversation_id and not seeded_params.get("conversationId"):
+            seeded_params["conversationId"] = request.conversation_id
+        return seeded_params

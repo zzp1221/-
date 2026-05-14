@@ -105,7 +105,7 @@ class EvaluationAgent(PlaceholderAgent):
                 assetType="DOCUMENT",
                 title=f"{primary_dimension}专项评估",
                 summary=payload.summary_text,
-                displayMode="INLINE_MARKDOWN",
+                displayMode="MARKDOWN_CARD",
                 fileName="",
                 localPath=None,
                 mimeType="text/markdown; charset=UTF-8",
@@ -183,6 +183,11 @@ class EvaluationAgent(PlaceholderAgent):
             for message in messages
             if isinstance(message, dict) and message.get("role") == "user"
         ]
+        learner_questions = [
+            content
+            for content in learner_messages
+            if self._looks_like_active_question(content)
+        ]
         aggregated = {
             "profile": profile,
             "learningContext": params.get("learningContext", {}),
@@ -197,10 +202,10 @@ class EvaluationAgent(PlaceholderAgent):
             },
             "behaviorSignals": {
                 "messageCount": len(messages),
-                "learnerQuestionCount": len(learner_messages),
+                "learnerQuestionCount": len(learner_questions),
                 "recentMistakeCount": len(snapshot.recent_mistakes),
                 "practiceAccuracy": judge_result.get("accuracy"),
-                "conversationKeywords": learner_messages[-3:],
+                "conversationKeywords": learner_questions[-3:] or learner_messages[-3:],
             },
             "candidateStrengths": strengths or ["愿意配合学习"],
             "candidateWeaknesses": weaknesses or ["薄弱点待补充"],
@@ -258,7 +263,6 @@ class EvaluationAgent(PlaceholderAgent):
         return {
             "profile": params.get("profile", {}),
             "learningContext": params.get("learningContext", {}),
-            "assessmentRange": params.get("range"),
             "assessmentDimensions": params.get("dimensions", []),
             "judgeResult": params.get("judgeResult", {}),
             "messages": params.get("messages", []),
@@ -550,28 +554,23 @@ class EvaluationAgent(PlaceholderAgent):
         params: dict[str, Any],
         snapshot: SystemSnapshot,
     ) -> str:
-        strengths = self._markdown_list(payload.strengths[:3])
-        weaknesses = self._markdown_list(payload.weaknesses[:3])
-        next_focus = self._markdown_list(payload.next_focus[:3])
+        strengths = payload.strengths[:3] or ["愿意继续学习并完成当前评估"]
+        weaknesses = payload.weaknesses[:3] or ["薄弱点待结合后续作答继续细化"]
+        next_focus = payload.next_focus[:3] or ["核心概念", "适用条件"]
         dimension_lines = self._render_dimension_specific_lines(dimension, payload, params, snapshot)
-        return "\n\n".join(
-            section
-            for section in [
-                f"# {dimension}专项评估",
-                "\n".join(
-                    [
-                        "## 评估结论",
-                        f"- 当前等级：{payload.overall_level}",
-                        f"- 评估周期：{params.get('range') or '近阶段'}",
-                        f"- 综合判断：{payload.summary_text}",
-                    ]
-                ),
-                "\n".join(["## 当前优势", *strengths]),
-                "\n".join(["## 当前薄弱点", *weaknesses]),
-                "\n".join(["## 下一步重点", *next_focus]),
-                "\n".join(dimension_lines),
+        return "\n".join(
+            [
+                f"## {dimension}结果",
+                f"- 当前水平：{payload.overall_level}",
+                f"- 结论：{payload.summary_text}",
+                "### 你目前做得好的地方",
+                *[f"- {item}" for item in strengths],
+                "### 当前最需要补强的点",
+                *[f"- {item}" for item in weaknesses],
+                "### 接下来优先做什么",
+                *[f"- {item}" for item in next_focus],
+                *dimension_lines,
             ]
-            if section
         )
 
     def _render_dimension_specific_lines(
@@ -586,44 +585,42 @@ class EvaluationAgent(PlaceholderAgent):
         behavior = params.get("aggregatedEvaluationContext", {}).get("behaviorSignals", {})
         if dimension == "知识基础":
             return [
-                "## 专项判断",
-                f"- 当前更像是“概念未建立”而不是“做题粗心”，需先补齐 {focus[0]} 等基础知识。",
-                "- 推荐先用定义复述 + 适用条件判断的方式完成基础校准。",
-                "## 建议自检",
-                f"- 你能否不看资料解释“{focus[0]}”的定义、作用与适用场景？",
-                f"- 如果把“{focus[0]}”换一个题目场景，你还能判断它为什么成立吗？",
+                "### 怎么理解这次结果",
+                f"- 当前重点不是继续刷题数量，而是先把 {focus[0]} 的定义、作用和适用条件说清楚。",
+                "- 如果一个知识点只能记住结论、不能解释为什么成立，通常说明基础还没真正稳住。",
+                "### 你现在可以怎么做",
+                f"- 不看资料，先用自己的话解释“{focus[0]}”是什么、什么时候用。",
+                f"- 再做一道最小例题，做之前先判断 {focus[0]} 的使用前提。",
             ]
         if dimension == "案例迁移":
             return [
-                "## 专项判断",
-                f"- 当前重点不是继续背概念，而是把 {focus[0]} 迁移到新案例中判断适用条件。",
-                "- 评估应关注你能否识别题目变化后仍保持正确解题思路。",
-                "## 迁移检核",
-                f"- 请尝试说明：如果题干条件变化，{focus[0]} 还能否直接套用？为什么？",
-                f"- 你能否给出一个和当前知识点相似但不完全相同的新场景？",
+                "### 怎么理解这次结果",
+                f"- 这次更关注你能不能把 {focus[0]} 放到新场景里继续正确使用，而不是只会复述原题做法。",
+                "### 你现在可以怎么做",
+                f"- 尝试换一个题目条件，重新判断 {focus[0]} 还能不能直接使用。",
+                f"- 自己举一个相似但不完全相同的新案例，再说明思路哪里需要调整。",
             ]
         if dimension == "学习主动性":
             return [
-                "## 专项判断",
-                f"- 最近交互次数：{behavior.get('messageCount') or 0}，学习者主动提问次数：{behavior.get('learnerQuestionCount') or 0}。",
-                "- 该维度优先看是否会主动拆问题、追问原因、提出下一步学习动作，而不是只等答案。",
-                "## 主动性提示",
-                "- 你下一轮学习前，应先写出“我要补什么、怎么验证、不会时问什么”。",
-                "- 如果始终只有被动接收内容，说明主动性还没有形成闭环。",
+                "### 怎么理解这次结果",
+                f"- 当前记录到的主动提问线索约为 {behavior.get('learnerQuestionCount') or 0} 次；该维度重点看你会不会主动拆目标、安排验证并提出追问。",
+                "### 你现在可以怎么做",
+                "- 下一轮学习前，先写出“先补什么、怎么验证、卡住时问什么”。",
+                "- 学完后如果效果一般，再主动调整资源类型或缩小目标，而不是继续被动等待内容。",
             ]
         if dimension == "复盘闭环":
             return [
-                "## 专项判断",
-                f"- 最近错误记录：{', '.join(recent_mistakes[:3]) or '暂无显式错题记录'}。",
-                "- 该维度关注你是否会把旧错转成纠错策略，而不是重复犯同类错误。",
-                "## 复盘检核",
-                "- 请先说出最近一次错误的真正原因，再说明下次你打算如何避免。",
-                f"- 如果再次遇到 {focus[0]} 相关题目，你会先检查哪一步？",
+                "### 怎么理解这次结果",
+                f"- 最近关联到的错误线索：{', '.join(recent_mistakes[:3]) or '暂无显式错题记录'}。",
+                "- 该维度不是看你有没有出错，而是看你能不能把旧错变成下次可执行的检查动作。",
+                "### 你现在可以怎么做",
+                "- 先写出最近一次错误的真正原因，不要只写“粗心”。",
+                f"- 再为 {focus[0]} 写一个做题前/做题后的检查清单，避免重复犯错。",
             ]
         return [
-            "## 专项判断",
-            f"- 当前围绕 {focus[0]}、{focus[1] if len(focus) > 1 else focus[0]} 进行练习掌握评估。",
-            "- 页面下方已生成专项测评题，作答后会返回更准确的掌握结论。",
+            "### 怎么理解这次结果",
+            f"- 当前围绕 {focus[0]}、{focus[1] if len(focus) > 1 else focus[0]} 进行专项评估。",
+            "- 页面下方已生成互动题，作答后系统会结合你的回答给出更具体的专项判断。",
         ]
 
     def _resolve_focus_items(self, payload: EvaluationPayload, snapshot: SystemSnapshot) -> list[str]:
@@ -662,6 +659,15 @@ class EvaluationAgent(PlaceholderAgent):
 
     def _markdown_list(self, items: list[str]) -> list[str]:
         normalized = [f"- {item}" for item in items if str(item).strip()]
+
+    def _looks_like_active_question(self, text: str) -> bool:
+        normalized = str(text).strip()
+        if not normalized:
+            return False
+        return any(
+            token in normalized
+            for token in ["?", "？", "怎么", "为什么", "如何", "吗", "能否", "可不可以", "区别", "是否"]
+        )
         return normalized or ["- 暂无明显信号"]
 
     def _unique_items(self, items: list[Any]) -> list[str]:

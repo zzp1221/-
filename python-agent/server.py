@@ -3,8 +3,11 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import logging
+import tempfile
 from contextlib import asynccontextmanager, suppress
+from pathlib import Path
 from typing import AsyncIterator
 
 from fastapi import FastAPI, HTTPException, Query, Request
@@ -24,8 +27,38 @@ SETTINGS = get_settings()
 TRACER = trace.get_tracer(__name__)
 SUPERVISOR = PythonAgentSupervisor()
 MESSAGE_STORE = MongoConversationMessageStore()
-CANCELLED_TASKS: set[str] = set()
 ACTIVE_STREAM_TASKS: dict[str, asyncio.Task[None]] = {}
+
+
+class FileCancelledTasks:
+    """Cross-worker cancellation markers stored on the shared local filesystem."""
+
+    def __init__(self, root_dir: Path) -> None:
+        self.root_dir = root_dir
+
+    def ensure_ready(self) -> None:
+        self.root_dir.mkdir(parents=True, exist_ok=True)
+
+    def _marker_path(self, task_id: str) -> Path:
+        digest = hashlib.sha256(task_id.encode("utf-8")).hexdigest()
+        return self.root_dir / f"{digest}.cancelled"
+
+    def add(self, task_id: str) -> None:
+        self.ensure_ready()
+        self._marker_path(task_id).touch()
+
+    def discard(self, task_id: str) -> None:
+        self._marker_path(task_id).unlink(missing_ok=True)
+
+    def __contains__(self, task_id: object) -> bool:
+        if not isinstance(task_id, str):
+            return False
+        return self._marker_path(task_id).exists()
+
+
+CANCELLED_TASKS = FileCancelledTasks(
+    Path(tempfile.gettempdir()) / SETTINGS.app_name / "task-cancellations"
+)
 
 
 class InternalConversationMessageRequest(BaseModel):
@@ -44,6 +77,7 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
 
     logging.basicConfig(level=logging.INFO)
     configure_observability(SETTINGS)
+    CANCELLED_TASKS.ensure_ready()
     LOGGER.info(
         "Starting %s with provider=%s runtime_provider=%s model=%s",
         SETTINGS.app_name,
@@ -108,6 +142,8 @@ async def _supervisor_event_stream(engine_request: EngineStreamRequest) -> Async
         seq = 1
         queue: asyncio.Queue[str | None] = asyncio.Queue()
 
+        CANCELLED_TASKS.discard(engine_request.task_id)
+
         async def pump_events() -> None:
             # `seq` is advanced here so the outer cancellation/error branch can emit the next SSE id.
             nonlocal seq
@@ -170,9 +206,22 @@ async def _supervisor_event_stream(engine_request: EngineStreamRequest) -> Async
             finally:
                 await queue.put(None)
 
+        async def watch_cancellation() -> None:
+            while True:
+                await asyncio.sleep(0.5)
+                if engine_request.task_id in CANCELLED_TASKS:
+                    LOGGER.info("Detected shared cancellation marker: task_id=%s", engine_request.task_id)
+                    if not stream_task.done():
+                        stream_task.cancel()
+                    return
+
         stream_task = asyncio.create_task(
             pump_events(),
             name=f"smart-engine:{engine_request.task_id}",
+        )
+        cancel_watcher_task = asyncio.create_task(
+            watch_cancellation(),
+            name=f"smart-engine-cancel-watcher:{engine_request.task_id}",
         )
         ACTIVE_STREAM_TASKS[engine_request.task_id] = stream_task
         try:
@@ -183,6 +232,9 @@ async def _supervisor_event_stream(engine_request: EngineStreamRequest) -> Async
                 yield item
         finally:
             ACTIVE_STREAM_TASKS.pop(engine_request.task_id, None)
+            cancel_watcher_task.cancel()
+            with suppress(asyncio.CancelledError):
+                await cancel_watcher_task
             if not stream_task.done():
                 stream_task.cancel()
                 with suppress(asyncio.CancelledError):

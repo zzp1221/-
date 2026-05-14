@@ -309,12 +309,12 @@ export default function Layout() {
       {/* Logo */}
       <div className="border-b border-slate-200/60 px-5 py-4 dark:border-slate-700/60">
         <NavLink to="/" onClick={closeSidebar} className="flex items-center gap-3">
-          <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-indigo-500 to-violet-600 text-white shadow-lg shadow-indigo-500/25">
+          <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary-600 text-white shadow-sm">
             <Sparkles className="h-4 w-4" />
           </div>
           <div>
             <p className="text-base font-semibold tracking-tight text-slate-900 dark:text-white">智学引擎</p>
-            <p className="text-[11px] text-slate-400 dark:text-slate-500">AI 学习平台</p>
+            <p className="text-[11px] text-slate-500 dark:text-slate-400">AI 学习平台</p>
           </div>
         </NavLink>
       </div>
@@ -329,7 +329,7 @@ export default function Layout() {
           className={({ isActive }) =>
             `flex w-full items-center gap-2.5 rounded-xl px-3 py-2.5 text-sm font-medium transition-all duration-200 ${
               isActive
-                ? 'bg-indigo-50 text-indigo-700 dark:bg-indigo-500/10 dark:text-indigo-400'
+                ? 'bg-primary-50 text-primary-700 dark:bg-primary-900/50 dark:text-primary-300'
                 : 'text-slate-600 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800'
             }`
           }
@@ -343,7 +343,7 @@ export default function Layout() {
             onClick={() => setMoreMenuOpen((prev) => !prev)}
             className={`flex w-full items-center gap-2.5 rounded-xl px-3 py-2.5 text-sm font-medium transition-all duration-200 ${
               moreMenuOpen || inEngine
-                ? 'bg-indigo-50 text-indigo-700 dark:bg-indigo-500/10 dark:text-indigo-400'
+                ? 'bg-primary-50 text-primary-700 dark:bg-primary-900/50 dark:text-primary-300'
                 : 'text-slate-600 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800'
             }`}
           >
@@ -362,7 +362,7 @@ export default function Layout() {
                 <button
                   type="button"
                   onClick={handleOpenProfilePanel}
-                  className="flex w-full items-center gap-2.5 px-4 py-2.5 text-sm text-slate-600 transition-colors hover:bg-indigo-50 hover:text-indigo-700 dark:text-slate-400 dark:hover:bg-indigo-500/10 dark:hover:text-indigo-400"
+                  className="flex w-full items-center gap-2.5 px-4 py-2.5 text-sm text-slate-600 transition-colors hover:bg-primary-50 hover:text-primary-700 dark:text-slate-400 dark:hover:bg-primary-900/50 dark:hover:text-primary-300"
                 >
                   <UserRoundSearch className="h-4 w-4" />
                   查看个人画像
@@ -370,7 +370,7 @@ export default function Layout() {
                 <button
                   type="button"
                   onClick={handleOpenServicePanel}
-                  className="flex w-full items-center gap-2.5 px-4 py-2.5 text-sm text-slate-600 transition-colors hover:bg-indigo-50 hover:text-indigo-700 dark:text-slate-400 dark:hover:bg-indigo-500/10 dark:hover:text-indigo-400"
+                  className="flex w-full items-center gap-2.5 px-4 py-2.5 text-sm text-slate-600 transition-colors hover:bg-primary-50 hover:text-primary-700 dark:text-slate-400 dark:hover:bg-primary-900/50 dark:hover:text-primary-300"
                 >
                   <Sparkles className="h-4 w-4" />
                   学习服务
@@ -390,7 +390,7 @@ export default function Layout() {
               closeSidebar();
               openAuthModal('login', '');
             }}
-            className="w-full rounded-xl bg-gradient-to-r from-indigo-600 to-violet-600 px-3 py-2.5 text-sm font-medium text-white shadow-lg shadow-indigo-500/25 transition-all hover:shadow-xl hover:shadow-indigo-500/30 active:scale-[0.98]"
+            className="w-full rounded-xl bg-primary-600 px-3 py-2.5 text-sm font-medium text-white shadow-sm transition-all hover:bg-primary-700 active:scale-[0.98]"
           >
             立即登录
           </button>
@@ -398,7 +398,7 @@ export default function Layout() {
           <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 dark:border-slate-700 dark:bg-slate-800/50">
             <div className="text-[11px] text-slate-400 dark:text-slate-500">当前用户</div>
             <div className="mt-0.5 text-sm font-medium text-slate-800 dark:text-slate-200">{userDisplayName}</div>
-            <button type="button" onClick={handleLogout} className="mt-1.5 text-xs text-indigo-600 hover:text-indigo-700 dark:text-indigo-400 dark:hover:text-indigo-300">
+            <button type="button" onClick={handleLogout} className="mt-1.5 text-xs text-primary-600 hover:text-primary-700 dark:text-primary-400 dark:hover:text-primary-300">
               退出登录
             </button>
           </div>
@@ -407,7 +407,7 @@ export default function Layout() {
 
       {/* Search */}
       <div className="px-4 pb-3">
-        <label className="flex items-center rounded-xl border border-slate-200 bg-white px-3 py-2 transition-all focus-within:border-indigo-300 focus-within:ring-2 focus-within:ring-indigo-500/20 dark:border-slate-700 dark:bg-slate-900 dark:focus-within:border-indigo-600">
+        <label className="flex items-center rounded-xl border border-slate-200 bg-white px-3 py-2 transition-all focus-within:border-primary-300 focus-within:ring-2 focus-within:ring-primary-500/20 dark:border-slate-700 dark:bg-slate-900 dark:focus-within:border-primary-600">
           <Search className="mr-2 h-3.5 w-3.5 shrink-0 text-slate-400" />
           <input
             value={historySearch}
@@ -436,7 +436,7 @@ export default function Layout() {
                 onClick={() => handleOpenConversation(item)}
                 className={`group w-full truncate rounded-lg px-3 py-2 text-left text-sm transition-all duration-200 ${
                   item.conversationId === activeConversationId
-                    ? 'bg-indigo-50 text-indigo-700 ring-1 ring-indigo-200/50 dark:bg-indigo-500/10 dark:text-indigo-400 dark:ring-indigo-500/20'
+                    ? 'bg-primary-50 text-primary-700 ring-1 ring-primary-200/50 dark:bg-primary-500/10 dark:text-primary-400 dark:ring-primary-500/20'
                     : 'text-slate-600 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800'
                 }`}
                 title={item.lastMessagePreview || item.title}
@@ -466,7 +466,7 @@ export default function Layout() {
             <Clock3 className="h-3.5 w-3.5" />
             同步 {lastSyncAt ? new Date(lastSyncAt).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' }) : '--'}
           </div>
-          <button type="button" onClick={() => void loadRecentConversations()} className="text-[11px] text-indigo-600 hover:text-indigo-700 dark:text-indigo-400 dark:hover:text-indigo-300">
+          <button type="button" onClick={() => void loadRecentConversations()} className="text-[11px] text-primary-600 hover:text-primary-700 dark:text-primary-400 dark:hover:text-primary-300">
             刷新
           </button>
         </div>
@@ -519,7 +519,7 @@ export default function Layout() {
               <Menu className="h-5 w-5" />
             </button>
             <div className="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-300">
-              <Compass className="h-4 w-4 text-indigo-500" />
+              <Compass className="h-4 w-4 text-primary-500" />
               <span className="hidden sm:inline">{inEngine ? '更多功能 / 服务选择面板' : '新对话 / 智能辅导链路'}</span>
               <span className="sm:hidden">{inEngine ? '服务面板' : '智能对话'}</span>
             </div>
@@ -531,7 +531,7 @@ export default function Layout() {
               <button
                 type="button"
                 onClick={() => openAuthModal('login', '')}
-                className="rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-indigo-700 md:hidden"
+                className="rounded-lg bg-primary-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-primary-700 md:hidden"
               >
                 登录
               </button>

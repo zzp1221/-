@@ -55,12 +55,12 @@ export function ServiceDynamicForm(props: {
     );
   }
 
-  const baseInputClass = "w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-sm outline-none transition-all duration-200 focus:border-indigo-400 focus:ring-2 focus:ring-indigo-500/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:focus:border-indigo-500";
-  const baseSelectClass = "w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-sm outline-none transition-all duration-200 focus:border-indigo-400 focus:ring-2 focus:ring-indigo-500/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:focus:border-indigo-500";
+  const baseInputClass = "w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-sm outline-none transition-all duration-200 focus:border-primary-400 focus:ring-2 focus:ring-primary-500/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:focus:border-primary-500";
+  const baseSelectClass = "w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-sm outline-none transition-all duration-200 focus:border-primary-400 focus:ring-2 focus:ring-primary-500/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:focus:border-primary-500";
   const chipButton = (active: boolean) => `rounded-full border px-3 py-1.5 text-xs font-medium transition-all duration-200 ${
     active
-      ? 'border-indigo-300 bg-indigo-50 text-indigo-700 dark:border-indigo-700 dark:bg-indigo-500/10 dark:text-indigo-400'
-      : 'border-slate-200 bg-white text-slate-600 hover:border-indigo-200 hover:text-indigo-600 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-400 dark:hover:border-indigo-600'
+      ? 'border-primary-300 bg-primary-50 text-primary-700 dark:border-primary-700 dark:bg-primary-500/10 dark:text-primary-400'
+      : 'border-slate-200 bg-white text-slate-600 hover:border-primary-200 hover:text-primary-600 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-400 dark:hover:border-primary-600'
   }`;
 
   if (props.service === 'resource') {
@@ -112,7 +112,7 @@ export function ServiceDynamicForm(props: {
           className={`${baseInputClass} mt-3`}
         />
         {props.resourceForm.resourceType === 'VIDEO' ? (
-          <div className="mt-4 rounded-2xl border border-indigo-200 bg-indigo-50/70 px-4 py-3 text-sm text-indigo-700 dark:border-indigo-700 dark:bg-indigo-500/10 dark:text-indigo-200">
+          <div className="mt-4 rounded-2xl border border-primary-200 bg-primary-50/70 px-4 py-3 text-sm text-primary-700 dark:border-primary-700 dark:bg-primary-500/10 dark:text-primary-200">
             已固定为数字人视频生成，系统将按默认时长自动完成脚本、TTS，并在当前浏览器本地渲染视频。
           </div>
         ) : null}
@@ -175,15 +175,6 @@ export function ServiceDynamicForm(props: {
   return (
     <div className="rounded-2xl border border-slate-200 bg-slate-50/50 p-4 dark:border-slate-700 dark:bg-slate-900/50 md:p-5">
       <div className="mb-3 text-sm font-semibold text-slate-700 dark:text-slate-300">学习效果评估参数</div>
-      <select
-        value={props.assessmentForm.range}
-        onChange={(e) => props.onAssessmentChange({ ...props.assessmentForm, range: e.target.value as AssessmentForm['range'] })}
-        className={`${baseSelectClass} mb-3`}
-      >
-        <option value="7d">近 7 天</option>
-        <option value="30d">近 30 天</option>
-        <option value="60d">近 60 天</option>
-      </select>
       <div className="flex flex-wrap gap-2">
         {assessmentDimensionOptions.map((item) => {
           const checked = nextDimensions.includes(item);
@@ -225,7 +216,7 @@ export function ServiceSubmitPanel(props: {
           type="button"
           onClick={props.onSubmit}
           disabled={props.disabled}
-          className="flex-1 rounded-xl bg-gradient-to-r from-indigo-600 to-violet-600 px-4 py-2.5 text-sm font-medium text-white shadow-lg shadow-indigo-500/25 transition-all hover:shadow-xl hover:shadow-indigo-500/30 disabled:cursor-not-allowed disabled:opacity-40 disabled:shadow-none active:scale-[0.98]"
+          className="flex-1 rounded-xl bg-primary-600 px-4 py-2.5 text-sm font-medium text-white shadow-lg shadow-primary-500/25 transition-all hover:shadow-md hover:bg-primary-700 disabled:cursor-not-allowed disabled:opacity-40 disabled:shadow-none active:scale-[0.98]"
         >
           {isRunning ? '提交中...' : '提交任务'}
         </button>
@@ -245,7 +236,7 @@ export function ServiceSubmitPanel(props: {
             <span className="font-mono text-slate-400 dark:text-slate-500">任务 #{props.taskId.slice(0, 12)}...</span>
             <span className={`font-medium ${
               progress >= 100 ? 'text-emerald-600 dark:text-emerald-400' :
-              isRunning ? 'text-indigo-600 dark:text-indigo-400' :
+              isRunning ? 'text-primary-600 dark:text-primary-400' :
               'text-slate-500 dark:text-slate-400'
             }`}>
               {props.status}
@@ -256,7 +247,7 @@ export function ServiceSubmitPanel(props: {
               className={`absolute inset-y-0 left-0 rounded-full ${
                 progress >= 100
                   ? 'bg-gradient-to-r from-emerald-400 to-emerald-500'
-                  : 'bg-gradient-to-r from-indigo-500 to-violet-500'
+                  : 'bg-primary-500'
               }`}
               initial={false}
               animate={{ width: `${progress}%` }}
@@ -285,8 +276,8 @@ function InlineResourcePanel(props: { resource: InlineResourceView }) {
         </div>
         <CodeBlock language={props.resource.language || 'text'}>{props.resource.content}</CodeBlock>
         {props.resource.explanation ? (
-          <div className="mt-4 rounded-xl border border-indigo-100 bg-white p-4 dark:border-indigo-900 dark:bg-slate-950">
-            <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-indigo-600 dark:text-indigo-400">讲解</div>
+          <div className="mt-4 rounded-xl border border-primary-100 bg-white p-4 dark:border-primary-900 dark:bg-slate-950">
+            <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-primary-600 dark:text-primary-400">讲解</div>
             <MarkdownRenderer content={props.resource.explanation} />
           </div>
         ) : null}
@@ -332,7 +323,7 @@ function PracticeQuestionPanel(props: {
             主题：{props.batch.topic || '未指定'} · 难度：{props.batch.difficulty || '未指定'}
           </div>
           {props.batch.description ? (
-            <div className="mt-3 rounded-xl border border-indigo-100 bg-indigo-50/70 px-3 py-2 text-sm leading-6 text-indigo-700 dark:border-indigo-900 dark:bg-indigo-500/10 dark:text-indigo-200">
+            <div className="mt-3 rounded-xl border border-primary-100 bg-primary-50/70 px-3 py-2 text-sm leading-6 text-primary-700 dark:border-primary-900 dark:bg-primary-500/10 dark:text-primary-200">
               {props.batch.description}
             </div>
           ) : null}
@@ -341,7 +332,7 @@ function PracticeQuestionPanel(props: {
           type="button"
           disabled={!props.canSubmit}
           onClick={() => props.onSubmitAnswers(props.batch, answers)}
-          className="shrink-0 rounded-lg bg-indigo-600 px-3 py-2 text-xs font-medium text-white transition-colors hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-40"
+          className="shrink-0 rounded-lg bg-primary-600 px-3 py-2 text-xs font-medium text-white transition-colors hover:bg-primary-700 disabled:cursor-not-allowed disabled:opacity-40"
         >
           {props.batch.submitLabel || '提交答案并判题'}
         </button>
@@ -361,7 +352,7 @@ function PracticeQuestionPanel(props: {
                   return (
                     <label
                       key={`${question.questionId}-${optionLabel}`}
-                      className="flex cursor-pointer items-start gap-2 rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-600 transition-colors hover:border-indigo-300 dark:border-slate-700 dark:text-slate-400 dark:hover:border-indigo-700"
+                      className="flex cursor-pointer items-start gap-2 rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-600 transition-colors hover:border-primary-300 dark:border-slate-700 dark:text-slate-400 dark:hover:border-primary-700"
                     >
                       <input
                         type="radio"
@@ -380,7 +371,7 @@ function PracticeQuestionPanel(props: {
                 value={answers[question.questionId] || ''}
                 onChange={(event) => setAnswers((prev) => ({ ...prev, [question.questionId]: event.target.value }))}
                 rows={4}
-                className="mt-3 w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-sm outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-500/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200"
+                className="mt-3 w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-sm outline-none focus:border-primary-400 focus:ring-2 focus:ring-primary-500/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200"
                 placeholder="请输入你的答案"
               />
             )}
@@ -392,6 +383,21 @@ function PracticeQuestionPanel(props: {
         <div className="mt-5 rounded-xl border border-emerald-200 bg-emerald-50/60 p-4 dark:border-emerald-900 dark:bg-emerald-500/10">
           <div className="text-sm font-semibold text-emerald-700 dark:text-emerald-300">{props.judgeResult.title}</div>
           <div className="mt-1 text-sm text-emerald-700/90 dark:text-emerald-200">{props.judgeResult.summary}</div>
+          {props.judgeResult.specializedAnalysis ? (
+            <div className="mt-4 rounded-xl border border-white/70 bg-white/80 p-4 dark:border-slate-800 dark:bg-slate-950">
+              <div className="text-sm font-semibold text-slate-700 dark:text-slate-200">
+                {props.judgeResult.specializedAnalysis.title}
+              </div>
+              <div className="mt-1 text-sm text-slate-600 dark:text-slate-400">
+                {props.judgeResult.specializedAnalysis.summary}
+              </div>
+              {props.judgeResult.specializedAnalysis.markdown ? (
+                <div className="mt-3 text-sm leading-7 text-slate-700 dark:text-slate-300">
+                  <MarkdownRenderer content={props.judgeResult.specializedAnalysis.markdown} />
+                </div>
+              ) : null}
+            </div>
+          ) : null}
           <div className="mt-3 text-xs text-emerald-700/80 dark:text-emerald-300">
             总分：{props.judgeResult.totalScore} · 正确率：{Math.round((props.judgeResult.accuracy || 0) * 100)}%
           </div>
@@ -492,7 +498,7 @@ export function TaskResultPanel(props: {
       {props.videoResult ? (
         <div className="modern-card overflow-hidden">
           <div className="flex items-center gap-2 border-b border-slate-100 px-4 py-3 dark:border-slate-800">
-            <Sparkles className="h-4 w-4 text-indigo-500" />
+            <Sparkles className="h-4 w-4 text-primary-500" />
             <span className="text-sm font-semibold text-slate-700 dark:text-slate-300">视频结果</span>
           </div>
           <div className="p-4">
@@ -513,7 +519,7 @@ export function TaskResultPanel(props: {
       {externalRecommendations.length > 0 ? (
         <div className="modern-card overflow-hidden">
           <div className="flex items-center gap-2 border-b border-slate-100 px-4 py-3 dark:border-slate-800">
-            <Sparkles className="h-4 w-4 text-indigo-500" />
+            <Sparkles className="h-4 w-4 text-primary-500" />
             <span className="text-sm font-semibold text-slate-700 dark:text-slate-300">推荐资源</span>
           </div>
           <div className="grid gap-3 p-4 md:grid-cols-2">
@@ -526,7 +532,7 @@ export function TaskResultPanel(props: {
 
       <div className="modern-card overflow-hidden">
         <div className="flex items-center gap-2 border-b border-slate-100 px-4 py-3 dark:border-slate-800">
-          <BookOpen className="h-4 w-4 text-indigo-500" />
+          <BookOpen className="h-4 w-4 text-primary-500" />
           <span className="text-sm font-semibold text-slate-700 dark:text-slate-300">任务结果</span>
         </div>
         <div className="p-4">
@@ -558,7 +564,7 @@ export function TaskResultPanel(props: {
             <ul className="space-y-2">
               {props.serviceResultLines.map((line, index) => (
                 <li key={`${index}-${line}`} className="flex items-start gap-2 text-sm text-slate-600 dark:text-slate-400">
-                  <span className="mt-1.5 block h-1.5 w-1.5 shrink-0 rounded-full bg-indigo-400" />
+                  <span className="mt-1.5 block h-1.5 w-1.5 shrink-0 rounded-full bg-primary-400" />
                   {line}
                 </li>
               ))}
@@ -570,7 +576,7 @@ export function TaskResultPanel(props: {
       {fileDownloads.length > 0 ? (
         <div className="modern-card overflow-hidden">
           <div className="flex items-center gap-2 border-b border-slate-100 px-4 py-3 dark:border-slate-800">
-            <FileText className="h-4 w-4 text-indigo-500" />
+            <FileText className="h-4 w-4 text-primary-500" />
             <span className="text-sm font-semibold text-slate-700 dark:text-slate-300">产物下载</span>
           </div>
           <div className="p-4">
@@ -578,7 +584,7 @@ export function TaskResultPanel(props: {
               {fileDownloads.map((item) => (
                 <div
                   key={`${item.title}-${item.url}`}
-                  className="flex items-center justify-between gap-3 rounded-xl border border-slate-200 bg-slate-50/50 px-4 py-3 transition-all hover:border-indigo-200 hover:bg-white dark:border-slate-700 dark:bg-slate-900/50 dark:hover:border-indigo-700"
+                  className="flex items-center justify-between gap-3 rounded-xl border border-slate-200 bg-slate-50/50 px-4 py-3 transition-all hover:border-primary-200 hover:bg-white dark:border-slate-700 dark:bg-slate-900/50 dark:hover:border-primary-700"
                 >
                   <div className="min-w-0 flex-1">
                     <div className="truncate text-sm font-medium text-slate-700 dark:text-slate-300">{item.title}</div>
@@ -590,7 +596,7 @@ export function TaskResultPanel(props: {
                   <button
                     type="button"
                     onClick={() => { void handleDownload(item); }}
-                    className="shrink-0 rounded-lg bg-indigo-50 px-3 py-1.5 text-xs font-medium text-indigo-600 transition-colors hover:bg-indigo-100 dark:bg-indigo-500/10 dark:text-indigo-400 dark:hover:bg-indigo-500/20"
+                    className="shrink-0 rounded-lg bg-primary-50 px-3 py-1.5 text-xs font-medium text-primary-600 transition-colors hover:bg-primary-100 dark:bg-primary-500/10 dark:text-primary-400 dark:hover:bg-primary-500/20"
                   >
                     下载
                   </button>
@@ -620,7 +626,7 @@ function ExternalResourceRecommendationCard(props: { item: TempDownloadLink }) {
             referrerPolicy="no-referrer"
           />
         ) : (
-          <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-slate-100 to-indigo-100 text-sm text-slate-500 dark:from-slate-800 dark:to-slate-900 dark:text-slate-400">
+          <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-slate-100 to-primary-100 text-sm text-slate-500 dark:from-slate-800 dark:to-slate-900 dark:text-slate-400">
             {typeLabel}
           </div>
         )}
@@ -639,7 +645,7 @@ function ExternalResourceRecommendationCard(props: { item: TempDownloadLink }) {
           {props.item.sourceName ? (
             <span className="rounded-full bg-slate-100 px-2.5 py-1 dark:bg-slate-800">{props.item.sourceName}</span>
           ) : null}
-          <span className="rounded-full bg-indigo-50 px-2.5 py-1 text-indigo-600 dark:bg-indigo-500/10 dark:text-indigo-300">{typeLabel}</span>
+          <span className="rounded-full bg-primary-50 px-2.5 py-1 text-primary-600 dark:bg-primary-500/10 dark:text-primary-300">{typeLabel}</span>
         </div>
         <div className="flex items-center justify-between gap-3 border-t border-slate-100 pt-3 dark:border-slate-800">
           <span className="text-xs text-slate-400 dark:text-slate-500">{props.item.expiresHint || '点击后将在新窗口打开资源'}</span>
@@ -647,7 +653,7 @@ function ExternalResourceRecommendationCard(props: { item: TempDownloadLink }) {
             href={props.item.url}
             target="_blank"
             rel="noopener noreferrer"
-            className="inline-flex items-center gap-1 text-sm font-medium text-indigo-600 transition-colors hover:text-indigo-700 dark:text-indigo-400 dark:hover:text-indigo-300"
+            className="inline-flex items-center gap-1 text-sm font-medium text-primary-600 transition-colors hover:text-primary-700 dark:text-primary-400 dark:hover:text-primary-300"
           >
             {actionLabel}
             <ExternalLink className="h-3.5 w-3.5" />
@@ -730,7 +736,7 @@ export function RealtimeProfile(props: {
         <h2 className="text-sm font-semibold text-slate-700 dark:text-slate-300">学习画像</h2>
         <span className={`rounded-full px-2.5 py-1 text-[11px] font-medium ${
           props.source === 'BACKEND'
-            ? 'bg-indigo-50 text-indigo-600 dark:bg-indigo-500/10 dark:text-indigo-400'
+            ? 'bg-primary-50 text-primary-600 dark:bg-primary-500/10 dark:text-primary-400'
             : 'bg-emerald-50 text-emerald-600 dark:bg-emerald-500/10 dark:text-emerald-400'
         }`}>
           {props.source === 'BACKEND' ? '系统分析' : '实时更新'}
@@ -738,8 +744,8 @@ export function RealtimeProfile(props: {
       </div>
       <div className="space-y-5 p-5">
         <div className="grid gap-3 xl:grid-cols-4">
-          <ProfileStatCard icon={<Target className="h-4 w-4" />} label="学习目标" value={props.profile.goal || EMPTY_VALUE} accent="indigo" />
-          <ProfileStatCard icon={<Brain className="h-4 w-4" />} label="知识基础" value={props.profile.knowledgeBase || EMPTY_VALUE} accent="violet" />
+          <ProfileStatCard icon={<Target className="h-4 w-4" />} label="学习目标" value={props.profile.goal || EMPTY_VALUE} accent="primary" />
+          <ProfileStatCard icon={<Brain className="h-4 w-4" />} label="知识基础" value={props.profile.knowledgeBase || EMPTY_VALUE} accent="primary" />
           <ProfileStatCard icon={<Activity className="h-4 w-4" />} label="置信分" value={`${props.profile.confidenceScore}/100`} accent="emerald" />
           <ProfileStatCard icon={<Sparkles className="h-4 w-4" />} label="认知偏好" value={props.profile.explanationPreference || props.profile.cognitiveStyle || EMPTY_VALUE} accent="amber" />
         </div>
@@ -751,7 +757,7 @@ export function RealtimeProfile(props: {
                 <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-300">7维画像可视化</h3>
                 <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">从当前画像自动计算 7 个核心学习维度</p>
               </div>
-              <span className="rounded-full bg-indigo-50 px-2.5 py-1 text-[11px] font-medium text-indigo-600 dark:bg-indigo-500/10 dark:text-indigo-400">
+              <span className="rounded-full bg-primary-50 px-2.5 py-1 text-[11px] font-medium text-primary-600 dark:bg-primary-500/10 dark:text-primary-400">
                 实时画像
               </span>
             </div>
@@ -797,7 +803,7 @@ export function RealtimeProfile(props: {
                 <button
                   type="button"
                   onClick={props.onToggleWeakPoints}
-                  className="text-xs font-medium text-indigo-600 hover:text-indigo-700 dark:text-indigo-400"
+                  className="text-xs font-medium text-primary-600 hover:text-primary-700 dark:text-primary-400"
                 >
                   {props.showAllWeakPoints ? '收起薄弱点列表' : `展开全部 (${props.profile.weakPointRanks.length || allWeakPoints.length}项)`}
                 </button>
@@ -852,11 +858,10 @@ function ProfileStatCard(props: {
   icon: ReactNode;
   label: string;
   value: string;
-  accent: 'indigo' | 'violet' | 'emerald' | 'amber';
+  accent: 'primary' | 'emerald' | 'amber';
 }) {
   const accentMap: Record<typeof props.accent, string> = {
-    indigo: 'bg-indigo-50 text-indigo-600 dark:bg-indigo-500/10 dark:text-indigo-400',
-    violet: 'bg-violet-50 text-violet-600 dark:bg-violet-500/10 dark:text-violet-400',
+    primary: 'bg-primary-50 text-primary-600 dark:bg-primary-500/10 dark:text-primary-400',
     emerald: 'bg-emerald-50 text-emerald-600 dark:bg-emerald-500/10 dark:text-emerald-400',
     amber: 'bg-amber-50 text-amber-600 dark:bg-amber-500/10 dark:text-amber-400',
   };
@@ -880,7 +885,7 @@ function DimensionProgressRow(props: { item: ProfileDimensionScore; delay: numbe
         label={`${props.item.subject} · ${props.item.hint}`}
         score={props.item.score}
         maxScore={props.item.fullMark}
-        color="bg-indigo-500"
+        color="bg-primary-500"
         delay={props.delay}
       />
     </div>
@@ -1010,7 +1015,7 @@ export function ChatPanel({ messages }: { messages: ChatMessage[] }) {
           >
             <div className={`max-w-[90%] md:max-w-[82%] ${msg.role === 'user' ? '' : 'w-full md:w-auto'}`}>
               {msg.role === 'user' ? (
-                <div className="rounded-2xl rounded-br-md bg-indigo-600 px-4 py-2.5 text-[15px] leading-7 text-white shadow-sm">
+                <div className="rounded-2xl rounded-br-md bg-primary-600 px-4 py-2.5 text-[15px] leading-7 text-white shadow-sm">
                   {msg.content}
                 </div>
               ) : (
@@ -1060,7 +1065,7 @@ export function ChatPanel({ messages }: { messages: ChatMessage[] }) {
             container.scrollTop = container.scrollHeight;
             setAutoFollow(true);
           }}
-          className="absolute bottom-4 left-1/2 -translate-x-1/2 rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-medium text-slate-600 shadow-lg transition-all hover:shadow-xl dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300"
+          className="absolute bottom-4 left-1/2 -translate-x-1/2 rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-medium text-slate-600 shadow-lg transition-all hover:shadow-md dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300"
         >
           <ArrowDown className="mr-1.5 inline h-3.5 w-3.5" />
           回到底部
@@ -1085,7 +1090,7 @@ export function InputPanel(props: {
       <div className={`mx-auto transition-all duration-300 ${
         isLanding
           ? 'rounded-3xl border border-slate-200 bg-white shadow-sm dark:border-slate-700 dark:bg-slate-900'
-          : 'rounded-3xl border border-slate-200 bg-white shadow-sm focus-within:shadow-md focus-within:ring-2 focus-within:ring-indigo-500/20 dark:border-slate-700 dark:bg-slate-900 dark:focus-within:ring-indigo-500/10'
+          : 'rounded-3xl border border-slate-200 bg-white shadow-sm focus-within:shadow-md focus-within:ring-2 focus-within:ring-primary-500/20 dark:border-slate-700 dark:bg-slate-900 dark:focus-within:ring-primary-500/10'
       }`}>
         <div className="px-4 pt-4 md:px-5 md:pt-5">
           <textarea
@@ -1119,7 +1124,7 @@ export function InputPanel(props: {
             type="button"
             onClick={props.onSend}
             disabled={props.busy || !props.value.trim()}
-            className="inline-flex h-10 w-10 items-center justify-center rounded-full bg-gradient-to-r from-indigo-600 to-violet-600 text-white shadow-lg shadow-indigo-500/25 transition-all hover:shadow-xl hover:shadow-indigo-500/30 disabled:cursor-not-allowed disabled:opacity-40 disabled:shadow-none active:scale-95"
+            className="inline-flex h-10 w-10 items-center justify-center rounded-full bg-primary-600 text-white shadow-lg shadow-primary-500/25 transition-all hover:shadow-md hover:bg-primary-700 disabled:cursor-not-allowed disabled:opacity-40 disabled:shadow-none active:scale-95"
           >
             {props.busy ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <SendHorizontal className="h-4 w-4" />}
           </button>
