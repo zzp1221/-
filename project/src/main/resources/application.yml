@@ -81,3 +81,7 @@ app:
     ip-requests-per-minute: ${APP_RATE_LIMIT_IP_PER_MINUTE:100}
   download:
     artifact-ttl-seconds: ${APP_DOWNLOAD_ARTIFACT_TTL_SECONDS:1800}
+  upload:
+    image-max-bytes: ${APP_UPLOAD_IMAGE_MAX_BYTES:10485760}
+    image-token-ttl-seconds: ${APP_UPLOAD_IMAGE_TOKEN_TTL_SECONDS:1800}
+    image-storage-dir: ${APP_UPLOAD_IMAGE_STORAGE_DIR:sandbox-temp/chat-images}

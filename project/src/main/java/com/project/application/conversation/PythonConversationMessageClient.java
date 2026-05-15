@@ -10,7 +10,7 @@ import java.util.UUID;
  */
 public interface PythonConversationMessageClient {
 
-    void appendMessage(UUID conversationId, UUID userId, String role, String content);
+    void appendMessage(UUID conversationId, UUID userId, String role, String content, List<String> imageUrls);
 
     List<ConversationMessageItemResponse> listMessages(UUID conversationId, UUID userId);
 

@@ -22,6 +22,18 @@ export interface ChatMessage {
   id: string;
   role: 'user' | 'assistant';
   content: string;
+  imageUrls?: string[];
+  localImagePreviews?: string[];
+}
+
+export interface PendingChatImage {
+  id: string;
+  file: File;
+  previewUrl: string;
+  uploadStatus: 'pending' | 'uploading' | 'uploaded' | 'failed';
+  uploadProgress: number;
+  uploadedUrl?: string;
+  errorMessage?: string;
 }
 
 export interface TempDownloadLink {

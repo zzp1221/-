@@ -26,6 +26,7 @@ import {
   type EngineState,
   type EngineTaskSnapshot,
   type PathForm,
+  type PendingChatImage,
   type ProfileSnapshot,
   type ProfileUpdateSource,
   type PracticeQuestionBatch,
@@ -271,6 +272,8 @@ export default function LearningStudioDemoPage({ mode }: { mode: 'qna' | 'engine
   const [qnaState, setQnaState] = useState<QnaState>('QNA_IDLE');
   const [qnaMessages, setQnaMessages] = useState<ChatMessage[]>([{ id: 'qna-greeting', role: 'assistant', content: QNA_GREETING }]);
   const [qnaInput, setQnaInput] = useState('');
+  const [pendingQnaImages, setPendingQnaImages] = useState<PendingChatImage[]>([]);
+  const [qnaImageError, setQnaImageError] = useState('');
   const [conversationId, setConversationId] = useState('');
 
   const [selectedService, setSelectedService] = useState<EngineService | null>(null);
@@ -930,7 +933,8 @@ export default function LearningStudioDemoPage({ mode }: { mode: 'qna' | 'engine
 
   const handleQnaSend = async () => {
     const text = qnaInput.trim();
-    if (!text || qnaBusy) {
+    const uploadedImageUrls = pendingQnaImages.filter((item) => item.uploadStatus === 'uploaded' && item.uploadedUrl).map((item) => item.uploadedUrl as string);
+    if ((!text && uploadedImageUrls.length === 0) || qnaBusy) {
       return;
     }
     if (!isAuthenticated) {
@@ -939,12 +943,15 @@ export default function LearningStudioDemoPage({ mode }: { mode: 'qna' | 'engine
     }
 
     const assistantMessageId = `qna-assistant-${Date.now()}`;
+    const pendingPreviewUrls = pendingQnaImages.map((item) => item.previewUrl);
     setQnaInput('');
+    setQnaImageError('');
     setQnaMessages((prev) => [
       ...prev,
-      { id: `qna-user-${Date.now()}`, role: 'user', content: text },
+      { id: `qna-user-${Date.now()}`, role: 'user', content: text, imageUrls: uploadedImageUrls, localImagePreviews: pendingPreviewUrls },
       { id: assistantMessageId, role: 'assistant', content: '' },
     ]);
+    setPendingQnaImages([]);
     setQnaState('QNA_STREAMING');
 
     qnaRequestVersionRef.current += 1;
@@ -967,7 +974,7 @@ export default function LearningStudioDemoPage({ mode }: { mode: 'qna' | 'engine
 
       await conversationApi.streamMessage(
         currentConversationId,
-        { message: text, serviceType: 'TUTORING' },
+        { message: text, imageUrls: uploadedImageUrls, serviceType: 'TUTORING' },
         {
           onOpen: () => {
             if (qnaRequestVersionRef.current !== requestVersion) {
@@ -1027,6 +1034,85 @@ export default function LearningStudioDemoPage({ mode }: { mode: 'qna' | 'engine
       setQnaState('QNA_IDLE');
     }
   };
+
+  const revokePendingImage = useCallback((image: PendingChatImage) => {
+    if (image.previewUrl.startsWith('blob:')) {
+      URL.revokeObjectURL(image.previewUrl);
+    }
+  }, []);
+
+  const validateImageFile = useCallback((file: File): string => {
+    const allowedTypes = new Set(['image/jpeg', 'image/png', 'image/webp']);
+    if (!allowedTypes.has(file.type)) {
+      return '仅支持 jpg、png、webp 图片';
+    }
+    if (file.size > 10 * 1024 * 1024) {
+      return '图片不能超过 10MB';
+    }
+    return '';
+  }, []);
+
+  const handlePickQnaImages = useCallback(async (files: File[]) => {
+    if (!files.length) {
+      return;
+    }
+    setQnaImageError('');
+    for (const file of files) {
+      const validationMessage = validateImageFile(file);
+      if (validationMessage) {
+        setQnaImageError(validationMessage);
+        continue;
+      }
+      const imageId = `pending-image-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+      const previewUrl = URL.createObjectURL(file);
+      const pendingImage: PendingChatImage = {
+        id: imageId,
+        file,
+        previewUrl,
+        uploadStatus: 'uploading',
+        uploadProgress: 0,
+      };
+      setPendingQnaImages((prev) => [...prev, pendingImage]);
+      try {
+        const uploaded = await conversationApi.uploadImage(file, (percent) => {
+          setPendingQnaImages((prev) =>
+            prev.map((item) => (item.id === imageId ? { ...item, uploadProgress: percent, uploadStatus: 'uploading' } : item)),
+          );
+        });
+        setPendingQnaImages((prev) =>
+          prev.map((item) =>
+            item.id === imageId
+              ? { ...item, uploadProgress: 100, uploadStatus: 'uploaded', uploadedUrl: uploaded.imageUrl }
+              : item,
+          ),
+        );
+      } catch (error) {
+        const message = getErrorMessage(error);
+        setPendingQnaImages((prev) =>
+          prev.map((item) =>
+            item.id === imageId
+              ? { ...item, uploadStatus: 'failed', errorMessage: message }
+              : item,
+          ),
+        );
+        setQnaImageError(message);
+      }
+    }
+  }, [validateImageFile]);
+
+  const handleRemovePendingQnaImage = useCallback((id: string) => {
+    setPendingQnaImages((prev) => {
+      const target = prev.find((item) => item.id === id);
+      if (target) {
+        revokePendingImage(target);
+      }
+      return prev.filter((item) => item.id !== id);
+    });
+  }, [revokePendingImage]);
+
+  useEffect(() => () => {
+    pendingQnaImages.forEach(revokePendingImage);
+  }, [pendingQnaImages, revokePendingImage]);
 
   const ensureEngineConversationId = useCallback(async () => {
     const currentConversationId = conversationIdRef.current.trim();
@@ -1298,8 +1384,12 @@ export default function LearningStudioDemoPage({ mode }: { mode: 'qna' | 'engine
               value={qnaInput}
               busy={qnaBusy}
               placeholder="向智学引擎提问"
+              pendingImages={pendingQnaImages}
+              errorMessage={qnaImageError}
               onChange={setQnaInput}
               onSend={handleQnaSend}
+              onPickImages={handlePickQnaImages}
+              onRemoveImage={handleRemovePendingQnaImage}
               variant="landing"
             />
           </div>
@@ -1314,8 +1404,12 @@ export default function LearningStudioDemoPage({ mode }: { mode: 'qna' | 'engine
           value={qnaInput}
           busy={qnaBusy}
           placeholder="向智学引擎提问"
+          pendingImages={pendingQnaImages}
+          errorMessage={qnaImageError}
           onChange={setQnaInput}
           onSend={handleQnaSend}
+          onPickImages={handlePickQnaImages}
+          onRemoveImage={handleRemovePendingQnaImage}
           variant="chat"
         />
       </div>

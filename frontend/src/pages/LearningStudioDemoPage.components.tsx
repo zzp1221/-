@@ -1,6 +1,6 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useId, useRef, useState, type DragEvent, type ClipboardEvent, type ReactNode } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Activity, ArrowDown, Brain, BookOpen, CheckCircle2, Clock3, ExternalLink, FileText, LoaderCircle, SendHorizontal, Sparkles, Target, TrendingUp, TriangleAlert, XCircle } from 'lucide-react';
+import { Activity, ArrowDown, Brain, BookOpen, CheckCircle2, Clock3, ExternalLink, FileImage, FileText, LoaderCircle, Paperclip, SendHorizontal, Sparkles, Target, TrendingUp, TriangleAlert, X, XCircle } from 'lucide-react';
 import CodeBlock from '../components/CodeBlock';
 import RadarChart from '../components/RadarChart';
 import ScoreProgressBar from '../components/ScoreProgressBar';
@@ -19,6 +19,7 @@ import {
   type InlineResourceView,
   type ProfileDimensionScore,
   type PathForm,
+  type PendingChatImage,
   type ProfileSnapshot,
   type ProfileTimelinePoint,
   type ProfileUpdateSource,
@@ -959,6 +960,7 @@ export function ChatPanel({ messages }: { messages: ChatMessage[] }) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null);
   const [autoFollow, setAutoFollow] = useState(true);
+  const [previewImage, setPreviewImage] = useState<string | null>(null);
 
   const isStreaming = messages.length > 0 && messages[messages.length - 1]?.role === 'assistant' && !messages[messages.length - 1]?.content;
 
@@ -1016,7 +1018,21 @@ export function ChatPanel({ messages }: { messages: ChatMessage[] }) {
             <div className={`max-w-[90%] md:max-w-[82%] ${msg.role === 'user' ? '' : 'w-full md:w-auto'}`}>
               {msg.role === 'user' ? (
                 <div className="rounded-2xl rounded-br-md bg-primary-600 px-4 py-2.5 text-[15px] leading-7 text-white shadow-sm">
-                  {msg.content}
+                  {msg.imageUrls?.length ? (
+                    <div className="mb-3 grid grid-cols-2 gap-2 sm:grid-cols-3">
+                      {msg.imageUrls.map((imageUrl, index) => (
+                        <button
+                          key={`${msg.id}-image-${index}`}
+                          type="button"
+                          className="overflow-hidden rounded-xl border border-white/20 bg-white/10"
+                          onClick={() => setPreviewImage(imageUrl)}
+                        >
+                          <img src={imageUrl} alt={`上传图片 ${index + 1}`} className="h-24 w-full object-cover" />
+                        </button>
+                      ))}
+                    </div>
+                  ) : null}
+                  {msg.content ? <div>{msg.content}</div> : <div className="text-white/80">[图片提问]</div>}
                 </div>
               ) : (
                 <div className="rounded-2xl rounded-bl-md border border-slate-200 bg-white px-4 py-3 text-slate-700 shadow-sm dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300">
@@ -1071,6 +1087,15 @@ export function ChatPanel({ messages }: { messages: ChatMessage[] }) {
           回到底部
         </motion.button>
       ) : null}
+      {previewImage ? (
+        <button
+          type="button"
+          onClick={() => setPreviewImage(null)}
+          className="absolute inset-0 z-20 flex items-center justify-center bg-slate-950/80 p-4"
+        >
+          <img src={previewImage} alt="图片预览" className="max-h-[90%] max-w-[90%] rounded-2xl object-contain shadow-2xl" />
+        </button>
+      ) : null}
     </div>
   );
 }
@@ -1079,11 +1104,39 @@ export function InputPanel(props: {
   value: string;
   busy: boolean;
   placeholder: string;
+  pendingImages: PendingChatImage[];
+  errorMessage?: string;
   onChange: (value: string) => void;
   onSend: () => void;
+  onPickImages: (files: File[]) => void;
+  onRemoveImage: (id: string) => void;
   variant?: 'landing' | 'chat';
 }) {
   const isLanding = props.variant === 'landing';
+  const fileInputId = useId();
+  const [isDragActive, setIsDragActive] = useState(false);
+
+  const pickFiles = (files: FileList | null) => {
+    if (!files || files.length === 0) {
+      return;
+    }
+    props.onPickImages(Array.from(files));
+  };
+
+  const handleDrop = (event: DragEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    setIsDragActive(false);
+    pickFiles(event.dataTransfer.files);
+  };
+
+  const handlePaste = (event: ClipboardEvent<HTMLTextAreaElement>) => {
+    const imageFiles = Array.from(event.clipboardData.files).filter((file) => file.type.startsWith('image/'));
+    if (!imageFiles.length) {
+      return;
+    }
+    event.preventDefault();
+    props.onPickImages(imageFiles);
+  };
 
   return (
     <div className="shrink-0 px-2 pb-4 md:px-0">
@@ -1092,10 +1145,48 @@ export function InputPanel(props: {
           ? 'rounded-3xl border border-slate-200 bg-white shadow-sm dark:border-slate-700 dark:bg-slate-900'
           : 'rounded-3xl border border-slate-200 bg-white shadow-sm focus-within:shadow-md focus-within:ring-2 focus-within:ring-primary-500/20 dark:border-slate-700 dark:bg-slate-900 dark:focus-within:ring-primary-500/10'
       }`}>
+        <div
+          className={`${isDragActive ? 'bg-primary-50/80 dark:bg-primary-500/10' : ''} rounded-3xl transition-colors`}
+          onDragOver={(event) => {
+            event.preventDefault();
+            setIsDragActive(true);
+          }}
+          onDragLeave={() => setIsDragActive(false)}
+          onDrop={handleDrop}
+        >
+        {props.pendingImages.length ? (
+          <div className="px-4 pt-4 md:px-5 md:pt-5">
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+              {props.pendingImages.map((image) => (
+                <div key={image.id} className="relative overflow-hidden rounded-2xl border border-slate-200 bg-slate-50 dark:border-slate-700 dark:bg-slate-800">
+                  <img src={image.previewUrl} alt={image.file.name} className="h-24 w-full object-cover" />
+                  <button
+                    type="button"
+                    onClick={() => props.onRemoveImage(image.id)}
+                    className="absolute right-2 top-2 rounded-full bg-slate-950/70 p-1 text-white"
+                  >
+                    <X className="h-3.5 w-3.5" />
+                  </button>
+                  <div className="px-2 py-1.5 text-[11px] text-slate-500 dark:text-slate-400">
+                    <div className="truncate">{image.file.name}</div>
+                    <div>
+                      {image.uploadStatus === 'failed'
+                        ? image.errorMessage || '上传失败'
+                        : image.uploadStatus === 'uploaded'
+                          ? '上传完成'
+                          : `上传中 ${image.uploadProgress}%`}
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        ) : null}
         <div className="px-4 pt-4 md:px-5 md:pt-5">
           <textarea
             value={props.value}
             onChange={(e) => props.onChange(e.target.value)}
+            onPaste={handlePaste}
             onKeyDown={(e) => {
               if (e.key === 'Enter' && !e.shiftKey) {
                 e.preventDefault();
@@ -1107,27 +1198,41 @@ export function InputPanel(props: {
             className="w-full resize-none border-none bg-transparent text-[15px] leading-7 text-slate-800 outline-none placeholder:text-slate-400 dark:text-slate-200 dark:placeholder:text-slate-500"
           />
         </div>
+        {props.errorMessage ? (
+          <div className="px-4 pb-1 text-xs text-rose-500 md:px-5">{props.errorMessage}</div>
+        ) : null}
         <div className="flex items-center justify-between px-4 pb-3 md:px-5 md:pb-4">
           <div className="flex items-center gap-3 text-xs text-slate-400 dark:text-slate-500">
-            {isLanding ? (
-              <span>按 Enter 发送你的第一个问题</span>
-            ) : (
-              <>
-                <kbd className="hidden rounded-md border border-slate-200 bg-slate-50 px-1.5 py-0.5 font-mono text-[10px] text-slate-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-400 sm:inline">Enter</kbd>
-                <span className="hidden sm:inline">发送</span>
-                <kbd className="hidden rounded-md border border-slate-200 bg-slate-50 px-1.5 py-0.5 font-mono text-[10px] text-slate-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-400 sm:inline">Shift + Enter</kbd>
-                <span className="hidden sm:inline">换行</span>
-              </>
-            )}
+            <input
+              id={fileInputId}
+              type="file"
+              accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp"
+              multiple
+              className="hidden"
+              onChange={(event) => {
+                pickFiles(event.target.files);
+                event.currentTarget.value = '';
+              }}
+            />
+            <label
+              htmlFor={fileInputId}
+              className="inline-flex cursor-pointer items-center gap-1 rounded-full border border-slate-200 px-3 py-1.5 text-slate-500 transition-colors hover:border-primary-200 hover:text-primary-600 dark:border-slate-700 dark:text-slate-400"
+            >
+              <Paperclip className="h-3.5 w-3.5" />
+              <span>上传图片</span>
+            </label>
+            <span className="hidden sm:inline">支持选择、拖拽、粘贴，jpg/png/webp，最大 10MB</span>
+            <span className="sm:hidden"><FileImage className="inline h-3.5 w-3.5" /> 可上传图片</span>
           </div>
           <button
             type="button"
             onClick={props.onSend}
-            disabled={props.busy || !props.value.trim()}
+            disabled={props.busy || (!props.value.trim() && !props.pendingImages.length) || props.pendingImages.some((item) => item.uploadStatus === 'uploading')}
             className="inline-flex h-10 w-10 items-center justify-center rounded-full bg-primary-600 text-white shadow-lg shadow-primary-500/25 transition-all hover:shadow-md hover:bg-primary-700 disabled:cursor-not-allowed disabled:opacity-40 disabled:shadow-none active:scale-95"
           >
             {props.busy ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <SendHorizontal className="h-4 w-4" />}
           </button>
+        </div>
         </div>
       </div>
     </div>

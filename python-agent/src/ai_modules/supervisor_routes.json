@@ -33,6 +33,7 @@
   "TUTORING": [
     "query_rewrite",
     "retrieval",
+    "image_analysis",
     "tutor",
     "profile"
   ]

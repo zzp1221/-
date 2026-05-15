@@ -66,6 +66,7 @@ class InternalConversationMessageRequest(BaseModel):
 
     role: str
     content: str
+    image_urls: list[str] = Field(default_factory=list, alias="imageUrls")
     user_id: str | None = Field(default=None, alias="userId")
 
     model_config = ConfigDict(populate_by_name=True)
@@ -309,6 +310,7 @@ async def append_conversation_message(
         userId=request.user_id,
         role=request.role,
         content=request.content,
+        imageUrls=request.image_urls,
     )
     await MESSAGE_STORE.append_message(document)
     return JSONResponse({"messageId": document.message_id})

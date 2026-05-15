@@ -241,6 +241,7 @@ class TutorAgent(PlaceholderAgent):
         context_data = self._tool_read_compacted_context(tool_input={}, params=params)
         evidence_data = self._tool_read_retrieval_evidence(tool_input={}, params=params)
         profile_data = self._tool_read_profile_context(tool_input={}, params=params)
+        image_analysis_data = self._tool_read_image_analysis_context(tool_input={}, params=params)
         recent_dialogue_data = self._tool_read_recent_dialogue_context(
             tool_input={}, params=params,
         )
@@ -251,6 +252,7 @@ class TutorAgent(PlaceholderAgent):
             context=context_data,
             evidence=evidence_data,
             profile=profile_data,
+            image_analysis=image_analysis_data,
             recent_dialogue=recent_dialogue_data,
             input_mode=input_mode,
         )
@@ -282,6 +284,7 @@ class TutorAgent(PlaceholderAgent):
         context_data = self._tool_read_compacted_context(tool_input={}, params=params)
         evidence_data = self._tool_read_retrieval_evidence(tool_input={}, params=params)
         profile_data = self._tool_read_profile_context(tool_input={}, params=params)
+        image_analysis_data = self._tool_read_image_analysis_context(tool_input={}, params=params)
         recent_dialogue_data = self._tool_read_recent_dialogue_context(
             tool_input={}, params=params,
         )
@@ -292,6 +295,7 @@ class TutorAgent(PlaceholderAgent):
             context=context_data,
             evidence=evidence_data,
             profile=profile_data,
+            image_analysis=image_analysis_data,
             recent_dialogue=recent_dialogue_data,
             input_mode=input_mode,
         )
@@ -322,6 +326,7 @@ class TutorAgent(PlaceholderAgent):
         context: dict[str, Any],
         evidence: dict[str, Any],
         profile: dict[str, Any],
+        image_analysis: dict[str, Any],
         recent_dialogue: dict[str, Any],
         input_mode: str,
     ) -> str:
@@ -396,6 +401,10 @@ class TutorAgent(PlaceholderAgent):
                 title = str(doc.get("title") or "")
                 snippet = str(doc.get("evidence") or doc.get("snippet") or "")[:200]
                 parts.append(f"  {i}. {title}: {snippet}")
+        image_summary = str(image_analysis.get("summary") or "").strip()
+        if image_summary:
+            parts.append("图片识别结果：")
+            parts.append(image_summary)
         if input_mode == "small_talk":
             parts.append("处理要求：这是寒暄、感谢或结束信号。自然简短回复，不进入教学诊断。")
         elif input_mode == "answer_previous_question":
@@ -453,6 +462,16 @@ class TutorAgent(PlaceholderAgent):
             ),
             permission_level=PermissionLevel.READ_ONLY,
             description="Read the recent dialogue turns and teaching state for multi-turn continuity.",
+            parameters={"type": "object", "properties": {}, "additionalProperties": False},
+        )
+        tool_registry.register(
+            name="read_image_analysis_context",
+            fn=lambda tool_input: self._tool_read_image_analysis_context(
+                tool_input=tool_input,
+                params=params,
+            ),
+            permission_level=PermissionLevel.READ_ONLY,
+            description="Read multimodal image analysis results extracted from uploaded question images.",
             parameters={"type": "object", "properties": {}, "additionalProperties": False},
         )
         core_loop = AgentCoreLoop(
@@ -603,6 +622,16 @@ class TutorAgent(PlaceholderAgent):
         recent_dialogue = params.get("recentDialogueContext", {})
         return recent_dialogue if isinstance(recent_dialogue, dict) else {}
 
+    def _tool_read_image_analysis_context(
+        self,
+        *,
+        tool_input: dict[str, Any],
+        params: dict[str, Any],
+    ) -> dict[str, Any]:
+        del tool_input
+        image_analysis = params.get("imageAnalysisResult", {})
+        return image_analysis if isinstance(image_analysis, dict) else {}
+
     def _resolve_user_query(self, params: dict[str, Any]) -> str:
         return str(
             params.get("query")
@@ -740,6 +769,7 @@ class TutorAgent(PlaceholderAgent):
             context=self._tool_read_compacted_context(tool_input={}, params=params),
             evidence=self._tool_read_retrieval_evidence(tool_input={}, params=params),
             profile=self._tool_read_profile_context(tool_input={}, params=params),
+            image_analysis=self._tool_read_image_analysis_context(tool_input={}, params=params),
             recent_dialogue=self._tool_read_recent_dialogue_context(tool_input={}, params=params),
             input_mode=self._resolve_input_mode(
                 params=params,

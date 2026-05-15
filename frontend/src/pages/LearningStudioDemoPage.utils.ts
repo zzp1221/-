@@ -1628,8 +1628,9 @@ export function mapConversationHistory(history: ConversationMessageItem[]): Chat
       content: item.role === 'user'
         ? item.content?.trim() ?? ''
         : sanitizeConversationMessageContent(item.content ?? ''),
+      imageUrls: Array.isArray(item.imageUrls) ? item.imageUrls.filter(Boolean) : [],
     }))
-    .filter((item) => item.content);
+    .filter((item) => item.content || (item.imageUrls?.length ?? 0) > 0);
 
   return messages.length > 0
     ? messages

@@ -1,15 +1,19 @@
 import { motion } from 'framer-motion';
 import { Sparkles } from 'lucide-react';
 import { ChatPanel, InputPanel } from './LearningStudioDemoPage.components';
-import type { ChatMessage } from './LearningStudioDemoPage.types';
+import type { ChatMessage, PendingChatImage } from './LearningStudioDemoPage.types';
 
 interface QnaChatViewProps {
   hasStartedConversation: boolean;
   qnaInput: string;
   qnaBusy: boolean;
   qnaMessages: ChatMessage[];
+  pendingImages?: PendingChatImage[];
+  imageErrorMessage?: string;
   onChange: (value: string) => void;
   onSend: () => void;
+  onPickImages?: (files: File[]) => void;
+  onRemoveImage?: (id: string) => void;
 }
 
 export default function QnaChatView(props: QnaChatViewProps) {
@@ -37,8 +41,12 @@ export default function QnaChatView(props: QnaChatViewProps) {
             value={props.qnaInput}
             busy={props.qnaBusy}
             placeholder="向智学引擎提问"
+            pendingImages={props.pendingImages ?? []}
+            errorMessage={props.imageErrorMessage}
             onChange={props.onChange}
             onSend={props.onSend}
+            onPickImages={props.onPickImages ?? (() => undefined)}
+            onRemoveImage={props.onRemoveImage ?? (() => undefined)}
             variant="landing"
           />
         </div>
@@ -53,8 +61,12 @@ export default function QnaChatView(props: QnaChatViewProps) {
         value={props.qnaInput}
         busy={props.qnaBusy}
         placeholder="向智学引擎提问"
+        pendingImages={props.pendingImages ?? []}
+        errorMessage={props.imageErrorMessage}
         onChange={props.onChange}
         onSend={props.onSend}
+        onPickImages={props.onPickImages ?? (() => undefined)}
+        onRemoveImage={props.onRemoveImage ?? (() => undefined)}
         variant="chat"
       />
     </div>

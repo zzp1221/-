@@ -5,6 +5,7 @@ from src.ai_modules.agents.common_agents import (
     SafetyAgent,
 )
 from src.ai_modules.agents.evaluation_agent import EvaluationAgent
+from src.ai_modules.agents.image_analysis_agent import ImageAnalysisAgent
 from src.ai_modules.agents.generation import (
     CodeGeneratorAgent,
     DocumentGeneratorAgent,
@@ -27,6 +28,7 @@ __all__ = [
     "CriticAgent",
     "DocumentGeneratorAgent",
     "EvaluationAgent",
+    "ImageAnalysisAgent",
     "JudgeAgent",
     "MindMapGeneratorAgent",
     "PathPlanningAgent",

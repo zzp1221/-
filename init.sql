@@ -207,6 +207,7 @@ CREATE TABLE IF NOT EXISTS app.qna_message_ref (
   message_type      TEXT NOT NULL CHECK (message_type IN ('QUESTION', 'ANSWER', 'SYSTEM', 'AGENT_PROGRESS')),
   mongo_message_id  TEXT NOT NULL,
   content_preview   TEXT,
+  image_urls        JSONB NOT NULL DEFAULT '[]'::jsonb,
   payload_json      JSONB NOT NULL DEFAULT '{}'::jsonb,
   created_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
   UNIQUE (session_id, message_seq),

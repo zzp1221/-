@@ -20,6 +20,7 @@ class ConversationMessageDocument(BaseModel):
     user_id: str | None = Field(default=None, alias="userId")
     role: Literal["user", "assistant"]
     content: str
+    image_urls: list[str] = Field(default_factory=list, alias="imageUrls")
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc), alias="createdAt")
     # MongoDB schema fields — mapped from conversation_id
     qna_session_id: str | None = Field(default=None, alias="qnaSessionId")
@@ -34,6 +35,15 @@ class ConversationMessageDocument(BaseModel):
         if isinstance(v, datetime) and v.tzinfo is None:
             return v.replace(tzinfo=timezone.utc)
         return v
+
+    @field_validator("image_urls", mode="before")
+    @classmethod
+    def _normalize_image_urls(cls, value: Any) -> list[str]:
+        if value is None:
+            return []
+        if isinstance(value, list):
+            return [str(item).strip() for item in value if str(item).strip()]
+        return []
 
 
 class ConversationMessageStore(Protocol):

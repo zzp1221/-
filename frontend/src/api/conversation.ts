@@ -9,6 +9,7 @@ export interface CreateConversationResponse {
 
 export interface ConversationMessageStreamRequest {
   message: string;
+  imageUrls?: string[];
   serviceType?: string;
 }
 
@@ -32,7 +33,15 @@ export interface ConversationMessageItem {
   messageId: string;
   role: 'user' | 'assistant';
   content: string;
+  imageUrls?: string[];
   createdAt?: string;
+}
+
+export interface UploadedConversationImage {
+  imageUrl: string;
+  fileName: string;
+  sizeBytes: number;
+  contentType: string;
 }
 
 export interface ConversationStreamEventPayload {
@@ -61,6 +70,22 @@ export const conversationApi = {
 
   async createConversation(): Promise<CreateConversationResponse> {
     return request.post<CreateConversationResponse>('/api/conversations');
+  },
+
+  async uploadImage(file: File, onUploadProgress?: (percent: number) => void): Promise<UploadedConversationImage> {
+    const formData = new FormData();
+    formData.append('file', file);
+    return request.post<UploadedConversationImage>('/api/conversations/images/upload', formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data',
+      },
+      onUploadProgress: (event) => {
+        if (!onUploadProgress || !event.total) {
+          return;
+        }
+        onUploadProgress(Math.round((event.loaded / event.total) * 100));
+      },
+    });
   },
 
   async getConversationMessages(

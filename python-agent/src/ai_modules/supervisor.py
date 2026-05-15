@@ -14,6 +14,7 @@ from src.ai_modules.agents import (
     CodeGeneratorAgent,
     DocumentGeneratorAgent,
     EvaluationAgent,
+    ImageAnalysisAgent,
     JudgeAgent,
     MindMapGeneratorAgent,
     PathPlanningAgent,
@@ -60,6 +61,7 @@ class PythonAgentSupervisor:
             "judge": JudgeAgent(),
             "path_planning": PathPlanningAgent(),
             "evaluation": EvaluationAgent(),
+            "image_analysis": ImageAnalysisAgent(),
             "resource_push": ResourcePushAgent(),
         }
         self.route_templates = self._load_route_templates()

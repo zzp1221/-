@@ -52,17 +52,36 @@ public class JwtProvider {
     }
 
     public JwtAuthenticatedUser parse(String token) {
-        Claims claims = Jwts.parser()
-            .verifyWith(signingKey)
-            .build()
-            .parseSignedClaims(token)
-            .getPayload();
+        Claims claims = parseClaims(token);
 
         return new JwtAuthenticatedUser(
             UUID.fromString(claims.getSubject()),
             claims.get("loginId", String.class),
             claims.get("role", String.class)
         );
+    }
+
+    public String issueToken(String subject, Map<String, ?> claims, Instant expiresAt) {
+        Instant now = Instant.now();
+        var builder = Jwts.builder()
+            .issuer(appProperties.getSecurity().getJwt().getIssuer())
+            .subject(subject)
+            .issuedAt(Date.from(now))
+            .expiration(Date.from(expiresAt));
+        if (claims != null && !claims.isEmpty()) {
+            builder.claims(claims);
+        }
+        return builder
+            .signWith(signingKey)
+            .compact();
+    }
+
+    public Claims parseClaims(String token) {
+        return Jwts.parser()
+            .verifyWith(signingKey)
+            .build()
+            .parseSignedClaims(token)
+            .getPayload();
     }
 
     private SecretKey buildSigningKey(String configuredSecret) {

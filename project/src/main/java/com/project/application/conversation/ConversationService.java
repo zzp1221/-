@@ -123,16 +123,21 @@ public class ConversationService {
         UUID conversationId,
         ConversationMessageStreamRequest request
     ) {
+        if (!request.hasUsableInput()) {
+            throw new ApplicationException("INVALID_ARGUMENT", "请输入问题内容或上传至少一张图片", HttpStatus.BAD_REQUEST);
+        }
         QnaSession session = qnaSessionRepository.findByIdAndUserId(conversationId, currentUser.userId())
             .orElseThrow(() -> new ApplicationException("CONVERSATION_NOT_FOUND", "会话不存在", HttpStatus.NOT_FOUND));
+        String normalizedMessage = request.normalizedMessage();
+        List<String> imageUrls = request.normalizedImageUrls();
 
         session.setLastMessageAt(OffsetDateTime.now());
-        session.setLastMessagePreview(truncate(request.message(), 120));
+        session.setLastMessagePreview(buildPreview(normalizedMessage, imageUrls));
         session.setMessageCount(session.getMessageCount() + 1);
         if (session.getMessageCount() <= 1 || session.getTitle() == null || session.getTitle().isBlank() || "新对话".equals(session.getTitle())) {
-            session.setTitle(buildConversationTitle(request.message()));
+            session.setTitle(buildConversationTitle(normalizedMessage, imageUrls));
         }
-        appendConversationMessage(conversationId, currentUser.userId(), "user", request.message(), true);
+        appendConversationMessage(conversationId, currentUser.userId(), "user", normalizedMessage, imageUrls, true);
 
         // Fetch conversation history for multi-turn memory
         List<ConversationMessageItemResponse> history = fetchRecentHistory(conversationId, currentUser.userId());
@@ -160,7 +165,7 @@ public class ConversationService {
                         sendConversationEvent(emitter, conversationId, sequence, event);
                     }
                 );
-                appendConversationMessage(conversationId, currentUser.userId(), "assistant", assistantReply.toString(), false);
+                appendConversationMessage(conversationId, currentUser.userId(), "assistant", assistantReply.toString(), List.of(), false);
                 emitter.complete();
             } catch (Exception ex) {
                 if (isClientDisconnect(ex)) {
@@ -170,7 +175,7 @@ public class ConversationService {
                 }
                 try {
                     if (assistantReply.isEmpty()) {
-                        appendConversationMessage(conversationId, currentUser.userId(), "assistant", "抱歉，处理过程中遇到了问题，请稍后重试。", false);
+                        appendConversationMessage(conversationId, currentUser.userId(), "assistant", "抱歉，处理过程中遇到了问题，请稍后重试。", List.of(), false);
                     }
                     LOGGER.warn("Conversation stream failed conversationId={}", conversationId, ex);
                     sendErrorEvent(emitter, conversationId, sequence, "会话流式调用失败，请稍后重试");
@@ -315,12 +320,25 @@ public class ConversationService {
             .trim();
     }
 
-    private void appendConversationMessage(UUID conversationId, UUID userId, String role, String content, boolean failOnError) {
-        if (content == null || content.isBlank()) {
+    private void appendConversationMessage(
+        UUID conversationId,
+        UUID userId,
+        String role,
+        String content,
+        List<String> imageUrls,
+        boolean failOnError
+    ) {
+        if ((content == null || content.isBlank()) && (imageUrls == null || imageUrls.isEmpty())) {
             return;
         }
         try {
-            pythonConversationMessageClient.appendMessage(conversationId, userId, role, content.trim());
+            pythonConversationMessageClient.appendMessage(
+                conversationId,
+                userId,
+                role,
+                content == null ? "" : content.trim(),
+                imageUrls == null ? List.of() : imageUrls
+            );
         } catch (Exception ex) {
             if (failOnError) {
                 throw new ApplicationException("CONVERSATION_MESSAGE_PERSIST_FAILED", "会话消息保存失败，请稍后重试", HttpStatus.BAD_GATEWAY);
@@ -353,16 +371,21 @@ public class ConversationService {
         List<ConversationMessageItemResponse> history
     ) {
         Map<String, Object> params = new LinkedHashMap<>();
-        params.put("message", request.message());
-        params.put("query", request.message());
-        params.put("userInput", request.message());
+        params.put("message", request.normalizedMessage());
+        params.put("query", request.normalizedMessage());
+        params.put("userInput", request.normalizedMessage());
+        params.put("imageUrls", request.normalizedImageUrls());
         params.put("conversationId", conversationId.toString());
         params.put("userId", currentUser.userId().toString());
         params.put("conversationLength", history.size());
 
-        List<Map<String, String>> messages = new java.util.ArrayList<>();
+        List<Map<String, Object>> messages = new java.util.ArrayList<>();
         for (ConversationMessageItemResponse msg : history) {
-            messages.add(Map.of("role", msg.role(), "content", msg.content()));
+            Map<String, Object> item = new LinkedHashMap<>();
+            item.put("role", msg.role());
+            item.put("content", msg.content());
+            item.put("imageUrls", msg.imageUrls() == null ? List.of() : msg.imageUrls());
+            messages.add(item);
         }
         params.put("messages", messages);
         userProfileCurrentRepository.findById(currentUser.userId())
@@ -385,8 +408,11 @@ public class ConversationService {
         return size == null || size <= 0 ? defaultSize : size;
     }
 
-    private String buildConversationTitle(String message) {
+    private String buildConversationTitle(String message, List<String> imageUrls) {
         String normalized = message == null ? "" : message.replaceAll("\\s+", " ").trim();
+        if (normalized.isEmpty() && imageUrls != null && !imageUrls.isEmpty()) {
+            return "图片提问";
+        }
         if (normalized.isEmpty()) {
             return "新对话";
         }
@@ -398,8 +424,17 @@ public class ConversationService {
             return session.getTitle();
         }
         if (session.getLastMessagePreview() != null && !session.getLastMessagePreview().isBlank()) {
-            return buildConversationTitle(session.getLastMessagePreview());
+            return buildConversationTitle(session.getLastMessagePreview(), List.of());
         }
         return "新对话";
+    }
+
+    private String buildPreview(String message, List<String> imageUrls) {
+        String normalized = message == null ? "" : message.trim();
+        if (!normalized.isBlank()) {
+            return truncate(normalized, 120);
+        }
+        int imageCount = imageUrls == null ? 0 : imageUrls.size();
+        return imageCount <= 1 ? "[图片]" : "[图片] 共 " + imageCount + " 张";
     }
 }

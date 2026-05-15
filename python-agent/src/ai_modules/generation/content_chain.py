@@ -341,7 +341,7 @@ class OpenAICompatibleStructuredGenerator:
                     section_plans=section_plans,
                     sources=sources,
                 ),
-                max_tokens=2200,
+                max_tokens=4200,
             )
         )
 
@@ -501,7 +501,7 @@ class OpenAICompatibleStructuredGenerator:
                             {"role": "system", "content": system_prompt},
                             {"role": "user", "content": user_prompt},
                         ],
-                        temperature=0.3,
+                        temperature=0.0,
                         max_tokens=max_tokens,
                         response_format={"type": "json_object"},
                     )
@@ -538,7 +538,7 @@ class OpenAICompatibleStructuredGenerator:
                             {"role": "system", "content": system_prompt},
                             {"role": "user", "content": user_prompt},
                         ],
-                        temperature=0.3,
+                        temperature=0.0,
                         max_tokens=max_tokens,
                         response_format={"type": "json_object"},
                     )

@@ -4,7 +4,7 @@ from types import SimpleNamespace
 import pytest
 
 from src.ai_modules.agents.generation.generators import SlideGeneratorAgent
-from src.ai_modules.generation.content_chain import OpenAICompatibleStructuredGenerator
+from src.ai_modules.generation.content_chain import GeneratedSectionBundle, OpenAICompatibleStructuredGenerator
 from src.ai_modules.generation.resource_builder import GeneratedAsset
 from src.ai_modules.runtime import SystemSnapshot
 
@@ -47,6 +47,58 @@ def test_structured_generator_uses_generation_component_binding(monkeypatch: pyt
     assert generator.base_url == "https://api.xiaomimimo.com/v1"
     assert generator.api_key == "fake-mimo-key"
     assert generator.model_name == "mimo-v2.5-pro"
+
+
+def test_document_generation_uses_higher_max_tokens_and_deterministic_temperature(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    generator = OpenAICompatibleStructuredGenerator()
+    captured: dict[str, object] = {}
+
+    def fake_post_chat_completion(*, messages, temperature=0.3, max_tokens=None, response_format=None):
+        captured["messages"] = messages
+        captured["temperature"] = temperature
+        captured["max_tokens"] = max_tokens
+        captured["response_format"] = response_format
+        return {
+            "choices": [
+                {
+                    "message": {
+                        "content": (
+                            '{"sections":[{"title":"一、核心概念与学习目标","body":"完整正文","tips":["可执行建议"],'
+                            '"citations":["来源1"]}]}'
+                        )
+                    }
+                }
+            ]
+        }
+
+    monkeypatch.setattr(generator, "_post_chat_completion", fake_post_chat_completion)
+
+    bundle = generator.generate_document_sections(
+        title="并发编程讲解文档",
+        topic="Java并发编程课程中等难度讲解文档",
+        snapshot={
+            "current_course": "Java 程序设计",
+            "current_chapter": "并发编程",
+            "student_level": "INTERMEDIATE",
+            "preferred_style": "step_by_step",
+            "knowledge_gaps": ["线程同步"],
+        },
+        section_plans=[
+            {
+                "title": "一、核心概念与学习目标",
+                "objective": "帮助学生建立概念框架",
+                "sourceTitles": ["Java并发编程"],
+            }
+        ],
+        sources=[{"title": "Java并发编程", "evidence": "介绍线程、同步与锁机制"}],
+    )
+
+    assert isinstance(bundle, GeneratedSectionBundle)
+    assert captured["temperature"] == 0.0
+    assert captured["max_tokens"] == 4200
+    assert captured["response_format"] == {"type": "json_object"}
 
 
 @pytest.mark.asyncio

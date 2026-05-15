@@ -23,6 +23,7 @@ public class AppProperties {
     private final Idempotency idempotency = new Idempotency();
     private final RateLimit rateLimit = new RateLimit();
     private final Download download = new Download();
+    private final Upload upload = new Upload();
 
     public PythonAgent getPythonAgent() {
         return pythonAgent;
@@ -46,6 +47,10 @@ public class AppProperties {
 
     public Download getDownload() {
         return download;
+    }
+
+    public Upload getUpload() {
+        return upload;
     }
 
     public static class PythonAgent {
@@ -211,6 +216,36 @@ public class AppProperties {
 
         public void setArtifactTtlSeconds(long artifactTtlSeconds) {
             this.artifactTtlSeconds = artifactTtlSeconds;
+        }
+    }
+
+    public static class Upload {
+        private long imageMaxBytes = 10 * 1024 * 1024L;
+        private long imageTokenTtlSeconds = 1800;
+        private String imageStorageDir = "sandbox-temp/chat-images";
+
+        public long getImageMaxBytes() {
+            return imageMaxBytes;
+        }
+
+        public void setImageMaxBytes(long imageMaxBytes) {
+            this.imageMaxBytes = imageMaxBytes;
+        }
+
+        public long getImageTokenTtlSeconds() {
+            return imageTokenTtlSeconds;
+        }
+
+        public void setImageTokenTtlSeconds(long imageTokenTtlSeconds) {
+            this.imageTokenTtlSeconds = imageTokenTtlSeconds;
+        }
+
+        public String getImageStorageDir() {
+            return imageStorageDir;
+        }
+
+        public void setImageStorageDir(String imageStorageDir) {
+            this.imageStorageDir = imageStorageDir;
         }
     }
 }

@@ -43,14 +43,21 @@ public class HttpPythonConversationMessageClient implements PythonConversationMe
     }
 
     @Override
-    public void appendMessage(UUID conversationId, UUID userId, String role, String content) {
-        if (content == null || content.isBlank()) {
+    public void appendMessage(UUID conversationId, UUID userId, String role, String content, List<String> imageUrls) {
+        List<String> normalizedImageUrls = imageUrls == null ? List.of() : imageUrls.stream()
+            .filter(item -> item != null && !item.isBlank())
+            .map(String::trim)
+            .distinct()
+            .toList();
+        String normalizedContent = content == null ? "" : content.trim();
+        if (normalizedContent.isBlank() && normalizedImageUrls.isEmpty()) {
             return;
         }
         try {
             Map<String, Object> payload = new LinkedHashMap<>();
             payload.put("role", role);
-            payload.put("content", content);
+            payload.put("content", normalizedContent);
+            payload.put("imageUrls", normalizedImageUrls);
             payload.put("userId", userId.toString());
             HttpRequest request = HttpRequest.newBuilder()
                 .uri(URI.create(appProperties.getPythonAgent().getBaseUrl() + "/internal/conversations/" + conversationId + "/messages"))
@@ -106,6 +113,7 @@ public class HttpPythonConversationMessageClient implements PythonConversationMe
                     payload.messageId(),
                     payload.role(),
                     payload.content(),
+                    payload.imageUrls(),
                     payload.createdAt()
                 ))
                 .toList();
@@ -121,6 +129,7 @@ public class HttpPythonConversationMessageClient implements PythonConversationMe
         String messageId,
         String role,
         String content,
+        List<String> imageUrls,
         OffsetDateTime createdAt
     ) {
     }

@@ -168,7 +168,8 @@
       "Bash(find /d -name \"convert_hf_to_gguf.py\")",
       "Bash(.venv/Scripts/python.exe -c \"import torch; print\\('OK'\\)\")",
       "Bash(.venv/Scripts/pip.exe install *)",
-      "Bash(.venv/Scripts/python.exe \"E:/llama_cpp2/convert_hf_to_gguf.py\" sft_output/merged --outtype q8_0 --outfile grpo_output/judge_model.gguf)"
+      "Bash(.venv/Scripts/python.exe \"E:/llama_cpp2/convert_hf_to_gguf.py\" sft_output/merged --outtype q8_0 --outfile grpo_output/judge_model.gguf)",
+      "Bash(PYTHONPATH=. python -c ' *)"
     ]
   }
 }
