@@ -1,6 +1,6 @@
 import { motion } from 'framer-motion';
 import { Sparkles } from 'lucide-react';
-import { ChatPanel, InputPanel } from './LearningStudioDemoPage.components';
+import { ChatPanel, InputPanel } from './LearningStudioDemoPage.qna-components';
 import type { ChatMessage, PendingChatImage } from './LearningStudioDemoPage.types';
 
 interface QnaChatViewProps {
@@ -19,14 +19,14 @@ interface QnaChatViewProps {
 export default function QnaChatView(props: QnaChatViewProps) {
   if (!props.hasStartedConversation) {
     return (
-      <div className="mx-auto flex h-[calc(100vh-12rem)] w-full max-w-[1120px] flex-col items-center justify-center px-4">
+      <div className="mx-auto flex h-[calc(100dvh-12rem)] w-full max-w-[1120px] flex-col items-center justify-center px-4">
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.5 }}
           className="text-center"
         >
-          <div className="mx-auto mb-6 flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-br from-indigo-500 to-violet-600 shadow-xl shadow-indigo-500/25">
+          <div className="mx-auto mb-6 flex h-16 w-16 items-center justify-center rounded-2xl bg-primary-600 shadow-sm">
             <Sparkles className="h-7 w-7 text-white" />
           </div>
           <h1 className="mb-3 text-3xl font-semibold tracking-tight text-slate-800 dark:text-white md:text-[56px]">
@@ -55,7 +55,7 @@ export default function QnaChatView(props: QnaChatViewProps) {
   }
 
   return (
-    <div className="mx-auto flex h-[calc(100vh-8rem)] w-full max-w-[1120px] flex-col md:h-[calc(100vh-9.5rem)]">
+      <div className="mx-auto flex h-[calc(100dvh-8rem)] w-full max-w-[1120px] flex-col md:h-[calc(100dvh-9.5rem)]">
       <ChatPanel messages={props.qnaMessages} />
       <InputPanel
         value={props.qnaInput}

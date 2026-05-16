@@ -74,6 +74,37 @@ let activeJob: PendingRenderJob | null = null;
 let rendererMessageBound = false;
 const renderTaskStates = new Map<string, BrowserVideoRenderTaskState>();
 const renderTaskListeners = new Map<string, Set<(state: BrowserVideoRenderTaskState) => void>>();
+const renderTaskTouchedAt = new Map<string, number>();
+const TERMINAL_TASK_TTL_MS = 10 * 60 * 1000;
+
+function revokeResultObjectUrls(result?: BrowserVideoRenderResult): void {
+  if (!result) {
+    return;
+  }
+  if (result.videoUrl.startsWith('blob:')) {
+    URL.revokeObjectURL(result.videoUrl);
+  }
+  if (result.thumbnailUrl?.startsWith('blob:')) {
+    URL.revokeObjectURL(result.thumbnailUrl);
+  }
+}
+
+function pruneExpiredTaskStates(now = Date.now()): void {
+  renderTaskStates.forEach((state, taskId) => {
+    const isTerminal = state.status === 'completed' || state.status === 'failed';
+    if (!isTerminal) {
+      return;
+    }
+    const touchedAt = renderTaskTouchedAt.get(taskId) ?? now;
+    if (now - touchedAt < TERMINAL_TASK_TTL_MS) {
+      return;
+    }
+    revokeResultObjectUrls(state.result);
+    renderTaskStates.delete(taskId);
+    renderTaskTouchedAt.delete(taskId);
+    renderTaskListeners.delete(taskId);
+  });
+}
 
 function publishTaskState(taskId: string): void {
   const snapshot = renderTaskStates.get(taskId);
@@ -89,11 +120,14 @@ function publishTaskState(taskId: string): void {
 }
 
 function updateTaskState(taskId: string, nextState: BrowserVideoRenderTaskState): void {
+  pruneExpiredTaskStates();
   renderTaskStates.set(taskId, nextState);
+  renderTaskTouchedAt.set(taskId, Date.now());
   publishTaskState(taskId);
 }
 
 export function getBrowserVideoRenderTaskState(taskId: string): BrowserVideoRenderTaskState | null {
+  pruneExpiredTaskStates();
   const snapshot = renderTaskStates.get(taskId);
   return snapshot ? { ...snapshot } : null;
 }
@@ -102,6 +136,7 @@ export function subscribeBrowserVideoRenderTask(
   taskId: string,
   listener: (state: BrowserVideoRenderTaskState) => void,
 ): () => void {
+  pruneExpiredTaskStates();
   const listeners = renderTaskListeners.get(taskId) ?? new Set<(state: BrowserVideoRenderTaskState) => void>();
   listeners.add(listener);
   renderTaskListeners.set(taskId, listeners);

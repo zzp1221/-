@@ -1,19 +1,10 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { Suspense, lazy, useCallback, useEffect, useRef, useState } from 'react';
 import { useOutletContext } from 'react-router-dom';
-import { motion } from 'framer-motion';
-import { Sparkles } from 'lucide-react';
 import { conversationApi, type ConversationMessageItem } from '../api/conversation';
 import { smartEngineApi } from '../api/smartEngine';
 import { getErrorMessage } from '../api/request';
 import type { LayoutOutletContext } from '../components/Layout';
-import {
-  ChatPanel,
-  InputPanel,
-  RealtimeProfile,
-  ServiceDynamicForm,
-  ServiceSubmitPanel,
-  TaskResultPanel,
-} from './LearningStudioDemoPage.components';
+import QnaChatView from './QnaChatView';
 import {
   QNA_GREETING,
   defaultAssessmentDimensions,
@@ -43,6 +34,19 @@ import {
   sanitizeConversationMessageContent,
   toUiTaskStatus,
 } from './LearningStudioDemoPage.utils';
+
+const RealtimeProfile = lazy(() =>
+  import('./LearningStudioDemoPage.components').then((module) => ({ default: module.RealtimeProfile }))
+);
+const ServiceDynamicForm = lazy(() =>
+  import('./LearningStudioDemoPage.components').then((module) => ({ default: module.ServiceDynamicForm }))
+);
+const ServiceSubmitPanel = lazy(() =>
+  import('./LearningStudioDemoPage.components').then((module) => ({ default: module.ServiceSubmitPanel }))
+);
+const TaskResultPanel = lazy(() =>
+  import('./LearningStudioDemoPage.components').then((module) => ({ default: module.TaskResultPanel }))
+);
 
 const ENGINE_TASK_STORAGE_KEY = 'learning_studio_engine_tasks';
 const QNA_SNAPSHOT_STORAGE_KEY = 'learning_studio_qna_snapshot';
@@ -1364,145 +1368,110 @@ export default function LearningStudioDemoPage({ mode }: { mode: 'qna' | 'engine
   ]);
 
   if (mode === 'qna') {
-    if (!hasStartedConversation) {
-      return (
-        <div className="mx-auto flex h-[calc(100dvh-12rem)] w-full max-w-[1120px] flex-col items-center justify-center px-4">
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.5 }}
-            className="text-center"
-          >
-            <div className="mx-auto mb-6 flex h-16 w-16 items-center justify-center rounded-2xl bg-primary-600 shadow-sm">
-              <Sparkles className="h-7 w-7 text-white" />
-            </div>
-            <h1 className="mb-3 text-3xl font-semibold tracking-tight text-slate-800 dark:text-white md:text-[56px]">你好，我是智学引擎</h1>
-            <p className="mb-9 text-slate-500 dark:text-slate-400">AI驱动的个性化学习助手，随时为你解答问题</p>
-          </motion.div>
-          <div className="w-full max-w-[720px] md:max-w-[860px]">
-            <InputPanel
-              value={qnaInput}
-              busy={qnaBusy}
-              placeholder="向智学引擎提问"
-              pendingImages={pendingQnaImages}
-              errorMessage={qnaImageError}
-              onChange={setQnaInput}
-              onSend={handleQnaSend}
-              onPickImages={handlePickQnaImages}
-              onRemoveImage={handleRemovePendingQnaImage}
-              variant="landing"
-            />
-          </div>
-        </div>
-      );
-    }
-
     return (
-      <div className="mx-auto flex h-[calc(100dvh-8rem)] w-full max-w-[1120px] flex-col md:h-[calc(100dvh-9.5rem)]">
-        <ChatPanel messages={qnaMessages} />
-        <InputPanel
-          value={qnaInput}
-          busy={qnaBusy}
-          placeholder="向智学引擎提问"
-          pendingImages={pendingQnaImages}
-          errorMessage={qnaImageError}
-          onChange={setQnaInput}
-          onSend={handleQnaSend}
-          onPickImages={handlePickQnaImages}
-          onRemoveImage={handleRemovePendingQnaImage}
-          variant="chat"
-        />
-      </div>
+      <QnaChatView
+        hasStartedConversation={hasStartedConversation}
+        qnaInput={qnaInput}
+        qnaBusy={qnaBusy}
+        qnaMessages={qnaMessages}
+        pendingImages={pendingQnaImages}
+        imageErrorMessage={qnaImageError}
+        onChange={setQnaInput}
+        onSend={handleQnaSend}
+        onPickImages={handlePickQnaImages}
+        onRemoveImage={handleRemovePendingQnaImage}
+      />
     );
   }
 
   return (
-    <div className="mx-auto max-w-[1180px] space-y-6 pb-10 px-1 md:px-0">
-      <RealtimeProfile
-        profile={profile}
-        summary={profileSummary}
-        updatedAt={profileUpdatedAt}
-        source={profileSource}
-        showAllWeakPoints={showAllWeakPoints}
-        onToggleWeakPoints={() => setShowAllWeakPoints((prev) => !prev)}
-      />
-
-      <div className="modern-card p-5 md:p-6">
-        <div className="mb-6 text-center">
-          <h1 className="text-2xl font-semibold tracking-tight text-slate-800 dark:text-white md:text-[34px]">你好，我是智学引擎</h1>
-          <p className="mt-1.5 text-sm text-slate-500 dark:text-slate-400">选择一项智能服务，开始你的学习之旅</p>
-        </div>
-
-        {/* Service Selection Cards */}
-        <div className="mb-6 grid grid-cols-2 gap-2 md:flex md:flex-wrap md:justify-center md:gap-3">
-          {serviceButtons.map((item) => {
-            const active = selectedService === item.id;
-            return (
-              <button
-                key={item.id}
-                type="button"
-                onClick={() => withAuth(() => handleSelectService(item.id))}
-                className={`group flex flex-col items-center gap-1.5 rounded-2xl border px-4 py-3 text-sm transition-all duration-200 md:flex-row md:gap-2 md:px-4 md:py-2 ${
-                  active
-                    ? 'border-primary-300 bg-primary-50 text-primary-700 shadow-sm dark:border-primary-700 dark:bg-primary-900/50 dark:text-primary-300'
-                    : 'border-slate-200 bg-white text-slate-600 hover:border-primary-200 hover:bg-primary-50/50 hover:text-primary-600 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-400 dark:hover:border-primary-700 dark:hover:bg-primary-900/20'
-                }`}
-              >
-                <item.icon className={`h-5 w-5 md:h-4 md:w-4 ${active ? 'text-primary-600 dark:text-primary-400' : 'text-slate-400 group-hover:text-primary-500 dark:text-slate-500'}`} />
-                <span className="text-xs md:text-sm">{item.label}</span>
-              </button>
-            );
-          })}
-        </div>
-
-        <ServiceDynamicForm
-          service={selectedService}
-          resourceForm={resourceForm}
-          pathForm={pathForm}
-          pushForm={pushForm}
-          assessmentForm={assessmentForm}
-          onResourceChange={(next) => {
-            setResourceForm(next);
-            markFormEditing();
-          }}
-          onPathChange={(next) => {
-            setPathForm(next);
-            markFormEditing();
-          }}
-          onPushChange={(next) => {
-            setPushForm(next);
-            markFormEditing();
-          }}
-          onAssessmentChange={(next) => {
-            setAssessmentForm(next);
-            markFormEditing();
-          }}
+    <Suspense fallback={<div className="mx-auto max-w-[1180px] rounded-3xl border border-slate-200 bg-white/80 px-6 py-10 text-center text-sm text-slate-500 dark:border-slate-700 dark:bg-slate-900/60 dark:text-slate-400">正在加载智能服务界面...</div>}>
+      <div className="mx-auto max-w-[1180px] space-y-6 pb-10 px-1 md:px-0">
+        <RealtimeProfile
+          profile={profile}
+          summary={profileSummary}
+          updatedAt={profileUpdatedAt}
+          source={profileSource}
+          showAllWeakPoints={showAllWeakPoints}
+          onToggleWeakPoints={() => setShowAllWeakPoints((prev) => !prev)}
         />
 
-        <ServiceSubmitPanel
-          disabled={!selectedService || engineBusy}
-          onSubmit={handleSubmitService}
-          onStop={handleStopService}
-          canStop={engineBusy}
-          taskId={taskId}
-          progress={taskProgress}
-          status={taskStatus}
-          uiState={engineStateView}
+        <div className="modern-card p-5 md:p-6">
+          <div className="mb-6 text-center">
+            <h1 className="text-2xl font-semibold tracking-tight text-slate-800 dark:text-white md:text-[34px]">你好，我是智学引擎</h1>
+            <p className="mt-1.5 text-sm text-slate-500 dark:text-slate-400">选择一项智能服务，开始你的学习之旅</p>
+          </div>
+
+          <div className="mb-6 grid grid-cols-2 gap-2 md:flex md:flex-wrap md:justify-center md:gap-3">
+            {serviceButtons.map((item) => {
+              const active = selectedService === item.id;
+              return (
+                <button
+                  key={item.id}
+                  type="button"
+                  onClick={() => withAuth(() => handleSelectService(item.id))}
+                  className={`group flex flex-col items-center gap-1.5 rounded-2xl border px-4 py-3 text-sm transition-all duration-200 md:flex-row md:gap-2 md:px-4 md:py-2 ${
+                    active
+                      ? 'border-primary-300 bg-primary-50 text-primary-700 shadow-sm dark:border-primary-700 dark:bg-primary-900/50 dark:text-primary-300'
+                      : 'border-slate-200 bg-white text-slate-600 hover:border-primary-200 hover:bg-primary-50/50 hover:text-primary-600 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-400 dark:hover:border-primary-700 dark:hover:bg-primary-900/20'
+                  }`}
+                >
+                  <item.icon className={`h-5 w-5 md:h-4 md:w-4 ${active ? 'text-primary-600 dark:text-primary-400' : 'text-slate-400 group-hover:text-primary-500 dark:text-slate-500'}`} />
+                  <span className="text-xs md:text-sm">{item.label}</span>
+                </button>
+              );
+            })}
+          </div>
+
+          <ServiceDynamicForm
+            service={selectedService}
+            resourceForm={resourceForm}
+            pathForm={pathForm}
+            pushForm={pushForm}
+            assessmentForm={assessmentForm}
+            onResourceChange={(next) => {
+              setResourceForm(next);
+              markFormEditing();
+            }}
+            onPathChange={(next) => {
+              setPathForm(next);
+              markFormEditing();
+            }}
+            onPushChange={(next) => {
+              setPushForm(next);
+              markFormEditing();
+            }}
+            onAssessmentChange={(next) => {
+              setAssessmentForm(next);
+              markFormEditing();
+            }}
+          />
+
+          <ServiceSubmitPanel
+            disabled={!selectedService || engineBusy}
+            onSubmit={handleSubmitService}
+            onStop={handleStopService}
+            canStop={engineBusy}
+            taskId={taskId}
+            progress={taskProgress}
+            status={taskStatus}
+            uiState={engineStateView}
+          />
+        </div>
+
+        <TaskResultPanel
+          service={selectedService}
+          taskSummary={taskSummary}
+          serviceResultLines={serviceResultLines}
+          downloadLinks={downloadLinks}
+          videoResult={videoResult}
+          inlineResource={activeEngineSnapshot.inlineResource}
+          practiceBatch={activeEngineSnapshot.practiceBatch}
+          judgeResult={activeEngineSnapshot.judgeResult}
+          canSubmitPractice={!hasLockedTask(activeEngineSnapshot)}
+          onSubmitPracticeAnswers={handleSubmitPracticeAnswers}
         />
       </div>
-
-      <TaskResultPanel
-        service={selectedService}
-        taskSummary={taskSummary}
-        serviceResultLines={serviceResultLines}
-        downloadLinks={downloadLinks}
-        videoResult={videoResult}
-        inlineResource={activeEngineSnapshot.inlineResource}
-        practiceBatch={activeEngineSnapshot.practiceBatch}
-        judgeResult={activeEngineSnapshot.judgeResult}
-        canSubmitPractice={!hasLockedTask(activeEngineSnapshot)}
-        onSubmitPracticeAnswers={handleSubmitPracticeAnswers}
-      />
-    </div>
+    </Suspense>
   );
 }

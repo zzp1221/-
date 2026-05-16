@@ -2,9 +2,55 @@ import { useState, lazy, Suspense } from 'react';
 import { oneDark } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import { Check, Copy } from 'lucide-react';
 
-// Lazy load SyntaxHighlighter
-const SyntaxHighlighter = lazy(() =>
-  import('react-syntax-highlighter/dist/esm/prism').then(module => ({ default: module.default }))
+let syntaxHighlighterLoader: Promise<{ default: any }> | null = null;
+
+// Lazy load the light build and register only common languages used in this project.
+const SyntaxHighlighter: any = lazy(() =>
+  (syntaxHighlighterLoader ??= Promise.all([
+    import('react-syntax-highlighter/dist/esm/prism-light'),
+    import('react-syntax-highlighter/dist/esm/languages/prism/bash'),
+    import('react-syntax-highlighter/dist/esm/languages/prism/java'),
+    import('react-syntax-highlighter/dist/esm/languages/prism/javascript'),
+    import('react-syntax-highlighter/dist/esm/languages/prism/json'),
+    import('react-syntax-highlighter/dist/esm/languages/prism/markdown'),
+    import('react-syntax-highlighter/dist/esm/languages/prism/python'),
+    import('react-syntax-highlighter/dist/esm/languages/prism/sql'),
+    import('react-syntax-highlighter/dist/esm/languages/prism/typescript'),
+    import('react-syntax-highlighter/dist/esm/languages/prism/tsx'),
+    import('react-syntax-highlighter/dist/esm/languages/prism/yaml'),
+  ]).then(([
+    syntaxModule,
+    bashModule,
+    javaModule,
+    javascriptModule,
+    jsonModule,
+    markdownModule,
+    pythonModule,
+    sqlModule,
+    typescriptModule,
+    tsxModule,
+    yamlModule,
+  ]) => {
+    const PrismLight = syntaxModule.default;
+    PrismLight.registerLanguage('bash', bashModule.default);
+    PrismLight.registerLanguage('shell', bashModule.default);
+    PrismLight.registerLanguage('sh', bashModule.default);
+    PrismLight.registerLanguage('java', javaModule.default);
+    PrismLight.registerLanguage('javascript', javascriptModule.default);
+    PrismLight.registerLanguage('js', javascriptModule.default);
+    PrismLight.registerLanguage('json', jsonModule.default);
+    PrismLight.registerLanguage('markdown', markdownModule.default);
+    PrismLight.registerLanguage('md', markdownModule.default);
+    PrismLight.registerLanguage('python', pythonModule.default);
+    PrismLight.registerLanguage('py', pythonModule.default);
+    PrismLight.registerLanguage('sql', sqlModule.default);
+    PrismLight.registerLanguage('typescript', typescriptModule.default);
+    PrismLight.registerLanguage('ts', typescriptModule.default);
+    PrismLight.registerLanguage('tsx', tsxModule.default);
+    PrismLight.registerLanguage('yaml', yamlModule.default);
+    PrismLight.registerLanguage('yml', yamlModule.default);
+    return { default: PrismLight };
+  }))
 );
 
 interface CodeBlockProps {
