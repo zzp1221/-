@@ -1,7 +1,8 @@
-import { lazy, Suspense } from 'react';
+import { lazy, Suspense, useState, useCallback } from 'react';
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
 import ErrorBoundary from './components/ErrorBoundary';
 import Layout from './components/Layout';
+import SplashScreen from './components/SplashScreen';
 
 const LearningStudioDemoPage = lazy(() => import('./pages/LearningStudioDemoPage'));
 
@@ -14,8 +15,18 @@ function PageLoader() {
 }
 
 function App() {
+  const [showSplash, setShowSplash] = useState(
+    () => !sessionStorage.getItem('splash-seen')
+  );
+
+  const handleSplashComplete = useCallback(() => {
+    sessionStorage.setItem('splash-seen', '1');
+    setShowSplash(false);
+  }, []);
+
   return (
     <ErrorBoundary>
+      {showSplash && <SplashScreen onComplete={handleSplashComplete} />}
       <BrowserRouter>
         <Suspense fallback={<PageLoader />}>
           <Routes>

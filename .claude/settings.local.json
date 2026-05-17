@@ -172,7 +172,26 @@
       "Bash(PYTHONPATH=. python -c ' *)",
       "WebFetch(domain:webcache.googleusercontent.com)",
       "Read(//python-agent/**)",
-      "Read(//python-agent/src/**)"
+      "Read(//python-agent/src/**)",
+      "WebFetch(domain:www.nanfu.global)",
+      "Bash(docker image prune *)",
+      "Bash(docker volume prune *)",
+      "Bash(wsl *)",
+      "Bash(dir /s /b \"%USERPROFILE%\\\\AppData\\\\Local\\\\Packages\\\\*docker*\\\\*.vhdx\")",
+      "Bash(dir /s /b \"%USERPROFILE%\\\\AppData\\\\Local\\\\Docker\\\\*.vhdx\")",
+      "Bash(dir /s /b \"%PROGRAMDATA%\\\\DockerDesktop\\\\*.vhdx\")",
+      "Bash(cmd.exe /c \"dir /s /b C:\\\\Users\\\\ASUS\\\\AppData\\\\Local\\\\Packages\\\\*docker*\\\\*.vhdx 2>NUL\")",
+      "Bash(cmd.exe /c \"dir /s /b C:\\\\Users\\\\ASUS\\\\AppData\\\\Local\\\\Docker\\\\*.vhdx 2>NUL\")",
+      "Bash(powershell.exe *)",
+      "Bash(\"/c/Program Files/Docker/Docker/Docker Desktop.exe\")",
+      "Bash(break)",
+      "Bash(docker system prune *)",
+      "Bash(npm cache *)",
+      "Bash(pip cache *)",
+      "Bash(rm -rf ~/.gradle/wrapper/dists/* ~/.gradle/caches/*)",
+      "Bash(pnpm build *)",
+      "Bash(pnpm store *)",
+      "Skill(webapp-testing)"
     ]
   }
 }
