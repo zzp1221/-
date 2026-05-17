@@ -26,6 +26,18 @@ from src.ai_modules.models import (
     QuestionBatchPayload,
     RetrievalResponse,
 )
+from src.ai_modules.runtime.ttl_cache import InMemoryTTLCache, stable_cache_key
+
+
+_LLM_RESULT_CACHE = InMemoryTTLCache()
+
+
+def _cache_ttl_seconds() -> int:
+    settings = get_settings()
+    if not settings.enable_llm_result_cache:
+        return 0
+    _LLM_RESULT_CACHE.max_entries = max(1, settings.runtime_cache_max_entries)
+    return max(0, settings.llm_result_cache_ttl_seconds)
 
 
 def _provider_name() -> str:
@@ -105,9 +117,11 @@ class OpenAICompatibleJSONGenerator:
         model_name: str | None = None,
         provider_name: str | None = None,
         temperature: float = 0.2,
+        cache_namespace: str | None = None,
     ) -> None:
         self.client = create_compatible_client(model_name=model_name, provider_name=provider_name)
         self.temperature = temperature
+        self.cache_namespace = cache_namespace
 
     async def generate(
         self,
@@ -117,6 +131,17 @@ class OpenAICompatibleJSONGenerator:
         model_name: str | None = None,
         max_tokens: int | None = None,
     ) -> dict[str, Any]:
+        cache_key = self._build_cache_key(
+            system_prompt=system_prompt,
+            user_prompt=user_prompt,
+            model_name=model_name,
+            max_tokens=max_tokens,
+        )
+        if cache_key:
+            cached_payload = _LLM_RESULT_CACHE.get(cache_key)
+            if isinstance(cached_payload, dict):
+                return cached_payload
+
         response = await self.client.chat_completion(
             messages=[
                 {"role": "system", "content": system_prompt},
@@ -131,7 +156,39 @@ class OpenAICompatibleJSONGenerator:
         content = self.client.extract_content(message).strip()
         if not content:
             raise ValueError("empty assistant content for structured json output")
-        return self.client.parse_json_text(content)
+        payload = self.client.parse_json_text(content)
+        if cache_key:
+            _LLM_RESULT_CACHE.set(
+                cache_key,
+                payload,
+                ttl_seconds=_cache_ttl_seconds(),
+            )
+        return payload
+
+    def _build_cache_key(
+        self,
+        *,
+        system_prompt: str,
+        user_prompt: str,
+        model_name: str | None,
+        max_tokens: int | None,
+    ) -> str:
+        if not self.cache_namespace:
+            return ""
+        if _cache_ttl_seconds() <= 0:
+            return ""
+        return stable_cache_key(
+            f"llm-json:{self.cache_namespace}",
+            {
+                "provider": self.client.provider_name,
+                "model": model_name or self.client.model_name,
+                "temperature": self.temperature,
+                "responseFormat": {"type": "json_object"},
+                "maxTokens": max_tokens,
+                "systemPrompt": system_prompt,
+                "userPrompt": user_prompt,
+            },
+        )
 
 
 class OpenAICompatibleQueryRewriteGenerator:
@@ -143,6 +200,7 @@ class OpenAICompatibleQueryRewriteGenerator:
             model_name=model_name,
             provider_name=provider_name,
             temperature=0.1,
+            cache_namespace="query_rewrite",
         )
 
     async def rewrite(
@@ -179,6 +237,15 @@ class OpenAICompatibleRetrievalSummaryGenerator:
         system_prompt: str,
         retrieval_response: RetrievalResponse,
     ) -> str:
+        cache_key = self._build_cache_key(
+            system_prompt=system_prompt,
+            retrieval_response=retrieval_response,
+        )
+        if cache_key:
+            cached_summary = _LLM_RESULT_CACHE.get(cache_key)
+            if isinstance(cached_summary, str):
+                return cached_summary
+
         response = await self.client.chat_completion(
             messages=[
                 {"role": "system", "content": system_prompt},
@@ -196,7 +263,34 @@ class OpenAICompatibleRetrievalSummaryGenerator:
             temperature=0.2,
             max_tokens=220,
         )
-        return self.client.extract_content(self.client.extract_message(response)).strip()
+        summary = self.client.extract_content(self.client.extract_message(response)).strip()
+        if cache_key and summary:
+            _LLM_RESULT_CACHE.set(
+                cache_key,
+                summary,
+                ttl_seconds=_cache_ttl_seconds(),
+            )
+        return summary
+
+    def _build_cache_key(
+        self,
+        *,
+        system_prompt: str,
+        retrieval_response: RetrievalResponse,
+    ) -> str:
+        if _cache_ttl_seconds() <= 0:
+            return ""
+        return stable_cache_key(
+            "llm-summary:retrieval",
+            {
+                "provider": self.client.provider_name,
+                "model": self.client.model_name,
+                "temperature": 0.2,
+                "maxTokens": 220,
+                "systemPrompt": system_prompt,
+                "retrievalResponse": retrieval_response,
+            },
+        )
 
 
 class OpenAICompatibleEvaluationGenerator:

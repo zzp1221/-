@@ -51,6 +51,23 @@ class DuplicateTitleRetriever:
         }
 
 
+class CountingRetriever:
+    def __init__(self) -> None:
+        self.calls = 0
+
+    def retrieve(self, query: str) -> dict:
+        self.calls += 1
+        return {
+            "query": query,
+            "channels": {
+                "grep": {"priority": [("cache-doc", "Cache Doc", 1.0, ["cache"])]},
+                "vector": [],
+                "graph": [],
+            },
+            "top": [("cache-doc", "Cache Doc", 1.0)],
+        }
+
+
 def test_query_rewrite_service_injects_learning_context() -> None:
     service = QueryRewriteService()
 
@@ -109,6 +126,18 @@ def test_hybrid_retrieval_service_falls_back_when_no_results() -> None:
     )
 
     assert result.documents[0].channel == "fallback"
+
+
+def test_hybrid_retrieval_service_caches_raw_results_without_mutation_leak() -> None:
+    retriever = CountingRetriever()
+    service = HybridRetrievalService(retriever=retriever)
+
+    first = service.retrieve_raw("cache-query-unique")
+    first["top"].append(("mutated", "Mutated", 0.1))
+    second = service.retrieve_raw("cache-query-unique")
+
+    assert retriever.calls == 1
+    assert second["top"] == [("cache-doc", "Cache Doc", 1.0)]
 
 
 def test_hybrid_retrieval_service_deduplicates_same_title_documents() -> None:

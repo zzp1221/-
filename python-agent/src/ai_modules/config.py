@@ -115,6 +115,16 @@ class Settings(BaseSettings):
         default=12,
         alias="LLM_TOOL_CONTENT_MAX_DICT_ITEMS",
     )
+    enable_llm_result_cache: bool = Field(default=True, alias="ENABLE_LLM_RESULT_CACHE")
+    llm_result_cache_ttl_seconds: int = Field(
+        default=300,
+        alias="LLM_RESULT_CACHE_TTL_SECONDS",
+    )
+    retrieval_result_cache_ttl_seconds: int = Field(
+        default=60,
+        alias="RETRIEVAL_RESULT_CACHE_TTL_SECONDS",
+    )
+    runtime_cache_max_entries: int = Field(default=256, alias="RUNTIME_CACHE_MAX_ENTRIES")
     query_rewrite_llm: LLMComponentOverride = Field(
         default_factory=LLMComponentOverride,
         alias="QUERY_REWRITE_LLM",

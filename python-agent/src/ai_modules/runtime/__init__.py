@@ -27,6 +27,7 @@ from src.ai_modules.runtime.recovery_engine import (
     RecoveryEngine,
     RecoveryFailureType,
 )
+from src.ai_modules.runtime.ttl_cache import InMemoryTTLCache, stable_cache_key
 from src.ai_modules.runtime.tool_registry import ToolDefinition, ToolRegistry
 
 __all__ = [
@@ -53,4 +54,6 @@ __all__ = [
     "ToolDefinition",
     "ToolExecutionResult",
     "ToolRegistry",
+    "InMemoryTTLCache",
+    "stable_cache_key",
 ]

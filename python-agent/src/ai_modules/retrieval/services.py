@@ -11,6 +11,10 @@ from src.ai_modules.models import (
     RetrievalDocument,
     RetrievalResponse,
 )
+from src.ai_modules.runtime.ttl_cache import InMemoryTTLCache, stable_cache_key
+
+
+_RETRIEVAL_RESULT_CACHE = InMemoryTTLCache()
 
 
 class SupportsHybridRetrieve(Protocol):
@@ -191,6 +195,7 @@ class HybridRetrievalService:
         self,
         retriever: SupportsHybridRetrieve | None = None,
     ) -> None:
+        self.domain = get_settings().retrieval_domain
         self.retriever = retriever
 
     def retrieve(
@@ -209,7 +214,20 @@ class HybridRetrievalService:
         )
 
     def retrieve_raw(self, rewritten_query: str) -> dict[str, Any]:
-        return self._retrieve_raw(rewritten_query)
+        cache_key = self._build_raw_result_cache_key(rewritten_query)
+        if cache_key:
+            cached_result = _RETRIEVAL_RESULT_CACHE.get(cache_key)
+            if isinstance(cached_result, dict):
+                return cached_result
+
+        raw_result = self._retrieve_raw(rewritten_query)
+        if cache_key and self._is_cacheable_raw_result(raw_result):
+            _RETRIEVAL_RESULT_CACHE.set(
+                cache_key,
+                raw_result,
+                ttl_seconds=self._raw_result_cache_ttl_seconds(),
+            )
+        return raw_result
 
     def build_response(
         self,
@@ -268,6 +286,37 @@ class HybridRetrievalService:
                 "channels": {},
                 "top": [],
             }
+
+    def _raw_result_cache_ttl_seconds(self) -> int:
+        settings = get_settings()
+        ttl_seconds = max(0, settings.retrieval_result_cache_ttl_seconds)
+        _RETRIEVAL_RESULT_CACHE.max_entries = max(1, settings.runtime_cache_max_entries)
+        return ttl_seconds
+
+    def _build_raw_result_cache_key(self, rewritten_query: str) -> str:
+        ttl_seconds = self._raw_result_cache_ttl_seconds()
+        if ttl_seconds <= 0:
+            return ""
+        return stable_cache_key(
+            "retrieval-raw",
+            {
+                "scope": self._raw_result_cache_scope(),
+                "domain": self.domain,
+                "query": rewritten_query,
+            },
+        )
+
+    def _raw_result_cache_scope(self) -> str:
+        if self.retriever is None:
+            return "legacy-hybrid-retriever"
+        return f"custom:{type(self.retriever).__module__}.{type(self.retriever).__qualname__}:{id(self.retriever)}"
+
+    def _is_cacheable_raw_result(self, raw_result: dict[str, Any]) -> bool:
+        if not isinstance(raw_result, dict):
+            return False
+        top_results = raw_result.get("top")
+        channels = raw_result.get("channels")
+        return bool(top_results or channels)
 
     def _normalize_documents(
         self,
