@@ -1,6 +1,6 @@
 import { memo, useEffect, useId, useRef, useState, type ClipboardEvent, type DragEvent } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
-import { ArrowDown, FileImage, LoaderCircle, Paperclip, SendHorizontal, Sparkles, X, XCircle } from 'lucide-react';
+import { ArrowDown, BrainCircuit, FileImage, Globe2, LoaderCircle, Paperclip, SendHorizontal, Sparkles, X, XCircle } from 'lucide-react';
 import MarkdownRenderer from '../components/MarkdownRenderer';
 import { normalizeCopyText } from './LearningStudioDemoPage.utils';
 import type { ChatMessage, PendingChatImage } from './LearningStudioDemoPage.types';
@@ -42,6 +42,12 @@ const ChatMessageBubble = memo(function ChatMessageBubble({
                     <img src={imageUrl} alt={`上传图片 ${index + 1}`} className="h-24 w-full object-cover" />
                   </button>
                 ))}
+              </div>
+            ) : null}
+            {message.webSearchEnabled ? (
+              <div className="mb-2 inline-flex items-center gap-1 rounded-full bg-white/15 px-2 py-1 text-xs font-medium text-white/90 ring-1 ring-white/20">
+                <Globe2 className="h-3 w-3" />
+                联网搜索
               </div>
             ) : null}
             {message.content ? <div>{message.content}</div> : <div className="text-white/80">[图片提问]</div>}
@@ -181,6 +187,10 @@ export function InputPanel(props: {
   onSend: () => void;
   onPickImages: (files: File[]) => void;
   onRemoveImage: (id: string) => void;
+  deepReasoningEnabled?: boolean;
+  onToggleDeepReasoning?: () => void;
+  webSearchEnabled: boolean;
+  onToggleWebSearch: () => void;
   variant?: 'landing' | 'chat';
 }) {
   const isLanding = props.variant === 'landing';
@@ -210,14 +220,10 @@ export function InputPanel(props: {
   };
 
   return (
-    <div className="shrink-0 px-2 pb-4 md:px-0">
-      <div className={`mx-auto transition-all duration-300 ${
-        isLanding
-          ? 'rounded-3xl border border-slate-200 bg-white shadow-sm dark:border-slate-700 dark:bg-slate-900'
-          : 'rounded-3xl border border-slate-200 bg-white shadow-sm focus-within:shadow-md focus-within:ring-2 focus-within:ring-primary-500/20 dark:border-slate-700 dark:bg-slate-900 dark:focus-within:ring-primary-500/10'
-      }`}>
+    <div className={`qna-input-frame ${isLanding ? 'qna-input-frame-landing' : 'qna-input-frame-chat'}`}>
+      <div className={`qna-composer ${isLanding ? 'qna-composer-landing' : 'qna-composer-chat'}`}>
         <div
-          className={`${isDragActive ? 'bg-primary-50/80 dark:bg-primary-500/10' : ''} rounded-3xl transition-colors`}
+          className={`qna-composer-drop ${isDragActive ? 'is-drag-active' : ''}`}
           onDragOver={(event) => {
             event.preventDefault();
             setIsDragActive(true);
@@ -229,7 +235,7 @@ export function InputPanel(props: {
           onDrop={handleDrop}
         >
           {props.pendingImages.length ? (
-            <div className="flex flex-wrap gap-3 px-4 pt-4 md:px-5">
+            <div className="qna-pending-images">
               {props.pendingImages.map((image) => (
                 <div key={image.id} className="group relative overflow-hidden rounded-2xl border border-slate-200 bg-slate-50 dark:border-slate-700 dark:bg-slate-800">
                   <img src={image.previewUrl} alt="待上传图片" className="h-24 w-24 object-cover" />
@@ -251,17 +257,7 @@ export function InputPanel(props: {
               ))}
             </div>
           ) : null}
-          <div className="flex items-end gap-3 px-4 py-4 md:px-5">
-            <label
-              htmlFor={fileInputId}
-              className={`flex h-11 w-11 shrink-0 cursor-pointer items-center justify-center rounded-2xl border text-slate-500 transition-colors ${
-                props.busy
-                  ? 'cursor-not-allowed border-slate-200 bg-slate-100 text-slate-300 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-600'
-                  : 'border-slate-200 bg-slate-50 hover:border-primary-300 hover:bg-primary-50 hover:text-primary-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-400 dark:hover:border-primary-700 dark:hover:bg-primary-500/10 dark:hover:text-primary-400'
-              }`}
-            >
-              <Paperclip className="h-4.5 w-4.5" />
-            </label>
+          <div className="qna-composer-main">
             <input
               id={fileInputId}
               type="file"
@@ -274,42 +270,71 @@ export function InputPanel(props: {
                 event.currentTarget.value = '';
               }}
             />
-            <div className="min-w-0 flex-1">
-              <textarea
-                value={props.value}
-                onChange={(event) => props.onChange(event.target.value)}
-                onPaste={handlePaste}
-                rows={isLanding ? 3 : 2}
-                placeholder={props.placeholder}
-                disabled={props.busy}
-                className="max-h-48 min-h-[56px] w-full resize-none border-none bg-transparent px-0 py-1 text-[15px] leading-7 text-slate-700 outline-none placeholder:text-slate-400 disabled:cursor-not-allowed dark:text-slate-200 dark:placeholder:text-slate-500"
-                onKeyDown={(event) => {
-                  if (event.key === 'Enter' && !event.shiftKey) {
-                    event.preventDefault();
-                    props.onSend();
-                  }
-                }}
-              />
-              {props.errorMessage ? (
-                <div className="mt-2 flex items-center gap-1.5 text-xs text-rose-500">
-                  <XCircle className="h-3.5 w-3.5" />
-                  <span>{props.errorMessage}</span>
-                </div>
-              ) : (
-                <div className="mt-2 flex items-center gap-2 text-xs text-slate-400 dark:text-slate-500">
+            <textarea
+              value={props.value}
+              onChange={(event) => props.onChange(event.target.value)}
+              onPaste={handlePaste}
+              rows={isLanding ? 3 : 2}
+              placeholder={props.placeholder}
+              disabled={props.busy}
+              className="qna-composer-textarea"
+              onKeyDown={(event) => {
+                if (event.key === 'Enter' && !event.shiftKey) {
+                  event.preventDefault();
+                  props.onSend();
+                }
+              }}
+            />
+            {props.errorMessage ? (
+              <div className="qna-composer-error">
+                <XCircle className="h-3.5 w-3.5" />
+                <span>{props.errorMessage}</span>
+              </div>
+            ) : null}
+            <div className="qna-composer-toolbar">
+              <div className="qna-composer-actions">
+                <label
+                  htmlFor={fileInputId}
+                  aria-disabled={props.busy}
+                  className="qna-icon-button"
+                >
+                  <Paperclip className="h-[18px] w-[18px]" />
+                </label>
+                <button
+                  type="button"
+                  onClick={props.onToggleDeepReasoning}
+                  disabled={props.busy}
+                  aria-pressed={Boolean(props.deepReasoningEnabled)}
+                  title="开启后本轮对话会使用问题分析、分步推理、自我批判、最终回答的深度推理链"
+                  className={`qna-mode-button ${props.deepReasoningEnabled ? 'is-active' : ''}`}
+                >
+                  <BrainCircuit className="h-4 w-4" />
+                  深度思考
+                </button>
+                <button
+                  type="button"
+                  onClick={props.onToggleWebSearch}
+                  disabled={props.busy}
+                  aria-pressed={props.webSearchEnabled}
+                  className={`qna-mode-button ${props.webSearchEnabled ? 'is-active' : ''}`}
+                >
+                  <Globe2 className="h-4 w-4" />
+                  联网搜索
+                </button>
+                <span className="qna-upload-hint">
                   <FileImage className="h-3.5 w-3.5" />
-                  <span>支持粘贴、拖拽或上传图片，Enter 发送，Shift + Enter 换行</span>
-                </div>
-              )}
+                  支持图片
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={props.onSend}
+                disabled={props.busy || (!props.value.trim() && props.pendingImages.every((item) => !item.uploadedUrl))}
+                className="qna-send-button"
+              >
+                {props.busy ? <LoaderCircle className="h-5 w-5 animate-spin" /> : <SendHorizontal className="h-5 w-5" />}
+              </button>
             </div>
-            <button
-              type="button"
-              onClick={props.onSend}
-              disabled={props.busy || (!props.value.trim() && props.pendingImages.every((item) => !item.uploadedUrl))}
-              className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-primary-600 text-white shadow-sm transition-all hover:bg-primary-700 disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-400 dark:disabled:bg-slate-700 dark:disabled:text-slate-500"
-            >
-              {props.busy ? <LoaderCircle className="h-4.5 w-4.5 animate-spin" /> : <SendHorizontal className="h-4.5 w-4.5" />}
-            </button>
           </div>
         </div>
       </div>

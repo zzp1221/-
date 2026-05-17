@@ -5,13 +5,16 @@ from __future__ import annotations
 import asyncio
 import copy
 import json
+import logging
 from collections.abc import AsyncIterator, Container
 from pathlib import Path
+from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
 from src.ai_modules.agents import (
     CodeGeneratorAgent,
+    DeepReasoningAgent,
     DocumentGeneratorAgent,
     EvaluationAgent,
     ImageAnalysisAgent,
@@ -31,6 +34,8 @@ from src.ai_modules.agents import (
 from src.ai_modules.models import DonePayload, DoneSSEEvent, EngineStreamRequest, ErrorPayload, ErrorSSEEvent, SSEEvent
 from src.ai_modules.runtime import SnapshotBuilder, SystemSnapshot
 
+LOGGER = logging.getLogger(__name__)
+
 
 class RoutePlan(BaseModel):
     """Resolved service route plan."""
@@ -46,6 +51,7 @@ class PythonAgentSupervisor:
 
     def __init__(self) -> None:
         self.snapshot_builder = SnapshotBuilder()
+        self._background_tasks: set[asyncio.Task[None]] = set()
         self.agent_registry = {
             "query_rewrite": QueryRewriteAgent(),
             "retrieval": RetrievalAgent(),
@@ -55,6 +61,7 @@ class PythonAgentSupervisor:
             "mindmap_generator": MindMapGeneratorAgent(),
             "code_generator": CodeGeneratorAgent(),
             "video_generator": VideoGenerationAgent(),
+            "deep_reasoning": DeepReasoningAgent(),
             "tutor": TutorAgent(),
             "profile": ProfileAgent(),
             "practice": PracticeAgent(),
@@ -81,6 +88,14 @@ class PythonAgentSupervisor:
         route_template = self.route_templates.get(service_type)
         if route_template is None:
             raise ValueError(f"Unsupported serviceType: {service_type}")
+        if service_type == "TUTORING" and self._is_deep_reasoning(params):
+            route_template = [
+                "query_rewrite",
+                "retrieval",
+                "image_analysis",
+                "deep_reasoning",
+                "profile",
+            ]
         resolved_route = [
             generation_agent if agent_name == "{generation_agent}" else agent_name
             for agent_name in route_template
@@ -122,6 +137,12 @@ class PythonAgentSupervisor:
             "CODE_CASE": "CODE",
             "QUIZ": "QUIZ",
         }.get(normalized, normalized)
+
+    def _is_deep_reasoning(self, params: dict) -> bool:
+        reasoning_mode = params.get("reasoningMode")
+        if isinstance(reasoning_mode, str) and reasoning_mode.strip().upper() == "DEEP":
+            return True
+        return bool(params.get("deepReasoning"))
 
     async def build_snapshot(self, request: EngineStreamRequest) -> SystemSnapshot:
         return await self.snapshot_builder.build(
@@ -233,6 +254,22 @@ class PythonAgentSupervisor:
                 agent_name=agent_name,
                 snapshot=snapshot,
             )
+            if self._should_run_profile_in_background(
+                service_type=route_plan.service_type,
+                agent_name=agent_name,
+            ):
+                self._schedule_background_agent(
+                    agent=agent,
+                    agent_name=agent_name,
+                    task_id=request.task_id,
+                    trace_id=request.trace_id,
+                    service_type=request.service_type,
+                    params=agent_params,
+                    snapshot=snapshot,
+                    system_prompt=system_prompt,
+                )
+                i += 1
+                continue
             async for event in agent.run(
                 task_id=request.task_id,
                 trace_id=request.trace_id,
@@ -302,3 +339,62 @@ class PythonAgentSupervisor:
         if request.conversation_id and not seeded_params.get("conversationId"):
             seeded_params["conversationId"] = request.conversation_id
         return seeded_params
+
+    def _should_run_profile_in_background(self, *, service_type: str, agent_name: str) -> bool:
+        return service_type == "TUTORING" and agent_name == "profile"
+
+    def _schedule_background_agent(
+        self,
+        *,
+        agent: Any,
+        agent_name: str,
+        task_id: str,
+        trace_id: str,
+        service_type: str,
+        params: dict,
+        snapshot: SystemSnapshot,
+        system_prompt: str,
+    ) -> None:
+        task = asyncio.create_task(
+            self._drain_background_agent(
+                agent=agent,
+                agent_name=agent_name,
+                task_id=task_id,
+                trace_id=trace_id,
+                service_type=service_type,
+                params=params,
+                snapshot=snapshot,
+                system_prompt=system_prompt,
+            ),
+            name=f"background-{agent_name}:{task_id}",
+        )
+        self._background_tasks.add(task)
+        task.add_done_callback(self._background_tasks.discard)
+
+    async def _drain_background_agent(
+        self,
+        *,
+        agent: Any,
+        agent_name: str,
+        task_id: str,
+        trace_id: str,
+        service_type: str,
+        params: dict,
+        snapshot: SystemSnapshot,
+        system_prompt: str,
+    ) -> None:
+        try:
+            async for _ in agent.run(
+                task_id=task_id,
+                trace_id=trace_id,
+                seq=1,
+                service_type=service_type,
+                params=params,
+                snapshot=snapshot,
+                system_prompt=system_prompt,
+            ):
+                pass
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            LOGGER.exception("后台画像构建失败，已与 Tutor 主链路隔离: task_id=%s agent=%s", task_id, agent_name)

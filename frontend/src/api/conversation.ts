@@ -11,6 +11,8 @@ export interface ConversationMessageStreamRequest {
   message: string;
   imageUrls?: string[];
   serviceType?: string;
+  webSearchEnabled?: boolean;
+  reasoningMode?: 'NORMAL' | 'DEEP';
 }
 
 export interface ConversationHistoryItem {

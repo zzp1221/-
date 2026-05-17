@@ -375,6 +375,9 @@ public class ConversationService {
         params.put("query", request.normalizedMessage());
         params.put("userInput", request.normalizedMessage());
         params.put("imageUrls", request.normalizedImageUrls());
+        params.put("webSearchEnabled", request.isWebSearchEnabled());
+        params.put("reasoningMode", request.resolvedReasoningMode().value());
+        params.put("deepReasoning", "DEEP".equals(request.resolvedReasoningMode().value()));
         params.put("conversationId", conversationId.toString());
         params.put("userId", currentUser.userId().toString());
         params.put("conversationLength", history.size());

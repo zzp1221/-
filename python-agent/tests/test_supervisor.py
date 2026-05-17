@@ -1,3 +1,5 @@
+import asyncio
+
 import pytest
 
 from src.ai_modules.agents.base import PlaceholderAgent
@@ -192,6 +194,19 @@ class _StubProfileAgent(PlaceholderAgent):
             seq=seq + 1,
             payload=ResultChunkPayload(text="画像更新完成"),
         )
+
+
+class _FailingBackgroundProfileAgent(PlaceholderAgent):
+    def __init__(self) -> None:
+        super().__init__("failing profile", "profiling")
+        self.started = asyncio.Event()
+
+    async def run(self, *, params, **kwargs):
+        del params, kwargs
+        self.started.set()
+        raise RuntimeError("画像构建失败")
+        if False:
+            yield
 
 
 class _StubDocumentGeneratorAgent(PlaceholderAgent):
@@ -686,6 +701,38 @@ async def test_supervisor_streams_tutoring_route_with_retrieval_then_tutor() -> 
     assert tutor_progress.dialog_state.next_action == "ask_follow_up"
     tutor_result = next(event for event in events if event.event == "result_chunk" and "联合索引" in event.payload.text)
     assert "联合索引" in tutor_result.payload.text
+
+
+@pytest.mark.asyncio
+async def test_supervisor_runs_tutoring_profile_in_background() -> None:
+    supervisor = PythonAgentSupervisor()
+    profile_agent = _FailingBackgroundProfileAgent()
+    supervisor.agent_registry["query_rewrite"] = _StubRewriteAgent()
+    supervisor.agent_registry["retrieval"] = _StubRetrievalAgent()
+    supervisor.agent_registry["tutor"] = _StubTutorAgent()
+    supervisor.agent_registry["profile"] = profile_agent
+    request = EngineStreamRequest(
+        serviceType="TUTORING",
+        params={
+            "query": "联合索引",
+            "messages": [{"role": "user", "content": "老师，我不太懂联合索引"}],
+            "learningContext": {"course": "数据库原理", "chapter": "索引"},
+            "profile": {"studentLevel": "BASIC"},
+            "conversationId": "conv-tutor-background-profile",
+        },
+        taskId="task-tutor-background-profile",
+        traceId="trace-tutor-background-profile",
+    )
+
+    events = [event async for event in supervisor.stream(request)]
+    await asyncio.wait_for(profile_agent.started.wait(), timeout=1)
+
+    assert events[-1].event == "done"
+    assert any(event.event == "result_chunk" for event in events)
+    assert not any(
+        event.event == "progress" and getattr(event.payload, "stage", "") == "profiling"
+        for event in events
+    )
 
 
 @pytest.mark.asyncio

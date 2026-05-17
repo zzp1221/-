@@ -24,6 +24,8 @@ export interface ChatMessage {
   content: string;
   imageUrls?: string[];
   localImagePreviews?: string[];
+  webSearchEnabled?: boolean;
+  deepReasoningEnabled?: boolean;
 }
 
 export interface PendingChatImage {
