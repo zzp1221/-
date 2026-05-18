@@ -167,13 +167,46 @@ export interface ProfileSnapshot {
   weakPoints: string[];
   preference: string[];
   cognitiveStyle: string;
+  learningPace: string;
+  currentGoal: ProfileCurrentGoal;
+  learningHabits: ProfileLearningHabits;
+  skillMastery: ProfileSkillMastery[];
   confidenceLevel: string;
   confidenceScore: number;
   explanationPreference: string;
-  summaryText: string;
+  inferredRecommendations: string[];
   dimensionScores: ProfileDimensionScore[];
   weakPointRanks: WeakPointRank[];
-  timeline: ProfileTimelinePoint[];
+  history: ProfileHistoryPoint[];
+}
+
+export interface ProfileCurrentGoal {
+  shortTerm: string;
+  midTerm: string;
+  context: string;
+  urgency: string;
+}
+
+export interface ProfileLearningHabits {
+  studyFrequency: string;
+  preferredTime: string;
+  avgSessionDuration: number;
+  noteTaking: boolean;
+  selfTesting: boolean;
+}
+
+export interface ProfileSkillMastery {
+  topic: string;
+  score: number;
+}
+
+export interface ProfileHistoryPoint {
+  version: number;
+  updatedAt: string;
+  confidenceScore: number;
+  knowledgeBase: string;
+  weakPointCount: number;
+  learningPace: string;
 }
 
 export interface ProfileDimensionScore {
@@ -182,22 +215,15 @@ export interface ProfileDimensionScore {
   score: number;
   fullMark: number;
   hint: string;
+  description: string;
 }
 
 export interface WeakPointRank {
   topic: string;
   severity: number;
   lastError: string;
-}
-
-export interface ProfileTimelinePoint {
-  version: number;
-  updatedAt: string;
-  summary: string;
-  confidenceScore: number;
-  knowledgeBase: string;
-  goal: string;
-  leadWeakPoint: string;
+  errorPattern?: string;
+  severityInferred?: boolean;
 }
 
 export interface TaskRunHandlers {

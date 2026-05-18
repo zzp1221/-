@@ -5,7 +5,6 @@ import { Clock3, Compass, History, LayoutGrid, Menu, MessageCirclePlus, Search, 
 import AuthModal from './AuthModal';
 import ThemeToggle from './ThemeToggle';
 
-const ProfileDrawer = lazy(() => import('./ProfileDrawer'));
 const ServiceDrawer = lazy(() => import('./ServiceDrawer'));
 import { authApi, type AuthUser } from '../api/auth';
 import { conversationApi, type ConversationHistoryItem } from '../api/conversation';
@@ -57,6 +56,7 @@ export default function Layout() {
   const navigate = useNavigate();
   const location = useLocation();
   const inEngine = location.pathname.startsWith('/engine');
+  const inProfile = location.pathname.startsWith('/profile');
   const [currentUser, setCurrentUser] = useState<AuthUser | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
   const [defaultTab, setDefaultTab] = useState<AuthTab>('login');
@@ -68,9 +68,7 @@ export default function Layout() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [moreMenuOpen, setMoreMenuOpen] = useState(false);
   const moreMenuRef = useRef<HTMLDivElement>(null);
-  const [profilePanelOpen, setProfilePanelOpen] = useState(false);
   const [servicePanelOpen, setServicePanelOpen] = useState(false);
-  const lastOpenedDrawerRef = useRef<'profile' | 'service' | null>(null);
 
   const isAuthenticated = Boolean(currentUser);
 
@@ -196,17 +194,20 @@ export default function Layout() {
     };
   }, [moreMenuOpen]);
 
-  const handleOpenProfilePanel = useCallback(() => {
+  const handleOpenProfilePage = useCallback(() => {
     setMoreMenuOpen(false);
     closeSidebar();
-    lastOpenedDrawerRef.current = 'profile';
-    setProfilePanelOpen(true);
-  }, []);
+    setServicePanelOpen(false);
+    if (!isAuthenticated) {
+      openAuthModal('login', '?????????');
+      return;
+    }
+    navigate('/profile');
+  }, [isAuthenticated, navigate]);
 
   const handleOpenServicePanel = useCallback(() => {
     setMoreMenuOpen(false);
     closeSidebar();
-    lastOpenedDrawerRef.current = 'service';
     setServicePanelOpen(true);
   }, []);
 
@@ -342,7 +343,7 @@ export default function Layout() {
             type="button"
             onClick={() => setMoreMenuOpen((prev) => !prev)}
             className={`flex w-full items-center gap-2.5 rounded-xl px-3 py-2.5 text-sm font-medium transition-all duration-200 ${
-              moreMenuOpen || inEngine
+              moreMenuOpen || inEngine || inProfile
                 ? 'bg-primary-50 text-primary-700 dark:bg-primary-900/50 dark:text-primary-300'
                 : 'text-slate-600 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800'
             }`}
@@ -361,7 +362,7 @@ export default function Layout() {
               >
                 <button
                   type="button"
-                  onClick={handleOpenProfilePanel}
+                  onClick={handleOpenProfilePage}
                   className="flex w-full items-center gap-2.5 px-4 py-2.5 text-sm text-slate-600 transition-colors hover:bg-primary-50 hover:text-primary-700 dark:text-slate-400 dark:hover:bg-primary-900/50 dark:hover:text-primary-300"
                 >
                   <UserRoundSearch className="h-4 w-4" />
@@ -507,7 +508,7 @@ export default function Layout() {
       </AnimatePresence>
 
       {/* Main Content */}
-      <main className={`flex-1 md:ml-[280px] transition-[margin-right] duration-300 ${profilePanelOpen || servicePanelOpen ? 'md:mr-[520px]' : ''}`}>
+      <main className={`flex-1 md:ml-[280px] transition-[margin-right] duration-300 ${servicePanelOpen ? 'md:mr-[520px]' : ''}`}>
         {/* Top Header */}
         <header className="sticky top-0 z-30 flex items-center justify-between border-b border-slate-200/60 bg-white/80 px-4 py-3 backdrop-blur-xl dark:border-slate-700/60 dark:bg-slate-900/80 md:px-6">
           <div className="flex items-center gap-3">
@@ -542,7 +543,7 @@ export default function Layout() {
         {/* Page Content */}
         <div className="px-4 py-4 md:px-6 md:py-6">
           <motion.div
-            key={inEngine ? 'engine-shell' : 'qna-shell'}
+            key={inProfile ? 'profile-shell' : inEngine ? 'engine-shell' : 'qna-shell'}
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -20 }}
@@ -566,20 +567,11 @@ export default function Layout() {
       />
 
       <Suspense fallback={null}>
-        <ProfileDrawer
-          open={profilePanelOpen}
-          currentUser={currentUser}
-          onClose={() => setProfilePanelOpen(false)}
-          zIndex={lastOpenedDrawerRef.current === 'profile' ? 41 : 40}
-        />
-      </Suspense>
-
-      <Suspense fallback={null}>
         <ServiceDrawer
           open={servicePanelOpen}
           isAuthenticated={isAuthenticated}
           onClose={() => setServicePanelOpen(false)}
-          zIndex={lastOpenedDrawerRef.current === 'service' ? 41 : 40}
+          zIndex={40}
         />
       </Suspense>
     </div>

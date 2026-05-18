@@ -5,6 +5,7 @@ import Layout from './components/Layout';
 import SplashScreen from './components/SplashScreen';
 
 const LearningStudioDemoPage = lazy(() => import('./pages/LearningStudioDemoPage'));
+const ProfilePage = lazy(() => import('./pages/ProfilePage'));
 
 function PageLoader() {
   return (
@@ -33,6 +34,7 @@ function App() {
             <Route path="/" element={<Layout />}>
               <Route index element={<LearningStudioDemoPage mode="qna" />} />
               <Route path="engine" element={<LearningStudioDemoPage mode="engine" />} />
+              <Route path="profile" element={<ProfilePage />} />
             </Route>
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
