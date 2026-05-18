@@ -236,10 +236,9 @@ export const request = {
           const response = await instance.get<T>(url, requestConfig);
           return response.data;
         } catch (error) {
-          const axiosError = error as AxiosError;
           const shouldRetry =
             attempt < retryTimes &&
-            (!axiosError.response || axiosError.response.status >= 500 || axiosError.response.status === 429);
+            isRetryableGetError(error);
           if (!shouldRetry) {
             throw error;
           }
@@ -311,4 +310,14 @@ function wait(ms: number): Promise<void> {
   return new Promise((resolve) => {
     window.setTimeout(resolve, ms);
   });
+}
+
+function isRetryableGetError(error: unknown): boolean {
+  if (error instanceof ApiError) {
+    return error.httpStatus === undefined || error.httpStatus >= 500 || error.httpStatus === 429;
+  }
+  if (axios.isAxiosError(error)) {
+    return !error.response || error.response.status >= 500 || error.response.status === 429;
+  }
+  return false;
 }

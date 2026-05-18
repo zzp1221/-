@@ -187,7 +187,7 @@ class SubjectiveJudgeEvaluatorFactory:
             from src.ai_modules.llms.local_subjective_evaluator import (
                 LocalSubjectiveJudgeEvaluator,
             )
-            return LocalSubjectiveJudgeEvaluator()
+            return LocalSubjectiveJudgeEvaluator(model_path=settings.local_judge_model_path)
         provider_name = settings.resolve_component_provider("judge_llm")
         if settings.provider_ready(provider_name):
             return OpenAICompatibleSubjectiveJudgeEvaluator()

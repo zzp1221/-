@@ -24,7 +24,7 @@ public class SseEmitterService {
 
     private final SmartEngineTaskEventRepository taskEventRepository;
     private final SmartEngineTaskRepository taskRepository;
-    private final ConcurrentHashMap<UUID, CopyOnWriteArrayList<SseEmitter>> emitters = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<UUID, CopyOnWriteArrayList<Subscriber>> emitters = new ConcurrentHashMap<>();
 
     public SseEmitterService(
         SmartEngineTaskEventRepository taskEventRepository,
@@ -34,17 +34,18 @@ public class SseEmitterService {
         this.taskRepository = taskRepository;
     }
 
-    public SseEmitter subscribe(SmartEngineTask task) {
+    public synchronized SseEmitter subscribe(SmartEngineTask task) {
         SseEmitter emitter = new SseEmitter(DEFAULT_TIMEOUT_MS);
-        emitter.onCompletion(() -> removeEmitter(task.getId(), emitter));
-        emitter.onTimeout(() -> removeEmitter(task.getId(), emitter));
-        emitter.onError(ex -> removeEmitter(task.getId(), emitter));
+        Subscriber subscriber = new Subscriber(emitter);
+        emitter.onCompletion(() -> removeEmitter(task.getId(), subscriber));
+        emitter.onTimeout(() -> removeEmitter(task.getId(), subscriber));
+        emitter.onError(ex -> removeEmitter(task.getId(), subscriber));
 
-        replayEvents(task, emitter);
+        replayEvents(task, subscriber);
         SmartEngineTask latestTask = taskRepository.findById(task.getId()).orElse(task);
 
         if (!latestTask.isTerminal()) {
-            emitters.computeIfAbsent(task.getId(), ignored -> new CopyOnWriteArrayList<>()).add(emitter);
+            emitters.computeIfAbsent(task.getId(), ignored -> new CopyOnWriteArrayList<>()).add(subscriber);
         } else {
             emitter.complete();
         }
@@ -52,21 +53,23 @@ public class SseEmitterService {
         return emitter;
     }
 
-    public void publish(TaskStreamEventPayload payload, boolean terminal) {
-        CopyOnWriteArrayList<SseEmitter> taskEmitters = emitters.get(payload.taskId());
+    public synchronized void publish(TaskStreamEventPayload payload, boolean terminal) {
+        CopyOnWriteArrayList<Subscriber> taskEmitters = emitters.get(payload.taskId());
         if (taskEmitters == null || taskEmitters.isEmpty()) {
             return;
         }
 
-        for (SseEmitter emitter : taskEmitters) {
+        for (Subscriber subscriber : taskEmitters) {
             try {
-                send(emitter, payload);
+                if (payload.seq() > subscriber.lastSentSeq) {
+                    send(subscriber, payload);
+                }
                 if (terminal) {
-                    emitter.complete();
+                    subscriber.emitter.complete();
                 }
             } catch (IOException ex) {
-                emitter.completeWithError(ex);
-                removeEmitter(payload.taskId(), emitter);
+                subscriber.emitter.completeWithError(ex);
+                removeEmitter(payload.taskId(), subscriber);
             }
         }
 
@@ -75,11 +78,11 @@ public class SseEmitterService {
         }
     }
 
-    private void replayEvents(SmartEngineTask task, SseEmitter emitter) {
+    private void replayEvents(SmartEngineTask task, Subscriber subscriber) {
         List<SmartEngineTaskEvent> events = taskEventRepository.findByTaskIdOrderByEventSeqAsc(task.getId());
         for (SmartEngineTaskEvent event : events) {
             try {
-                send(emitter, new TaskStreamEventPayload(
+                send(subscriber, new TaskStreamEventPayload(
                     event.getEventType(),
                     task.getId(),
                     task.getTraceId(),
@@ -88,45 +91,55 @@ public class SseEmitterService {
                     event.getEventPayload()
                 ));
             } catch (IOException ex) {
-                emitter.completeWithError(ex);
+                subscriber.emitter.completeWithError(ex);
                 return;
             }
         }
     }
 
-    private void send(SseEmitter emitter, TaskStreamEventPayload payload) throws IOException {
-        emitter.send(SseEmitter.event()
+    private void send(Subscriber subscriber, TaskStreamEventPayload payload) throws IOException {
+        subscriber.emitter.send(SseEmitter.event()
             .name(payload.event())
             .id(String.valueOf(payload.seq()))
             .data(payload));
+        subscriber.lastSentSeq = Math.max(subscriber.lastSentSeq, payload.seq());
     }
 
     /**
      * Force-complete all emitters for a cancelled task and publish the final event.
      */
-    public void cancelTask(UUID taskId, TaskStreamEventPayload cancelPayload) {
-        CopyOnWriteArrayList<SseEmitter> taskEmitters = emitters.remove(taskId);
+    public synchronized void cancelTask(UUID taskId, TaskStreamEventPayload cancelPayload) {
+        CopyOnWriteArrayList<Subscriber> taskEmitters = emitters.remove(taskId);
         if (taskEmitters == null || taskEmitters.isEmpty()) {
             return;
         }
-        for (SseEmitter emitter : taskEmitters) {
+        for (Subscriber subscriber : taskEmitters) {
             try {
-                send(emitter, cancelPayload);
-                emitter.complete();
+                send(subscriber, cancelPayload);
+                subscriber.emitter.complete();
             } catch (IOException ex) {
-                emitter.completeWithError(ex);
+                subscriber.emitter.completeWithError(ex);
             }
         }
     }
 
-    private void removeEmitter(UUID taskId, SseEmitter emitter) {
-        CopyOnWriteArrayList<SseEmitter> taskEmitters = emitters.get(taskId);
+    private void removeEmitter(UUID taskId, Subscriber subscriber) {
+        CopyOnWriteArrayList<Subscriber> taskEmitters = emitters.get(taskId);
         if (taskEmitters == null) {
             return;
         }
-        taskEmitters.remove(emitter);
+        taskEmitters.remove(subscriber);
         if (taskEmitters.isEmpty()) {
             emitters.remove(taskId);
+        }
+    }
+
+    private static final class Subscriber {
+        private final SseEmitter emitter;
+        private int lastSentSeq;
+
+        private Subscriber(SseEmitter emitter) {
+            this.emitter = emitter;
         }
     }
 }

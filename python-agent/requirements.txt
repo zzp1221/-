@@ -16,4 +16,3 @@ opentelemetry-sdk>=1.26,<2.0
 opentelemetry-sdk>=1.26,<2.0
 opentelemetry-exporter-otlp>=1.26,<2.0
 python-pptx>=0.6,<1.0
-llama-cpp-python>=0.3,<0.4

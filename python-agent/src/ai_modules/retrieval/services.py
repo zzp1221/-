@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import re
 from typing import Any, Protocol
 
@@ -13,7 +14,7 @@ from src.ai_modules.models import (
 )
 from src.ai_modules.runtime.ttl_cache import InMemoryTTLCache, stable_cache_key
 
-
+LOGGER = logging.getLogger(__name__)
 _RETRIEVAL_RESULT_CACHE = InMemoryTTLCache()
 
 
@@ -280,7 +281,8 @@ class HybridRetrievalService:
         try:
             adapter = LegacyHybridRetrieverAdapter()
             return adapter.retrieve(rewritten_query)
-        except Exception:
+        except Exception as exc:
+            LOGGER.warning("Hybrid retrieval failed for query %r: %s", rewritten_query, exc)
             return {
                 "query": rewritten_query,
                 "channels": {},

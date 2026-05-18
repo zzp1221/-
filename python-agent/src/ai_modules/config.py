@@ -201,6 +201,10 @@ class Settings(BaseSettings):
     tavily_base_url: str = Field(default="https://api.tavily.com/search", alias="TAVILY_BASE_URL")
 
     enable_local_judge: bool = Field(default=False, alias="ENABLE_LOCAL_JUDGE")
+    local_judge_model_path: str = Field(
+        default="/app/models/judge_model.gguf",
+        alias="LOCAL_JUDGE_MODEL_PATH",
+    )
 
     otel_exporter_otlp_endpoint: str = Field(
         default="",

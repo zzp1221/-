@@ -1,12 +1,8 @@
-import { useEffect, useId, useRef, useState, type DragEvent, type ClipboardEvent, type ReactNode } from 'react';
+import { lazy, Suspense, useEffect, useId, useRef, useState, type DragEvent, type ClipboardEvent, type ReactNode } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Activity, ArrowDown, Brain, BookOpen, CheckCircle2, Clock3, ExternalLink, FileImage, FileText, LoaderCircle, Paperclip, SendHorizontal, Sparkles, Target, TrendingUp, TriangleAlert, X, XCircle } from 'lucide-react';
 import CodeBlock from '../components/CodeBlock';
-import RadarChart from '../components/RadarChart';
 import ScoreProgressBar from '../components/ScoreProgressBar';
-import VideoCard from '../components/VideoCard';
-import MarkdownRenderer from '../components/MarkdownRenderer';
-import MermaidDiagram from '../components/MermaidDiagram';
 import {
   EMPTY_VALUE,
   assessmentDimensionOptions,
@@ -33,6 +29,27 @@ import {
 } from './LearningStudioDemoPage.types';
 import { request } from '../api/request';
 import { normalizeCopyText } from './LearningStudioDemoPage.utils';
+
+const LazyMarkdownRenderer = lazy(() => import('../components/MarkdownRenderer'));
+const LazyMermaidDiagram = lazy(() => import('../components/MermaidDiagram'));
+const LazyRadarChart = lazy(() => import('../components/RadarChart'));
+const LazyVideoCard = lazy(() => import('../components/VideoCard'));
+
+function DeferredMarkdownRenderer(props: { content: string; isStreaming?: boolean }) {
+  return (
+    <Suspense fallback={<span className="text-slate-400 dark:text-slate-500">加载中...</span>}>
+      <LazyMarkdownRenderer {...props} />
+    </Suspense>
+  );
+}
+
+function DeferredMermaidDiagram(props: { chart: string }) {
+  return (
+    <Suspense fallback={<div className="rounded-xl border border-dashed border-slate-200 px-4 py-6 text-sm text-slate-400 dark:border-slate-700 dark:text-slate-500">图表加载中...</div>}>
+      <LazyMermaidDiagram {...props} />
+    </Suspense>
+  );
+}
 
 export function ServiceDynamicForm(props: {
   service: EngineService | null;
@@ -279,7 +296,7 @@ function InlineResourcePanel(props: { resource: InlineResourceView }) {
         {props.resource.explanation ? (
           <div className="mt-4 rounded-xl border border-primary-100 bg-white p-4 dark:border-primary-900 dark:bg-slate-950">
             <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-primary-600 dark:text-primary-400">讲解</div>
-            <MarkdownRenderer content={props.resource.explanation} />
+            <DeferredMarkdownRenderer content={props.resource.explanation} />
           </div>
         ) : null}
       </div>
@@ -295,14 +312,14 @@ function InlineResourcePanel(props: { resource: InlineResourceView }) {
             <div className="mt-1 text-xs text-slate-500 dark:text-slate-400">{props.resource.summary}</div>
           ) : null}
         </div>
-        <MermaidDiagram chart={props.resource.content} />
+        <DeferredMermaidDiagram chart={props.resource.content} />
       </div>
     );
   }
 
   return (
     <div className="mb-4 rounded-xl border border-slate-100 bg-slate-50/50 p-4 text-sm leading-7 text-slate-700 dark:border-slate-800 dark:bg-slate-900/50 dark:text-slate-300">
-      <MarkdownRenderer content={props.resource.content} />
+      <DeferredMarkdownRenderer content={props.resource.content} />
     </div>
   );
 }
@@ -394,7 +411,7 @@ function PracticeQuestionPanel(props: {
               </div>
               {props.judgeResult.specializedAnalysis.markdown ? (
                 <div className="mt-3 text-sm leading-7 text-slate-700 dark:text-slate-300">
-                  <MarkdownRenderer content={props.judgeResult.specializedAnalysis.markdown} />
+                  <DeferredMarkdownRenderer content={props.judgeResult.specializedAnalysis.markdown} />
                 </div>
               ) : null}
             </div>
@@ -503,16 +520,18 @@ export function TaskResultPanel(props: {
             <span className="text-sm font-semibold text-slate-700 dark:text-slate-300">视频结果</span>
           </div>
           <div className="p-4">
-            <VideoCard
-              title={props.videoResult.title}
-              videoUrl={props.videoResult.videoUrl}
-              thumbnailUrl={props.videoResult.thumbnailUrl}
-              duration={props.videoResult.duration}
-              style={props.videoResult.style}
-              knowledgePoint={props.videoResult.knowledgePoint}
-              expiresHint={props.videoResult.expiresHint}
-              fileName={props.videoResult.fileName}
-            />
+            <Suspense fallback={<div className="aspect-video rounded-xl border border-dashed border-slate-200 bg-slate-50 dark:border-slate-700 dark:bg-slate-900" />}>
+              <LazyVideoCard
+                title={props.videoResult.title}
+                videoUrl={props.videoResult.videoUrl}
+                thumbnailUrl={props.videoResult.thumbnailUrl}
+                duration={props.videoResult.duration}
+                style={props.videoResult.style}
+                knowledgePoint={props.videoResult.knowledgePoint}
+                expiresHint={props.videoResult.expiresHint}
+                fileName={props.videoResult.fileName}
+              />
+            </Suspense>
           </div>
         </div>
       ) : null}
@@ -558,7 +577,7 @@ export function TaskResultPanel(props: {
           ) : null}
           {props.taskSummary ? (
             <div className="mb-4 rounded-xl border border-slate-100 bg-slate-50/50 p-4 text-sm leading-7 text-slate-700 dark:border-slate-800 dark:bg-slate-900/50 dark:text-slate-300">
-              <MarkdownRenderer content={props.taskSummary} />
+              <DeferredMarkdownRenderer content={props.taskSummary} />
             </div>
           ) : null}
           {props.serviceResultLines.length > 0 ? (
@@ -763,15 +782,17 @@ export function RealtimeProfile(props: {
               </span>
             </div>
             <div className="grid gap-4 lg:grid-cols-[0.95fr_1.05fr]">
-              <RadarChart
-                data={props.profile.dimensionScores.map((item) => ({
-                  subject: item.subject,
-                  score: item.score,
-                  fullMark: item.fullMark,
-                }))}
-                height={320}
-                className="min-h-[320px]"
-              />
+              <Suspense fallback={<div className="min-h-[320px] rounded-xl border border-dashed border-slate-200 dark:border-slate-700" />}>
+                <LazyRadarChart
+                  data={props.profile.dimensionScores.map((item) => ({
+                    subject: item.subject,
+                    score: item.score,
+                    fullMark: item.fullMark,
+                  }))}
+                  height={320}
+                  className="min-h-[320px]"
+                />
+              </Suspense>
               <div className="space-y-2.5">
                 {props.profile.dimensionScores.map((item, index) => (
                   <DimensionProgressRow key={item.key} item={item} delay={index * 0.06} />
@@ -1037,12 +1058,12 @@ export function ChatPanel({ messages }: { messages: ChatMessage[] }) {
               ) : (
                 <div className="rounded-2xl rounded-bl-md border border-slate-200 bg-white px-4 py-3 text-slate-700 shadow-sm dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300">
                   {msg.content ? (
-                    <MarkdownRenderer
+                    <DeferredMarkdownRenderer
                       content={msg.content}
                       isStreaming={msg.id === messages[messages.length - 1]?.id && isStreaming}
                     />
                   ) : (
-                    <MarkdownRenderer content="" isStreaming={true} />
+                    <DeferredMarkdownRenderer content="" isStreaming={true} />
                   )}
                 </div>
               )}

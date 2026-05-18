@@ -68,7 +68,7 @@ export async function streamSse(url: string, options: StreamSseOptions): Promise
         }
 
         buffer += decoder.decode(value, { stream: true });
-        const eventBlocks = buffer.split('\n\n');
+        const eventBlocks = buffer.split(/\r?\n\r?\n/);
         buffer = eventBlocks.pop() ?? '';
 
         for (const block of eventBlocks) {

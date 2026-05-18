@@ -124,8 +124,8 @@ async def _sandbox_cleanup_loop() -> None:
                         else:
                             entry.unlink()
                         LOGGER.info("Sandbox cleanup: removed %s (age %.0fs)", entry.name, age)
-                except Exception:
-                    pass
+                except OSError as exc:
+                    LOGGER.warning("Sandbox cleanup failed for %s: %s", entry, exc)
         except Exception:
             LOGGER.exception("Sandbox cleanup iteration failed")
 

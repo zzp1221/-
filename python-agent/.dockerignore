@@ -5,6 +5,8 @@ __pycache__
 venv
 tests
 sandbox-temp
+grpo_output
+sft_output
 *.pyc
 *.pyo
 *.pyd
