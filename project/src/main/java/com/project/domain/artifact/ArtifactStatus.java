@@ -1,7 +1,7 @@
 package com.project.domain.artifact;
 
 /**
- * Lifecycle status of a generated artifact download token.
+ * 生成产物下载令牌的生命周期状态。
  */
 public enum ArtifactStatus {
     READY,

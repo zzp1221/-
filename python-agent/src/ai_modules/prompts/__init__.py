@@ -1,4 +1,4 @@
-"""Prompt builders for agent-specific workflows."""
+"""Agent 特定工作流的提示词构建器。"""
 
 from src.ai_modules.prompts.practice_prompts import (
     build_judge_system_prompt,

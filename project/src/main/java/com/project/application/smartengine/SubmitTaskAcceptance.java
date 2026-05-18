@@ -3,7 +3,7 @@ package com.project.application.smartengine;
 import com.project.api.smartengine.dto.SubmitTaskResponse;
 
 /**
- * Result of a task submission attempt, including idempotent replay information.
+ * 任务提交尝试的结果，包含幂等重放信息。
  */
 public record SubmitTaskAcceptance(
     SubmitTaskResponse response,

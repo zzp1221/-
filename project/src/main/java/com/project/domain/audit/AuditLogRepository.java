@@ -3,7 +3,7 @@ package com.project.domain.audit;
 import org.springframework.data.jpa.repository.JpaRepository;
 
 /**
- * Repository for persisted audit logs.
+ * 审计日志持久化仓库。
  */
 public interface AuditLogRepository extends JpaRepository<AuditLog, Long> {
 }

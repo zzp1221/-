@@ -1,4 +1,4 @@
-"""Async + sync MiMo platform client for TTS + Omni multimodal requests."""
+"""异步 + 同步 MiMo 平台客户端，用于 TTS 和 Omni 多模态请求。"""
 
 from __future__ import annotations
 
@@ -17,7 +17,7 @@ LOGGER = logging.getLogger(__name__)
 TRACER = trace.get_tracer(__name__)
 
 class MiMoClient:
-    """Async HTTP client for Xiaomi MiMo platform."""
+    """小米 MiMo 平台的异步 HTTP 客户端。"""
 
     _shared: ClassVar[dict[str, httpx.AsyncClient]] = {}
     _sync_client: ClassVar[httpx.Client | None] = None
@@ -53,7 +53,7 @@ class MiMoClient:
 
     @staticmethod
     def _resolve_base_url(settings, api_key: str) -> str:
-        # Token Plan keys must stay on their regional cluster instead of the public API host.
+        # Token Plan 密钥必须保持在其区域集群上，而不是公共 API 主机。
         if api_key.startswith("tp-") and settings.openai_compatible_base_url:
             return settings.openai_compatible_base_url.rstrip("/")
         if settings.mimo_base_url:
@@ -62,7 +62,7 @@ class MiMoClient:
             return settings.openai_compatible_base_url.rstrip("/")
         return "https://api.xiaomimimo.com/v1"
 
-    # ── TTS ──────────────────────────────────────────────────────
+    # ── TTS 语音合成 ──────────────────────────────────────────────
 
     async def synthesize_speech(
         self,
@@ -72,7 +72,7 @@ class MiMoClient:
         voice: str = "mimo_default",
         audio_format: str = "mp3",
     ) -> bytes:
-        """Call MiMo-V2.5-TTS and return raw audio bytes."""
+        """调用 MiMo-V2.5-TTS 并返回原始音频字节。"""
         if not self.api_key:
             raise RuntimeError("missing mimo api key for tts")
 
@@ -111,7 +111,7 @@ class MiMoClient:
         voice: str = "mimo_default",
         audio_format: str = "mp3",
     ) -> bytes:
-        """Call MiMo-V2.5-TTS synchronously and return raw audio bytes."""
+        """同步调用 MiMo-V2.5-TTS 并返回原始音频字节。"""
         if not self.api_key:
             raise RuntimeError("missing mimo api key for tts")
 
@@ -142,7 +142,7 @@ class MiMoClient:
             raise RuntimeError("mimo tts response missing audio.data")
         return base64.b64decode(audio_b64)
 
-    # ── Omni Chat (async) ───────────────────────────────────────
+    # ── Omni 聊天（异步） ───────────────────────────────────────
 
     async def omni_chat(
         self,
@@ -152,7 +152,7 @@ class MiMoClient:
         max_tokens: int = 8192,
         response_format: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
-        """Call MiMo-V2-Omni for multimodal generation."""
+        """调用 MiMo-V2-Omni 进行多模态生成。"""
         if not self.api_key:
             raise RuntimeError("missing mimo api key for omni")
 
@@ -182,7 +182,7 @@ class MiMoClient:
             raise RuntimeError("mimo omni response missing choices")
         return data
 
-    # ── Omni Chat (sync) ────────────────────────────────────────
+    # ── Omni 聊天（同步） ────────────────────────────────────────
 
     def omni_chat_sync(
         self,
@@ -191,7 +191,7 @@ class MiMoClient:
         temperature: float = 0.3,
         max_tokens: int = 8192,
     ) -> dict[str, Any]:
-        """Synchronous wrapper for omni_chat using httpx.Client."""
+        """使用 httpx.Client 的 omni_chat 同步封装。"""
         if not self.api_key:
             raise RuntimeError("missing mimo api key for omni")
 

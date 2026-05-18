@@ -3,7 +3,7 @@ package com.project.api.smartengine.dto;
 import java.util.UUID;
 
 /**
- * Response returned when an idempotency key replays an existing task.
+ * 幂等键重放已有任务时返回的响应。
  */
 public record IdempotentReplayResponse(
     String code,

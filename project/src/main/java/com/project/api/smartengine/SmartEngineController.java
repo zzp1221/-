@@ -26,7 +26,7 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 import java.util.UUID;
 
 /**
- * External task submission and streaming APIs for the smart-engine workflow.
+ * 智学引擎工作流的任务提交与流式 API。
  */
 @RestController
 @RequestMapping("/api/smart-engine")

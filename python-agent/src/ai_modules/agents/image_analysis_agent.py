@@ -1,4 +1,4 @@
-"""Analyze uploaded learning images with MiMo-V2-Omni and summarize key content."""
+"""使用 MiMo-V2-Omni 分析上传的学习图片并总结关键内容。"""
 
 from __future__ import annotations
 
@@ -17,7 +17,7 @@ from src.ai_modules.runtime import SystemSnapshot
 
 
 class ImageAnalysisAgent(PlaceholderAgent):
-    """Extract learning-relevant information from uploaded images."""
+    """从上传的图片中提取与学习相关的信息。"""
 
     MAX_IMAGE_BYTES = 10 * 1024 * 1024
     ALLOWED_CONTENT_TYPES = {"image/jpeg", "image/png", "image/webp"}

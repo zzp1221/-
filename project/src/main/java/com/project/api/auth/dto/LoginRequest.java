@@ -4,12 +4,10 @@ import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
 
 /**
- * Request payload for password-based login.
+ * 基于密码的登录请求体。
  *
- * <p>Login only validates presence and an upper bound for credentials. The
- * endpoint intentionally does not enforce registration-time password policy so
- * callers always receive a stable authentication result instead of leaking
- * validation details about the submitted password.</p>
+ * <p>登录仅校验凭据的存在性和长度上限。该端点故意不强制执行注册时的密码策略，
+ * 以便调用方始终获得稳定的认证结果，而不会泄露所提交密码的校验细节。</p>
  */
 public record LoginRequest(
     @NotBlank @Size(max = 64) String loginId,

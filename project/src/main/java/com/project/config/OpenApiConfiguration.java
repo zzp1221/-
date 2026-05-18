@@ -7,11 +7,10 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
 /**
- * OpenAPI bootstrap configuration.
+ * OpenAPI 引导配置。
  *
- * <p>The control plane owns all external HTTP contracts, so documenting those
- * contracts from day one reduces front-end/back-end drift during the competition
- * integration phase.</p>
+ * <p>控制平面拥有所有外部 HTTP 契约，从第一天起就记录这些契约
+ * 可以减少比赛集成阶段的前后端偏差。</p>
  */
 @Configuration
 public class OpenApiConfiguration {

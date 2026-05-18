@@ -1,7 +1,7 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Clock3, Compass, History, LayoutGrid, Menu, MessageCirclePlus, Search, Sparkles, UserRoundSearch } from 'lucide-react';
+import { BookOpenCheck, Clock3, Compass, History, LayoutGrid, Menu, MessageCirclePlus, Search, Sparkles, UserRoundSearch } from 'lucide-react';
 import AuthModal from './AuthModal';
 import ThemeToggle from './ThemeToggle';
 
@@ -56,6 +56,7 @@ export default function Layout() {
   const navigate = useNavigate();
   const location = useLocation();
   const inEngine = location.pathname.startsWith('/engine');
+  const inMistakes = location.pathname.startsWith('/mistakes');
   const inProfile = location.pathname.startsWith('/profile');
   const [currentUser, setCurrentUser] = useState<AuthUser | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
@@ -87,7 +88,7 @@ export default function Layout() {
         setCurrentUser(parsed);
       }
     } catch {
-      // Ignore corrupted local cache and let bootstrapAuth resolve it.
+      // 忽略损坏的本地缓存，由 bootstrapAuth 重新解析。
     }
   }, []);
 
@@ -199,7 +200,7 @@ export default function Layout() {
     closeSidebar();
     setServicePanelOpen(false);
     if (!isAuthenticated) {
-      openAuthModal('login', '?????????');
+      openAuthModal('login', '登录后查看个人画像');
       return;
     }
     navigate('/profile');
@@ -211,17 +212,27 @@ export default function Layout() {
     setServicePanelOpen(true);
   }, []);
 
-  const openAuthModal = (tab: AuthTab = 'login', hint = '请先登录') => {
+  const handleOpenMistakeBook = useCallback(() => {
+    setMoreMenuOpen(false);
+    closeSidebar();
+    if (!isAuthenticated) {
+      openAuthModal('login', '登录后查看错题本');
+      return;
+    }
+    navigate('/mistakes');
+  }, [isAuthenticated, navigate]);
+
+  function openAuthModal(tab: AuthTab = 'login', hint = '请先登录') {
     setDefaultTab(tab);
     setAuthHint(hint);
     setModalOpen(true);
-  };
+  }
 
   const handleLogout = async () => {
     try {
       await authApi.logout();
     } catch {
-      // ignore network error on logout cleanup
+      // 忽略退出登录时的网络错误
     } finally {
       clearAuthSession();
       setCurrentUser(null);
@@ -306,32 +317,32 @@ export default function Layout() {
   const closeSidebar = () => setSidebarOpen(false);
 
   const sidebarContent = (
-    <div className="flex h-full flex-col">
+    <div className="app-sidebar-content">
       {/* Logo */}
-      <div className="border-b border-slate-200/60 px-5 py-4 dark:border-slate-700/60">
+      <div className="app-sidebar-logo">
         <NavLink to="/" onClick={closeSidebar} className="flex items-center gap-3">
-          <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary-600 text-white shadow-sm">
+          <div className="app-brand-mark">
             <Sparkles className="h-4 w-4" />
           </div>
           <div>
-            <p className="text-base font-semibold tracking-tight text-slate-900 dark:text-white">智学引擎</p>
-            <p className="text-[11px] text-slate-500 dark:text-slate-400">AI 学习平台</p>
+            <p className="text-base font-semibold text-slate-900 dark:text-white">智学引擎</p>
+            <p className="text-[11px] text-slate-500 dark:text-slate-400">AI学习智能体平台</p>
           </div>
         </NavLink>
       </div>
 
       {/* Navigation */}
-      <div className="px-4 py-4 space-y-1.5">
+      <div className="app-sidebar-nav">
         <NavLink
           to="/"
           onClick={() => {
             handleCreateNewChat();
           }}
           className={({ isActive }) =>
-            `flex w-full items-center gap-2.5 rounded-xl px-3 py-2.5 text-sm font-medium transition-all duration-200 ${
+            `app-sidebar-nav-item ${
               isActive
-                ? 'bg-primary-50 text-primary-700 dark:bg-primary-900/50 dark:text-primary-300'
-                : 'text-slate-600 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800'
+                ? 'is-active'
+                : ''
             }`
           }
         >
@@ -342,11 +353,7 @@ export default function Layout() {
           <button
             type="button"
             onClick={() => setMoreMenuOpen((prev) => !prev)}
-            className={`flex w-full items-center gap-2.5 rounded-xl px-3 py-2.5 text-sm font-medium transition-all duration-200 ${
-              moreMenuOpen || inEngine || inProfile
-                ? 'bg-primary-50 text-primary-700 dark:bg-primary-900/50 dark:text-primary-300'
-                : 'text-slate-600 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800'
-            }`}
+            className={`app-sidebar-nav-item ${moreMenuOpen || inEngine || inMistakes || inProfile ? 'is-active' : ''}`}
           >
             <LayoutGrid className="h-4 w-4" />
             更多功能
@@ -358,7 +365,7 @@ export default function Layout() {
                 animate={{ opacity: 1, y: 0, scale: 1 }}
                 exit={{ opacity: 0, y: -4, scale: 0.96 }}
                 transition={{ duration: 0.15 }}
-                className="absolute left-0 top-full z-50 mt-1 w-full min-w-[200px] overflow-hidden rounded-xl border border-slate-200 bg-white py-1 shadow-xl shadow-slate-200/50 dark:border-slate-700 dark:bg-slate-900 dark:shadow-slate-900/50"
+                className="absolute left-0 top-full z-50 mt-2 w-full min-w-[210px] overflow-hidden rounded-2xl border border-blue-100/80 bg-white/95 py-1.5 shadow-xl shadow-blue-100/70 backdrop-blur-xl dark:border-slate-700 dark:bg-slate-900/95 dark:shadow-slate-900/50"
               >
                 <button
                   type="button"
@@ -376,39 +383,23 @@ export default function Layout() {
                   <Sparkles className="h-4 w-4" />
                   学习服务
                 </button>
+                <button
+                  type="button"
+                  onClick={handleOpenMistakeBook}
+                  className="flex w-full items-center gap-2.5 px-4 py-2.5 text-sm text-slate-600 transition-colors hover:bg-primary-50 hover:text-primary-700 dark:text-slate-400 dark:hover:bg-primary-900/50 dark:hover:text-primary-300"
+                >
+                  <BookOpenCheck className="h-4 w-4" />
+                  错题本
+                </button>
               </motion.div>
             ) : null}
           </AnimatePresence>
         </div>
       </div>
 
-      {/* Auth / User */}
-      <div className="px-4 pb-3">
-        {!isAuthenticated ? (
-          <button
-            type="button"
-            onClick={() => {
-              closeSidebar();
-              openAuthModal('login', '');
-            }}
-            className="w-full rounded-xl bg-primary-600 px-3 py-2.5 text-sm font-medium text-white shadow-sm transition-all hover:bg-primary-700 active:scale-[0.98]"
-          >
-            立即登录
-          </button>
-        ) : (
-          <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 dark:border-slate-700 dark:bg-slate-800/50">
-            <div className="text-[11px] text-slate-400 dark:text-slate-500">当前用户</div>
-            <div className="mt-0.5 text-sm font-medium text-slate-800 dark:text-slate-200">{userDisplayName}</div>
-            <button type="button" onClick={handleLogout} className="mt-1.5 text-xs text-primary-600 hover:text-primary-700 dark:text-primary-400 dark:hover:text-primary-300">
-              退出登录
-            </button>
-          </div>
-        )}
-      </div>
-
       {/* Search */}
-      <div className="px-4 pb-3">
-        <label className="flex items-center rounded-xl border border-slate-200 bg-white px-3 py-2 transition-all focus-within:border-primary-300 focus-within:ring-2 focus-within:ring-primary-500/20 dark:border-slate-700 dark:bg-slate-900 dark:focus-within:border-primary-600">
+      <div className="px-5 pb-4">
+        <label className="flex items-center rounded-2xl border border-blue-100/80 bg-white/70 px-3 py-2 transition-all focus-within:border-primary-300 focus-within:bg-white focus-within:ring-2 focus-within:ring-primary-500/15 dark:border-slate-700 dark:bg-slate-900 dark:focus-within:border-primary-600">
           <Search className="mr-2 h-3.5 w-3.5 shrink-0 text-slate-400" />
           <input
             value={historySearch}
@@ -420,12 +411,14 @@ export default function Layout() {
       </div>
 
       {/* Conversation List */}
-      <div className="mt-2 flex-1 overflow-y-auto scrollbar-thin px-3 pb-4">
-        <div className="mb-2 flex items-center gap-2 px-2 text-[11px] font-medium uppercase tracking-wider text-slate-400 dark:text-slate-500">
+      <div className="mt-1 flex-1 overflow-y-auto scrollbar-thin px-4 pb-4">
+        <div className="mb-2 flex items-center justify-between gap-2 px-1 text-xs font-medium text-slate-500 dark:text-slate-400">
+          <span className="inline-flex items-center gap-2">
           <History className="h-3.5 w-3.5" />
           最近对话
+          </span>
         </div>
-        <div className="space-y-0.5">
+        <div className="space-y-1">
           <AnimatePresence mode="popLayout">
             {filteredConversationHistory.length > 0 ? filteredConversationHistory.map((item, index) => (
               <motion.button
@@ -435,10 +428,10 @@ export default function Layout() {
                 transition={{ delay: Math.min(index * 0.02, 0.3) }}
                 type="button"
                 onClick={() => handleOpenConversation(item)}
-                className={`group w-full truncate rounded-lg px-3 py-2 text-left text-sm transition-all duration-200 ${
+                className={`group w-full truncate rounded-xl px-3 py-2 text-left text-sm transition-all duration-200 ${
                   item.conversationId === activeConversationId
-                    ? 'bg-primary-50 text-primary-700 ring-1 ring-primary-200/50 dark:bg-primary-500/10 dark:text-primary-400 dark:ring-primary-500/20'
-                    : 'text-slate-600 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800'
+                    ? 'bg-white text-primary-700 shadow-sm shadow-blue-100/70 ring-1 ring-blue-100 dark:bg-primary-500/10 dark:text-primary-400 dark:ring-primary-500/20'
+                    : 'text-slate-600 hover:bg-white/70 dark:text-slate-400 dark:hover:bg-slate-800'
                 }`}
                 title={item.lastMessagePreview || item.title}
               >
@@ -460,9 +453,33 @@ export default function Layout() {
         </div>
       </div>
 
+      {/* Auth / User */}
+      <div className="app-sidebar-auth">
+        {!isAuthenticated ? (
+          <button
+            type="button"
+            onClick={() => {
+              closeSidebar();
+              openAuthModal('login', '');
+            }}
+            className="w-full rounded-2xl bg-primary-600 px-3 py-2.5 text-sm font-medium text-white shadow-lg shadow-blue-500/20 transition-all hover:bg-primary-700 active:scale-[0.98]"
+          >
+            立即登录
+          </button>
+        ) : (
+          <div className="rounded-2xl border border-blue-100/80 bg-white/70 px-3 py-2.5 shadow-sm shadow-blue-100/50 dark:border-slate-700 dark:bg-slate-800/50">
+            <div className="text-[11px] text-slate-400 dark:text-slate-500">当前用户</div>
+            <div className="mt-0.5 text-sm font-medium text-slate-800 dark:text-slate-200">{userDisplayName}</div>
+            <button type="button" onClick={handleLogout} className="mt-1.5 text-xs text-primary-600 hover:text-primary-700 dark:text-primary-400 dark:hover:text-primary-300">
+              退出登录
+            </button>
+          </div>
+        )}
+      </div>
+
       {/* Footer */}
-      <div className="border-t border-slate-200/60 px-4 py-3 dark:border-slate-700/60">
-        <div className="flex items-center justify-between rounded-xl bg-slate-50 px-3 py-2 dark:bg-slate-800/50">
+      <div className="border-t border-blue-100/70 px-5 py-4 dark:border-slate-700/60">
+        <div className="flex items-center justify-between rounded-2xl bg-white/70 px-3 py-2 shadow-sm shadow-blue-100/50 dark:bg-slate-800/50">
           <div className="flex items-center gap-2 text-[11px] text-slate-400 dark:text-slate-500">
             <Clock3 className="h-3.5 w-3.5" />
             同步 {lastSyncAt ? new Date(lastSyncAt).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' }) : '--'}
@@ -478,7 +495,7 @@ export default function Layout() {
   return (
     <div className="flex min-h-screen bg-slate-50 text-slate-900 dark:bg-slate-950 dark:text-slate-100">
       {/* Desktop Sidebar */}
-      <aside className="fixed left-0 top-0 z-40 hidden h-screen w-[280px] flex-col border-r border-slate-200/60 bg-white/90 backdrop-blur-xl dark:border-slate-700/60 dark:bg-slate-900/90 md:flex">
+      <aside className="app-sidebar fixed left-0 top-0 z-40 hidden h-screen w-[302px] flex-col md:flex">
         {sidebarContent}
       </aside>
 
@@ -499,7 +516,7 @@ export default function Layout() {
               animate={{ x: 0 }}
               exit={{ x: -300 }}
               transition={{ duration: 0.25, ease: 'easeOut' }}
-              className="fixed left-0 top-0 z-50 flex h-screen w-[280px] flex-col border-r border-slate-200/60 bg-white/95 backdrop-blur-xl dark:border-slate-700/60 dark:bg-slate-900/95 md:hidden"
+              className="app-sidebar fixed left-0 top-0 z-50 flex h-screen w-[302px] max-w-[86vw] flex-col md:hidden"
             >
               {sidebarContent}
             </motion.aside>
@@ -508,9 +525,9 @@ export default function Layout() {
       </AnimatePresence>
 
       {/* Main Content */}
-      <main className={`flex-1 md:ml-[280px] transition-[margin-right] duration-300 ${servicePanelOpen ? 'md:mr-[520px]' : ''}`}>
+      <main className={`app-main flex-1 md:ml-[302px] transition-[margin-right] duration-300 ${servicePanelOpen ? 'md:mr-[520px]' : ''}`}>
         {/* Top Header */}
-        <header className="sticky top-0 z-30 flex items-center justify-between border-b border-slate-200/60 bg-white/80 px-4 py-3 backdrop-blur-xl dark:border-slate-700/60 dark:bg-slate-900/80 md:px-6">
+        <header className="app-topbar sticky top-0 z-30 flex items-center justify-between px-4 md:px-8">
           <div className="flex items-center gap-3">
             <button
               type="button"
@@ -519,14 +536,16 @@ export default function Layout() {
             >
               <Menu className="h-5 w-5" />
             </button>
-            <div className="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-300">
+            <div className="app-breadcrumb">
               <Compass className="h-4 w-4 text-primary-500" />
-              <span className="hidden sm:inline">{inEngine ? '更多功能 / 服务选择面板' : '新对话 / 智能辅导链路'}</span>
-              <span className="sm:hidden">{inEngine ? '服务面板' : '智能对话'}</span>
+              <span className="hidden sm:inline">{inProfile ? '个人画像' : inMistakes ? '错题本' : inEngine ? '更多功能' : '新对话'}</span>
+              <span className="hidden text-slate-300 sm:inline">/</span>
+              <span className="hidden sm:inline">{inProfile ? '真实学习画像' : inMistakes ? '自动错题复习' : inEngine ? '智能学习服务中心' : '智能学习与解题助手'}</span>
+              <span className="sm:hidden">{inProfile ? '个人画像' : inMistakes ? '错题本' : inEngine ? '服务面板' : '智能对话'}</span>
             </div>
           </div>
-          <div className="flex items-center gap-3">
-            <span className="hidden text-[11px] text-slate-400 dark:text-slate-500 lg:inline">API 已连接</span>
+          <div className="flex items-center gap-2 md:gap-3">
+            <span className="app-api-chip hidden lg:inline-flex">API 调用</span>
             <ThemeToggle />
             {!isAuthenticated ? (
               <button
@@ -541,9 +560,9 @@ export default function Layout() {
         </header>
 
         {/* Page Content */}
-        <div className="px-4 py-4 md:px-6 md:py-6">
+        <div className={inEngine || inMistakes || inProfile ? 'px-4 py-4 md:px-8 md:py-6' : ''}>
           <motion.div
-            key={inProfile ? 'profile-shell' : inEngine ? 'engine-shell' : 'qna-shell'}
+            key={inProfile ? 'profile-shell' : inMistakes ? 'mistake-shell' : inEngine ? 'engine-shell' : 'qna-shell'}
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -20 }}

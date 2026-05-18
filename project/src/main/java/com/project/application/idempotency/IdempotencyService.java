@@ -4,11 +4,11 @@ import java.util.Optional;
 import java.util.UUID;
 
 /**
- * Port for idempotency storage and reservation.
+ * 幂等存储与预留端口。
  *
- * <p>The interface isolates the orchestration layer from the underlying storage
- * engine so the implementation can move between in-memory, Redis, or other
- * distributed coordination backends without changing business workflows.</p>
+ * <p>该接口将编排层与底层存储引擎隔离，
+ * 使得实现可在内存、Redis 或其他分布式协调后端之间切换，
+ * 而无需更改业务工作流。</p>
  */
 public interface IdempotencyService {
 

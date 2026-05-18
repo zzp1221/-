@@ -1,4 +1,4 @@
-"""Path planning agent backed by AgentCoreLoop and learning-plan persistence."""
+"""基于 AgentCoreLoop 和学习计划持久化的路径规划 Agent。"""
 
 from __future__ import annotations
 
@@ -14,7 +14,6 @@ from src.ai_modules.memory import (
 )
 from src.ai_modules.models import (
     LearningPlanPayload,
-    LearningPlanStep,
     ProgressPayload,
     ProgressSSEEvent,
     ResultChunkPayload,
@@ -28,7 +27,7 @@ from src.ai_modules.runtime import (
 
 
 class PathPlanningAgent(PlaceholderAgent):
-    """Produce a sequenced learning plan from evaluation and profile context."""
+    """根据评估和画像上下文生成有序学习计划。"""
 
     def __init__(
         self,

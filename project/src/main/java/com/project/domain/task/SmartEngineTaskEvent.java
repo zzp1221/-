@@ -18,7 +18,7 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 
 /**
- * Persistent event emitted during smart-engine task execution.
+ * 智学引擎任务执行过程中发出的持久化事件。
  */
 @Entity
 @Table(name = "smart_engine_task_event", schema = "app")

@@ -3,7 +3,7 @@ package com.project.application.conversation;
 import java.util.UUID;
 
 /**
- * Lightweight teaching-state metadata emitted alongside conversation SSE events.
+ * 与会话 SSE 事件一起发出的轻量级教学状态元数据。
  */
 public record ConversationDialogState(
     UUID conversationId,

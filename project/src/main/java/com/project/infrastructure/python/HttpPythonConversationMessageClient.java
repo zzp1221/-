@@ -14,6 +14,8 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.time.OffsetDateTime;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -21,11 +23,13 @@ import java.util.Map;
 import java.util.UUID;
 
 /**
- * HTTP client for transcript persistence APIs exposed by the Python agent.
+ * Python Agent 对话记录持久化 API 的 HTTP 客户端。
  */
 @Component
 public class HttpPythonConversationMessageClient implements PythonConversationMessageClient {
 
+    private static final String INTERNAL_TOKEN_HEADER = "X-Zhixue-Internal-Token";
+    private static final Path INTERNAL_TOKEN_FILE = Path.of("/run/secrets/zhixue-python-agent-internal-token");
     private static final TypeReference<List<PythonConversationMessagePayload>> LIST_TYPE = new TypeReference<>() {
     };
 
@@ -62,6 +66,7 @@ public class HttpPythonConversationMessageClient implements PythonConversationMe
             HttpRequest request = HttpRequest.newBuilder()
                 .uri(URI.create(appProperties.getPythonAgent().getBaseUrl() + "/internal/conversations/" + conversationId + "/messages"))
                 .header("Content-Type", "application/json")
+                .header(INTERNAL_TOKEN_HEADER, internalToken())
                 .timeout(appProperties.getPythonAgent().getReadTimeout())
                 .POST(HttpRequest.BodyPublishers.ofString(objectMapper.writeValueAsString(payload)))
                 .build();
@@ -99,6 +104,7 @@ public class HttpPythonConversationMessageClient implements PythonConversationMe
             HttpRequest request = HttpRequest.newBuilder()
                 .uri(uri)
                 .header("Accept", "application/json")
+                .header(INTERNAL_TOKEN_HEADER, internalToken())
                 .timeout(appProperties.getPythonAgent().getReadTimeout())
                 .GET()
                 .build();
@@ -132,5 +138,24 @@ public class HttpPythonConversationMessageClient implements PythonConversationMe
         List<String> imageUrls,
         OffsetDateTime createdAt
     ) {
+    }
+
+    private String internalToken() {
+        String token = appProperties.getPythonAgent().getInternalToken();
+        if (token == null || token.isBlank()) {
+            token = readInternalTokenFile();
+        }
+        if (token == null || token.isBlank()) {
+            throw new IllegalStateException("PYTHON_AGENT_INTERNAL_TOKEN must be configured");
+        }
+        return token.trim();
+    }
+
+    private String readInternalTokenFile() {
+        try {
+            return Files.exists(INTERNAL_TOKEN_FILE) ? Files.readString(INTERNAL_TOKEN_FILE, StandardCharsets.UTF_8) : "";
+        } catch (IOException ex) {
+            throw new IllegalStateException("Failed to read Python agent internal token file", ex);
+        }
     }
 }

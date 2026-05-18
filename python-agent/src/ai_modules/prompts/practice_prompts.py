@@ -1,4 +1,4 @@
-"""Prompt builders for Practice and Judge workflows."""
+"""练习和判题工作流的提示词构建器。"""
 
 from __future__ import annotations
 
@@ -6,7 +6,7 @@ from src.ai_modules.runtime import SystemSnapshot
 
 
 def build_practice_system_prompt(snapshot: SystemSnapshot) -> str:
-    """Return the system prompt for the practice-generation workflow."""
+    """返回练习生成工作流的系统提示词。"""
 
     return "\n".join(
         [
@@ -31,7 +31,7 @@ def build_practice_system_prompt(snapshot: SystemSnapshot) -> str:
 
 
 def build_judge_system_prompt(snapshot: SystemSnapshot) -> str:
-    """Return the system prompt for the judging workflow."""
+    """返回判题工作流的系统提示词。"""
 
     return "\n".join(
         [

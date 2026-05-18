@@ -4,7 +4,7 @@ import { Check, Copy } from 'lucide-react';
 
 let syntaxHighlighterLoader: Promise<{ default: any }> | null = null;
 
-// Lazy load the light build and register only common languages used in this project.
+// 懒加载轻量版语法高亮器，仅注册项目中常用的语言。
 const SyntaxHighlighter: any = lazy(() =>
   (syntaxHighlighterLoader ??= Promise.all([
     import('react-syntax-highlighter/dist/esm/prism-light'),

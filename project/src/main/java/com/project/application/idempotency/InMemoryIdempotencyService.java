@@ -6,16 +6,15 @@ import org.springframework.stereotype.Service;
 
 import java.time.Duration;
 import java.time.Instant;
-import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * Lightweight idempotency registry used by the control plane.
+ * 控制平面使用的轻量级幂等注册表。
  *
- * <p>The implementation is intentionally interface-friendly and can be replaced
- * by Redis without affecting controllers or orchestrator services.</p>
+ * <p>该实现有意保持接口友好，可被 Redis 替换
+ * 而不影响控制器或编排服务。</p>
  */
 @Service
 @ConditionalOnMissingBean(name = "stringRedisTemplate")

@@ -1,4 +1,4 @@
-"""Generic multi-step agent execution loop."""
+"""通用多步智能体执行循环。"""
 
 from __future__ import annotations
 
@@ -16,7 +16,7 @@ from src.ai_modules.runtime.tool_registry import ToolRegistry
 
 
 class ToolCall(BaseModel):
-    """A tool invocation requested by the model."""
+    """模型请求的工具调用。"""
 
     id: str
     name: str
@@ -24,7 +24,7 @@ class ToolCall(BaseModel):
 
 
 class AssistantTurn(BaseModel):
-    """Structured model turn returned by the LLM adapter."""
+    """LLM 适配器返回的结构化模型轮次。"""
 
     content: str = ""
     tool_calls: list[ToolCall] = Field(default_factory=list)
@@ -40,7 +40,7 @@ class AssistantTurn(BaseModel):
 
 
 class ToolExecutionResult(BaseModel):
-    """Normalized tool output stored in the conversation state."""
+    """存储在会话状态中的标准化工具输出。"""
 
     tool_call_id: str = Field(alias="toolCallId")
     tool_name: str = Field(alias="toolName")
@@ -60,7 +60,7 @@ class ToolExecutionResult(BaseModel):
 
 
 class AgentLoopResult(BaseModel):
-    """Final result of a completed agent loop."""
+    """已完成的智能体循环的最终结果。"""
 
     final_text: str = Field(alias="finalText")
     iterations: int
@@ -71,7 +71,7 @@ class AgentLoopResult(BaseModel):
 
 
 class SupportsToolCallingLLM(Protocol):
-    """LLM protocol expected by AgentCoreLoop."""
+    """AgentCoreLoop 所要求的 LLM 协议。"""
 
     async def complete(
         self,
@@ -83,11 +83,11 @@ class SupportsToolCallingLLM(Protocol):
 
 
 class MaxIterationsExceededError(RuntimeError):
-    """Raised when the agent loop exceeds the configured iteration limit."""
+    """当智能体循环超出配置的迭代上限时抛出。"""
 
 
 class AgentCoreLoop:
-    """Run a tool-aware LLM loop until a final answer is produced."""
+    """运行支持工具调用的 LLM 循环，直到产生最终回答。"""
 
     def __init__(
         self,
@@ -170,8 +170,8 @@ class AgentCoreLoop:
                     toolResults=tool_results,
                 )
 
-            # Early termination: if all registered tools have been called and
-            # the LLM is repeating tool calls, force stop with the last result.
+            # 提前终止：如果所有已注册工具都已被调用过，
+            # 且 LLM 在重复调用工具，则强制使用最后一个结果停止。
             current_call_names = {tc.name for tc in assistant_turn.tool_calls}
             if len(all_registered_tools) > 1 and all_registered_tools.issubset(called_tool_names):
                 if current_call_names.issubset(called_tool_names):
@@ -255,7 +255,7 @@ class AgentCoreLoop:
                             output=output,
                             isError=False,
                         )
-                    except Exception as exc:  # pragma: no cover - defensive branch
+                    except Exception as exc:  # pragma: no cover - 防御性分支
                         if self.recovery_engine is not None:
                             recovered_output = (
                                 await self.recovery_engine.recover_tool_execution_error(

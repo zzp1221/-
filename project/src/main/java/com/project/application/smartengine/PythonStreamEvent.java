@@ -4,7 +4,7 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 
 /**
- * Canonical event emitted by the Python runtime and consumed by the Java control plane.
+ * 由 Python 运行时发出、Java 控制平面消费的规范事件。
  */
 public record PythonStreamEvent(
     String eventType,

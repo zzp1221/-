@@ -1,4 +1,4 @@
-"""Prompt builders for Profile Agent."""
+"""画像 Agent 的提示词构建器。"""
 
 from __future__ import annotations
 
@@ -6,7 +6,7 @@ from src.ai_modules.runtime import SystemSnapshot
 
 
 def build_profile_system_prompt(snapshot: SystemSnapshot) -> str:
-    """Return the system prompt for the learner profile extraction workflow."""
+    """返回学习者画像提取工作流的系统提示词。"""
 
     return "\n".join(
         [

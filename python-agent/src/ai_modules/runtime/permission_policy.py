@@ -1,4 +1,4 @@
-"""Permission policy for tool execution authorization."""
+"""工具执行授权的权限策略。"""
 
 from __future__ import annotations
 
@@ -10,7 +10,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 
 class PermissionLevel(IntEnum):
-    """Ordered permission levels for agents and tools."""
+    """智能体和工具的有序权限等级。"""
 
     READ_ONLY = 1
     CONTENT_GENERATE = 2
@@ -20,11 +20,11 @@ class PermissionLevel(IntEnum):
 
 
 class PermissionRule(BaseModel):
-    """Pattern-based rule for authorization decisions."""
+    """基于模式匹配的授权决策规则。"""
 
     tool_name: str = Field(alias="toolName")
     pattern: str | None = None
-    action: Literal["allow", "deny"]  # ask deferred to later step
+    action: Literal["allow", "deny"]  # ask 动作延迟到后续步骤处理
 
     model_config = ConfigDict(populate_by_name=True)
 
@@ -39,7 +39,7 @@ class PermissionRule(BaseModel):
 
 
 class PermissionDecision(BaseModel):
-    """Resolved authorization decision."""
+    """已解析的授权决策。"""
 
     allowed: bool
     reason: str
@@ -49,7 +49,7 @@ class PermissionDecision(BaseModel):
 
 
 class PermissionPolicy:
-    """Authorize tool execution using ordered rules and level checks."""
+    """使用有序规则和等级检查来授权工具执行。"""
 
     def __init__(
         self,

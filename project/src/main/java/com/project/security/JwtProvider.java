@@ -15,11 +15,10 @@ import java.util.Map;
 import java.util.UUID;
 
 /**
- * JWT issuing and parsing service for the control plane.
+ * 控制平面的 JWT 签发与解析服务。
  *
- * <p>The provider keeps token creation isolated from controllers so future
- * changes such as refresh-token rotation or asymmetric signing can be added
- * without rewriting endpoint logic.</p>
+ * <p>将令牌创建逻辑与控制器隔离，便于后续扩展刷新令牌轮换、
+ * 非对称签名等功能，无需重写端点逻辑。</p>
  */
 @Component
 public class JwtProvider {
@@ -97,7 +96,7 @@ public class JwtProvider {
                     return Keys.hmacShaKeyFor(decoded);
                 }
             } catch (IllegalArgumentException ignored) {
-                // Fall back to raw bytes for plain text development secrets.
+                // 回退到原始字节处理明文开发密钥。
             }
         }
 

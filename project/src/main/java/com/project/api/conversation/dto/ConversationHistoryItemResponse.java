@@ -4,7 +4,7 @@ import java.time.OffsetDateTime;
 import java.util.UUID;
 
 /**
- * Sidebar conversation history item exposed to the frontend shell.
+ * 暴露给前端外壳的侧边栏会话历史项。
  */
 public record ConversationHistoryItemResponse(
     UUID conversationId,

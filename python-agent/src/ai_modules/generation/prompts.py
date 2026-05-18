@@ -1,4 +1,4 @@
-"""Prompt builders for structured resource generation."""
+"""结构化资源生成的提示词构建器。"""
 
 from __future__ import annotations
 
@@ -6,7 +6,7 @@ from typing import Any
 
 
 def build_document_system_prompt() -> str:
-    """Return the system prompt for structured teaching-content generation."""
+    """返回结构化教学内容生成的系统提示词。"""
 
     return (
         "你是一个严谨的教学内容生成助手。"
@@ -28,7 +28,7 @@ def build_document_user_prompt(
     section_plans: list[dict[str, Any]],
     sources: list[dict[str, Any]],
 ) -> str:
-    """Build the user prompt for the structured document generation request."""
+    """构建结构化文档生成请求的用户提示词。"""
 
     source_lines = [
         (

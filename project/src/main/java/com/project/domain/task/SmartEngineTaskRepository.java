@@ -10,7 +10,7 @@ import java.util.Optional;
 import java.util.UUID;
 
 /**
- * Repository for task lifecycle persistence.
+ * 任务生命周期持久化仓库。
  */
 public interface SmartEngineTaskRepository extends JpaRepository<SmartEngineTask, UUID> {
 

@@ -16,11 +16,11 @@ import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 
 /**
- * Security configuration for the Java control plane.
+ * Java 控制平面的安全配置。
  *
- * <p>The design keeps the application stateless and centered around JWT bearer
- * tokens. Public endpoints stay narrowly scoped to health checks, API docs, and
- * authentication entry points; every business API is protected by default.</p>
+ * <p>设计上保持应用无状态，以 JWT Bearer 令牌为核心。
+ * 公开端点严格限定于健康检查、API 文档和认证入口；
+ * 所有业务 API 默认受保护。</p>
  */
 @Configuration
 public class SecurityConfiguration {
@@ -43,6 +43,7 @@ public class SecurityConfiguration {
                 .requestMatchers(
                     "/actuator/health",
                     "/actuator/info",
+                    "/api/health",
                     "/error",
                     "/api-docs/**",
                     "/swagger-ui.html",

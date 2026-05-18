@@ -1,4 +1,4 @@
-"""Rule-based LLM adapter for Profile Agent tool orchestration."""
+"""用于画像 Agent 工具编排的基于规则的 LLM 适配器。"""
 
 from __future__ import annotations
 
@@ -8,7 +8,7 @@ from src.ai_modules.runtime import AssistantTurn, ToolCall
 
 
 class RuleBasedProfileLLM:
-    """Deterministic orchestrator that exercises the Profile Agent tool chain."""
+    """执行画像 Agent 工具链的确定性编排器。"""
 
     async def complete(
         self,

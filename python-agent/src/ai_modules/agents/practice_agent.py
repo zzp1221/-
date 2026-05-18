@@ -1,4 +1,4 @@
-"""Practice agent backed by AgentCoreLoop and structured question batch output."""
+"""基于 AgentCoreLoop 和结构化题批输出的练习 Agent。"""
 
 from __future__ import annotations
 
@@ -22,10 +22,11 @@ from src.ai_modules.prompts import build_practice_system_prompt
 from src.ai_modules.runtime import (
     SystemSnapshot,
 )
+from src.ai_modules.runtime.skill_loader import SkillPromptLoader
 
 
 class PracticeAgent(PlaceholderAgent):
-    """Generate practice questions aligned with learner context."""
+    """根据学习者上下文生成练习题。"""
 
     def __init__(
         self,
@@ -40,9 +41,14 @@ class PracticeAgent(PlaceholderAgent):
         self.fallback_practice_store = InMemoryPracticeStore()
         self.question_generator = question_generator or PracticeQuestionGenerator()
         self.heartbeat_interval_seconds = heartbeat_interval_seconds
+        self.skill_loader = SkillPromptLoader()
 
     def system_prompt(self, snapshot: SystemSnapshot) -> str:
-        return build_practice_system_prompt(snapshot)
+        return self.skill_loader.build_system_prompt(
+            skill_name="practice",
+            snapshot=snapshot,
+            fallback_prompt=build_practice_system_prompt(snapshot),
+        )
 
     async def run(
         self,
@@ -128,13 +134,13 @@ class PracticeAgent(PlaceholderAgent):
         if existing_batch is not None:
             return existing_batch
 
-        # Step 1: Generate questions (1 LLM call)
+        # 步骤 1: 生成题目（1 次 LLM 调用）
         raw_batch = await self._tool_generate_questions(tool_input={}, params=params)
 
-        # Step 2: Validate (deterministic)
+        # 步骤 2: 验证（确定性操作）
         validated = self._tool_validate_question(raw_batch)
 
-        # Step 3: Format (deterministic)
+        # 步骤 3: 格式化（确定性操作）
         return self._tool_format_question_batch(tool_input=validated, params=params)
 
     async def _tool_generate_questions(

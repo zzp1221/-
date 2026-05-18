@@ -6,7 +6,7 @@ import com.fasterxml.jackson.annotation.JsonValue;
 import java.util.Arrays;
 
 /**
- * Reasoning depth requested by a conversation turn.
+ * 对话轮次请求的推理深度。
  */
 public enum ConversationReasoningMode {
     NORMAL,

@@ -1,4 +1,4 @@
-"""Prompt builders for retrieval, evaluation, and path-planning agents."""
+"""检索、评估和路径规划 Agent 的提示词构建器。"""
 
 from __future__ import annotations
 

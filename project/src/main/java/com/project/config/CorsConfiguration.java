@@ -8,10 +8,10 @@ import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 import java.util.List;
 
 /**
- * Configures cross-origin access for the browser-facing control plane.
+ * 配置面向浏览器的跨域访问策略。
  *
- * <p>The configuration is property-driven so the runtime can extend the allowed
- * origins list through environment variables without code changes.</p>
+ * <p>配置由属性驱动，运行时可通过环境变量扩展允许的源列表，
+ * 无需修改代码。</p>
  */
 @Configuration
 public class CorsConfiguration {

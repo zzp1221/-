@@ -6,7 +6,7 @@ import java.util.Map;
 import java.util.UUID;
 
 /**
- * Current user profile view for front-end rendering.
+ * 用于前端渲染的当前用户画像视图。
  */
 public record UserProfileResponse(
     UUID userId,

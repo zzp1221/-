@@ -21,7 +21,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
- * Authentication API exposed by the Java control plane.
+ * Java 控制平面暴露的认证 API。
  */
 @RestController
 @RequestMapping("/api/auth")
@@ -51,8 +51,8 @@ public class AuthController {
     @PostMapping("/logout")
     @Operation(summary = "Logout current user")
     public ResponseEntity<ApiMessageResponse> logout(Authentication authentication) {
-        // Logout is stateless in the current JWT design, but the action is still audited.
-        // Token invalidation/refresh rotation can be added later without changing the API contract.
+        // 在当前 JWT 设计中退出登录是无状态的，但该操作仍会被审计。
+        // 后续可在不改变 API 契约的前提下添加令牌失效/刷新轮换机制。
         JwtAuthenticatedUser principal = AuthenticatedUserResolver.require(authentication);
         auditService.log("AUTH", "INFO", "用户退出登录", principal.userId(), null, java.util.Map.of());
         return ResponseEntity.ok(new ApiMessageResponse("SUCCESS", "退出成功"));

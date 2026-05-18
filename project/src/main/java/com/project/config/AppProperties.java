@@ -7,12 +7,12 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * Centralized application properties for the Java control plane.
+ * Java 控制平面的集中式应用属性。
  *
- * <p>This object groups infrastructure-facing settings so later modules can inject a
- * single configuration aggregate instead of scattering raw {@code @Value} lookups.
- * Nested classes are designed as extension points for future modules such as JWT
- * issuance, Python streaming clients, and cross-origin access control.</p>
+ * <p>将面向基础设施的配置聚合到一个对象中，后续模块只需注入
+ * 单一配置聚合体，而非分散的 {@code @Value} 查找。
+ * 嵌套类设计为扩展点，支持 JWT 签发、Python 流式客户端、
+ * 跨域访问控制等未来模块。</p>
  */
 @ConfigurationProperties(prefix = "app")
 public class AppProperties {
@@ -55,6 +55,7 @@ public class AppProperties {
 
     public static class PythonAgent {
         private String baseUrl = "http://localhost:8000";
+        private String internalToken = "";
         private Duration connectTimeout = Duration.ofSeconds(5);
         private Duration readTimeout = Duration.ofMinutes(10);
         private int maxRetries = 2;
@@ -66,6 +67,14 @@ public class AppProperties {
 
         public void setBaseUrl(String baseUrl) {
             this.baseUrl = baseUrl;
+        }
+
+        public String getInternalToken() {
+            return internalToken;
+        }
+
+        public void setInternalToken(String internalToken) {
+            this.internalToken = internalToken;
         }
 
         public Duration getConnectTimeout() {

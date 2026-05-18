@@ -1,4 +1,4 @@
-"""Application configuration loaded from environment variables."""
+"""从环境变量加载的应用配置。"""
 
 from functools import lru_cache
 from pathlib import Path
@@ -13,7 +13,7 @@ PROJECT_ROOT = PYTHON_AGENT_ROOT.parent
 
 
 class LLMComponentOverride(BaseModel):
-    """Optional provider/model override for a single LLM-backed component."""
+    """单个 LLM 组件的可选提供商/模型覆盖。"""
 
     provider: str = ""
     model: str = ""
@@ -22,7 +22,7 @@ class LLMComponentOverride(BaseModel):
 
 
 class Settings(BaseSettings):
-    """Runtime settings for the Python agent service."""
+    """Python Agent 服务的运行时设置。"""
 
     model_config = SettingsConfigDict(
         env_file=(
@@ -38,6 +38,7 @@ class Settings(BaseSettings):
     app_env: str = Field(default="development", alias="APP_ENV")
     app_host: str = Field(default="0.0.0.0", alias="APP_HOST")
     app_port: int = Field(default=8000, alias="APP_PORT")
+    python_agent_internal_token: str = Field(default="", alias="PYTHON_AGENT_INTERNAL_TOKEN")
 
     model_provider: str = Field(default="openai_compatible", alias="MODEL_PROVIDER")
     active_provider: str = Field(default="", alias="ACTIVE_PROVIDER")
@@ -231,7 +232,7 @@ class Settings(BaseSettings):
         return self.openai_compatible_base_url
 
     def selected_provider_name(self) -> str:
-        """Return the active provider with compatibility fallback to MODEL_PROVIDER."""
+        """返回活跃提供商，兼容回退到 MODEL_PROVIDER。"""
 
         return self.normalize_provider_name(self.active_provider or self.model_provider or "openai_compatible")
 
@@ -240,7 +241,7 @@ class Settings(BaseSettings):
         return fallback or None
 
     def any_provider_ready(self) -> bool:
-        """Return whether any configured provider has usable credentials."""
+        """返回是否有任何已配置的提供商拥有可用凭证。"""
 
         return any(
             self.provider_ready(provider_name)
@@ -248,7 +249,7 @@ class Settings(BaseSettings):
         )
 
     def runtime_provider_name(self) -> str:
-        """Return the provider that should actually be used at runtime."""
+        """返回运行时实际应使用的提供商。"""
 
         selected = self.selected_provider_name()
         fallback = self.selected_fallback_provider_name()
@@ -264,7 +265,7 @@ class Settings(BaseSettings):
         return selected
 
     def build_default_model_routing_config(self) -> ModelRoutingConfig:
-        """Build the default logical-model routing config from env values."""
+        """从环境变量构建默认的逻辑模型路由配置。"""
 
         return ModelRoutingConfig(
             activeProvider=self.selected_provider_name(),
@@ -335,7 +336,7 @@ class Settings(BaseSettings):
         )
 
     def model_routing_config(self) -> ModelRoutingConfig:
-        """Load provider routing config from YAML when available, else use defaults."""
+        """可用时从 YAML 加载提供商路由配置，否则使用默认值。"""
 
         config_path = self.model_routing_config_path.strip()
         if not config_path:
@@ -379,7 +380,7 @@ class Settings(BaseSettings):
         logical_model_name: str,
         provider_name: str | None = None,
     ) -> str:
-        """Resolve a logical model name for the selected provider."""
+        """为选定的提供商解析逻辑模型名称。"""
 
         routing = self.model_routing_config()
         return routing.resolve_model(
@@ -388,13 +389,13 @@ class Settings(BaseSettings):
         )
 
     def provider_endpoint_config(self, provider_name: str | None = None) -> ProviderEndpointConfig:
-        """Return endpoint config for the selected or specified provider."""
+        """返回选定或指定提供商的端点配置。"""
 
         routing = self.model_routing_config()
         return routing.providers[self.normalize_provider_name(provider_name or self.runtime_provider_name())]
 
     def provider_api_key(self, provider_name: str | None = None) -> str:
-        """Return the configured API key string for a provider."""
+        """返回提供商配置的 API 密钥字符串。"""
 
         provider = self.normalize_provider_name(provider_name or self.runtime_provider_name())
         if provider == "spark":
@@ -404,7 +405,7 @@ class Settings(BaseSettings):
         return self.openai_compatible_api_key
 
     def provider_ready(self, provider_name: str | None = None) -> bool:
-        """Check whether required credentials for a provider are present."""
+        """检查提供商所需的凭证是否存在。"""
 
         provider = self.normalize_provider_name(provider_name or self.runtime_provider_name())
         if provider == "spark":
@@ -414,7 +415,7 @@ class Settings(BaseSettings):
         return bool(self.openai_compatible_api_key)
 
     def llm_component_override(self, component_name: str) -> LLMComponentOverride:
-        """Return the override block for a named LLM component."""
+        """返回指定 LLM 组件的覆盖配置块。"""
 
         override = getattr(self, component_name, None)
         if isinstance(override, LLMComponentOverride):
@@ -422,7 +423,7 @@ class Settings(BaseSettings):
         return LLMComponentOverride()
 
     def resolve_component_provider(self, component_name: str) -> str:
-        """Resolve the provider to use for a specific LLM component."""
+        """解析特定 LLM 组件应使用的提供商。"""
 
         override = self.llm_component_override(component_name)
         requested_provider = self.normalize_provider_name(override.provider)
@@ -437,7 +438,7 @@ class Settings(BaseSettings):
         default_logical_model: str,
         provider_name: str | None = None,
     ) -> str:
-        """Resolve a component model override, accepting logical or literal names."""
+        """解析组件模型覆盖，接受逻辑名称或字面名称。"""
 
         override = self.llm_component_override(component_name)
         resolved_provider = self.normalize_provider_name(provider_name or self.resolve_component_provider(component_name))
@@ -451,7 +452,7 @@ class Settings(BaseSettings):
         return configured_model
 
     def postgres_connect_kwargs(self) -> dict[str, Any]:
-        """Return PostgreSQL connection kwargs for psycopg2."""
+        """返回 psycopg2 的 PostgreSQL 连接参数。"""
 
         return {
             "dbname": self.postgres_db,
@@ -463,12 +464,12 @@ class Settings(BaseSettings):
 
 @lru_cache(maxsize=1)
 def get_settings() -> Settings:
-    """Return a cached settings instance."""
+    """返回缓存的配置实例。"""
 
     return Settings()
 
 
 def get_sandbox_root() -> Path:
-    """Return the configured sandbox directory as a Path."""
+    """返回配置的沙箱目录路径。"""
 
     return Path(get_settings().sandbox_root)

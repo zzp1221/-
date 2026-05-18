@@ -16,7 +16,7 @@ import java.util.LinkedHashMap;
 import java.util.UUID;
 
 /**
- * Read-only service for the current user profile projection.
+ * 当前用户画像投影的只读服务。
  */
 @Service
 public class UserProfileQueryService {

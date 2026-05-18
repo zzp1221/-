@@ -1,4 +1,4 @@
-"""Generation agents that write deterministic assets into sandbox storage."""
+"""将确定性资源写入沙箱存储的生成 Agent。"""
 
 from __future__ import annotations
 

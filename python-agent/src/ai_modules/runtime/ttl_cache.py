@@ -1,4 +1,4 @@
-"""Small in-process TTL cache for exact, read-through runtime results."""
+"""用于精确读透运行时结果的小型进程内 TTL 缓存。"""
 
 from __future__ import annotations
 
@@ -13,7 +13,7 @@ from pydantic import BaseModel
 
 
 def stable_cache_key(namespace: str, payload: Any) -> str:
-    """Build a stable key from JSON-compatible payload content."""
+    """根据 JSON 兼容的载荷内容构建稳定的缓存键。"""
 
     normalized_payload = _normalize_for_cache(payload)
     encoded = json.dumps(
@@ -27,7 +27,7 @@ def stable_cache_key(namespace: str, payload: Any) -> str:
 
 
 class InMemoryTTLCache:
-    """Thread-safe bounded TTL cache that never returns mutable internals."""
+    """线程安全的有界 TTL 缓存，永远不会返回可变的内部引用。"""
 
     def __init__(self, *, max_entries: int = 256) -> None:
         self.max_entries = max(1, max_entries)

@@ -1,4 +1,4 @@
-"""LLM adapters used by critic and safety review agents."""
+"""批评审查和安全审查 Agent 使用的 LLM 适配器。"""
 
 from __future__ import annotations
 
@@ -12,7 +12,7 @@ from src.ai_modules.runtime import AssistantTurn, ToolCall
 
 
 class RuleBasedReviewLLM:
-    """Deterministic fallback LLM that preserves review tool sequencing."""
+    """保持审查工具调用顺序的确定性回退 LLM。"""
 
     _TOOL_SEQUENCE = (
         "check_fact_consistency",
@@ -80,7 +80,7 @@ class RuleBasedReviewLLM:
 
 
 class OpenAICompatibleCriticReviewer:
-    """Generate the final structured critic review with the active provider."""
+    """使用活跃提供商生成最终结构化批评审查结论。"""
 
     def __init__(self) -> None:
         settings = get_settings()
@@ -117,7 +117,7 @@ class OpenAICompatibleCriticReviewer:
 
 
 class OpenAICompatibleSafetyReviewer:
-    """Generate the final structured safety review with the active provider."""
+    """使用活跃提供商生成最终结构化安全审查结论。"""
 
     def __init__(self) -> None:
         settings = get_settings()
@@ -182,7 +182,7 @@ def _stringify_review_signal(value: dict[str, Any]) -> str:
 
 
 class ReviewLLMClientFactory:
-    """Create the review LLM client with OpenAI-compatible primary and rule fallback."""
+    """创建审查 LLM 客户端，支持 OpenAI 兼容主模型和规则回退。"""
 
     @staticmethod
     def create() -> Any:

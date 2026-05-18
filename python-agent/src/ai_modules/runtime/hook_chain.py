@@ -1,4 +1,4 @@
-"""Pre/Post tool hook chain primitives."""
+"""工具执行前/后钩子链原语。"""
 
 from __future__ import annotations
 
@@ -8,7 +8,7 @@ from pydantic import BaseModel, Field
 
 
 class HookResult(BaseModel):
-    """Hook execution result."""
+    """钩子执行结果。"""
 
     denied: bool = False
     reason: str | None = None
@@ -16,7 +16,7 @@ class HookResult(BaseModel):
 
 
 class Hook(Protocol):
-    """Hook contract for tool execution interception."""
+    """工具执行拦截的钩子契约。"""
 
     async def pre_tool_use(
         self,
@@ -32,7 +32,7 @@ class Hook(Protocol):
 
 
 class HookChain:
-    """Sequential hook runner around tool execution."""
+    """围绕工具执行的顺序钩子运行器。"""
 
     def __init__(
         self,

@@ -6,7 +6,7 @@ import java.util.List;
 import java.util.UUID;
 
 /**
- * Reads and writes persisted conversation transcript messages from the Python runtime.
+ * 读写由 Python 运行时持久化的会话记录消息。
  */
 public interface PythonConversationMessageClient {
 

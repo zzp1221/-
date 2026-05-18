@@ -1,4 +1,4 @@
-"""LLM adapters for the Python agent runtime."""
+"""Python Agent 运行时的 LLM 适配器。"""
 
 from src.ai_modules.llms.agent_models import (
     BailianEvaluationGenerator,

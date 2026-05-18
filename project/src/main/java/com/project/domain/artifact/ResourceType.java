@@ -6,7 +6,7 @@ import com.fasterxml.jackson.annotation.JsonValue;
 import java.util.Arrays;
 
 /**
- * Artifact/resource types emitted by the generation pipeline.
+ * 生成管线产出的产物/资源类型。
  */
 public enum ResourceType {
     DOCUMENT,

@@ -1,4 +1,4 @@
-"""LLM-backed content generation chain."""
+"""基于 LLM 的内容生成链。"""
 
 from __future__ import annotations
 
@@ -34,7 +34,7 @@ TRACER = trace.get_tracer(__name__)
 
 
 class GeneratedSection(BaseModel):
-    """Structured output for a single generated section."""
+    """单个已生成章节的结构化输出。"""
 
     title: str
     body: str
@@ -43,13 +43,13 @@ class GeneratedSection(BaseModel):
 
 
 class GeneratedSectionBundle(BaseModel):
-    """Generated bundle for a structured teaching document."""
+    """结构化教学文档的已生成内容包。"""
 
     sections: list[GeneratedSection]
 
 
 class GeneratedTextAsset(BaseModel):
-    """Structured output for reading or code-style assets."""
+    """阅读或代码类资产的结构化输出。"""
 
     title: str
     summary: str
@@ -57,7 +57,7 @@ class GeneratedTextAsset(BaseModel):
 
 
 class GeneratedSlide(BaseModel):
-    """A single generated slide."""
+    """单个已生成的幻灯片。"""
 
     title: str
     bullets: list[str] = Field(default_factory=list)
@@ -67,7 +67,7 @@ class GeneratedSlide(BaseModel):
 
 
 class GeneratedSlideDeck(BaseModel):
-    """Structured output for slides."""
+    """幻灯片的结构化输出。"""
 
     title: str
     summary: str
@@ -77,14 +77,14 @@ class GeneratedSlideDeck(BaseModel):
 
 
 class GeneratedMindMapNode(BaseModel):
-    """A node in the generated mind map."""
+    """已生成思维导图中的节点。"""
 
     name: str
     children: list["GeneratedMindMapNode"] = Field(default_factory=list)
 
 
 class GeneratedMindMap(BaseModel):
-    """Structured output for a mind map."""
+    """思维导图的结构化输出。"""
 
     title: str
     summary: str
@@ -97,7 +97,7 @@ GeneratedMindMapNode.model_rebuild()
 
 
 class GeneratedCodeAsset(BaseModel):
-    """Structured output for a code asset."""
+    """代码资产的结构化输出。"""
 
     title: str
     summary: str
@@ -107,7 +107,7 @@ class GeneratedCodeAsset(BaseModel):
 
 
 class SupportsStructuredGenerator(Protocol):
-    """Protocol for primary structured-content generators."""
+    """主结构化内容生成器的协议。"""
 
     def generate_document_sections(
         self,
@@ -168,7 +168,7 @@ class SupportsStructuredGenerator(Protocol):
 
 
 class OpenAICompatibleStructuredGenerator:
-    """OpenAI-compatible structured generator for the configured providers."""
+    """用于已配置提供商的 OpenAI 兼容结构化生成器。"""
 
     _shared_clients: ClassVar[dict[str, httpx.Client]] = {}
     _shared_async_clients: ClassVar[dict[str, httpx.AsyncClient]] = {}
@@ -221,7 +221,7 @@ class OpenAICompatibleStructuredGenerator:
 
     @classmethod
     async def close_async_clients(cls) -> None:
-        """Close shared async HTTP clients during application shutdown."""
+        """在应用关闭时关闭共享的异步 HTTP 客户端。"""
 
         clients = list(cls._shared_async_clients.values())
         cls._shared_async_clients.clear()
@@ -698,7 +698,7 @@ BailianStructuredGenerator = OpenAICompatibleStructuredGenerator
 
 
 class ContentGenerationChain:
-    """Structured document-content chain backed only by the configured LLM."""
+    """仅由已配置 LLM 驱动的结构化文档内容链。"""
 
     def __init__(
         self,

@@ -1,4 +1,4 @@
-"""Retrieval services and adapters."""
+"""检索服务和适配器。"""
 
 from src.ai_modules.retrieval.services import (
     HybridRetrievalService,

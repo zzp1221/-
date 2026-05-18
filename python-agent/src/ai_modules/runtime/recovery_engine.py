@@ -1,4 +1,4 @@
-"""Failure recovery recipes for the agent runtime."""
+"""智能体运行时的故障恢复策略。"""
 
 from __future__ import annotations
 
@@ -8,7 +8,7 @@ from typing import Any, Awaitable, Callable
 
 
 class RecoveryFailureType(str, Enum):
-    """Supported recovery scenarios."""
+    """支持的恢复场景。"""
 
     LLM_API_TIMEOUT = "LLM_API_TIMEOUT"
     LLM_API_RATE_LIMIT = "LLM_API_RATE_LIMIT"
@@ -20,14 +20,14 @@ class RecoveryFailureType(str, Enum):
 
 
 class LLMRateLimitError(RuntimeError):
-    """Raised when the upstream LLM provider rate-limits a request."""
+    """当上游 LLM 提供商对请求进行速率限制时抛出。"""
 
 
 AsyncOperation = Callable[[], Awaitable[Any]]
 
 
 class RecoveryEngine:
-    """Apply bounded retries and fallbacks for expected runtime failures."""
+    """对可预期的运行时故障应用有限重试和降级策略。"""
 
     def __init__(self, sleep_seconds: float = 0.0) -> None:
         self.sleep_seconds = sleep_seconds
@@ -71,7 +71,7 @@ class RecoveryEngine:
             return await fallback_operation()
         if last_error is not None:
             raise last_error
-        raise RuntimeError("unreachable recovery state")  # pragma: no cover
+        raise RuntimeError("unreachable recovery state")  # pragma: no cover - 不可到达的恢复状态
 
     async def recover_tool_execution_error(
         self,

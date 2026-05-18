@@ -21,7 +21,7 @@ import java.io.IOException;
 import java.util.Map;
 
 /**
- * Applies IP-level and user-level rate limiting to API requests.
+ * 对 API 请求应用 IP 级和用户级限流。
  */
 @Component
 public class RateLimitFilter extends OncePerRequestFilter {

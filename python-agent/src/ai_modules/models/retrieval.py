@@ -25,6 +25,9 @@ class RetrievalDocument(BaseModel):
     match_type: str = Field(default="ranked", alias="matchType")
     evidence: str | None = None
     snippet: str | None = None
+    url: str | None = None
+    source_title: str | None = Field(default=None, alias="sourceTitle")
+    published_date: str | None = Field(default=None, alias="publishedDate")
 
     model_config = ConfigDict(populate_by_name=True)
 

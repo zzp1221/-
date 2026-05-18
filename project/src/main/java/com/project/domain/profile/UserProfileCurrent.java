@@ -13,7 +13,7 @@ import java.util.Map;
 import java.util.UUID;
 
 /**
- * Current profile snapshot for a user.
+ * 用户的当前画像快照。
  */
 @Entity
 @Table(name = "user_profile_current", schema = "app")

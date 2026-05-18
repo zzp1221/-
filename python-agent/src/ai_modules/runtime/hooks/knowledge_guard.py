@@ -1,4 +1,4 @@
-"""Knowledge-first hook for generation tools."""
+"""面向生成工具的知识优先钩子。"""
 
 from __future__ import annotations
 
@@ -12,7 +12,7 @@ RetrievalProvider = Callable[[dict[str, Any]], Any] | Callable[[dict[str, Any]],
 
 
 class KnowledgeGuardHook:
-    """Inject retrieved evidence before generation tools are allowed to run."""
+    """在生成工具允许运行之前注入检索到的知识依据。"""
 
     def __init__(self, retrieval_provider: RetrievalProvider) -> None:
         self.retrieval_provider = retrieval_provider

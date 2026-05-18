@@ -15,11 +15,10 @@ import java.time.OffsetDateTime;
 import java.util.UUID;
 
 /**
- * Conversation metadata owned by the Java control plane.
+ * Java 控制平面拥有的对话元数据。
  *
- * <p>Only lightweight session metadata is stored here. Full message bodies and
- * compaction summaries remain in the Python runtime per the architecture
- * boundary defined in the project documents.</p>
+ * <p>此处仅存储轻量级会话元数据。完整的消息体和压缩摘要
+ * 按照项目文档中定义的架构边界保留在 Python 运行时中。</p>
  */
 @Entity
 @Table(name = "qna_session", schema = "app")

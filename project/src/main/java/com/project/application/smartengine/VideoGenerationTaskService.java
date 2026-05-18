@@ -13,10 +13,9 @@ import java.math.BigDecimal;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.UUID;
 
 /**
- * Maintains a projection of video-generation progress in the relational database.
+ * 在关系数据库中维护视频生成进度的投影。
  */
 @Service
 public class VideoGenerationTaskService {

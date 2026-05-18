@@ -1,4 +1,4 @@
-"""Persistence layer for full conversation message transcripts."""
+"""完整对话消息记录的持久化层。"""
 
 from __future__ import annotations
 
@@ -13,7 +13,7 @@ from src.ai_modules.config import get_settings
 
 
 class ConversationMessageDocument(BaseModel):
-    """Single persisted conversation message."""
+    """单条持久化的对话消息。"""
 
     message_id: str = Field(default_factory=lambda: str(uuid4()), alias="messageId")
     conversation_id: str = Field(alias="conversationId")
@@ -22,7 +22,7 @@ class ConversationMessageDocument(BaseModel):
     content: str
     image_urls: list[str] = Field(default_factory=list, alias="imageUrls")
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc), alias="createdAt")
-    # MongoDB schema fields — mapped from conversation_id
+    # MongoDB 模式字段 — 从 conversation_id 映射
     qna_session_id: str | None = Field(default=None, alias="qnaSessionId")
     thread_id: str | None = Field(default=None, alias="threadId")
     message_seq: int | None = Field(default=None, alias="messageSeq")
@@ -47,7 +47,7 @@ class ConversationMessageDocument(BaseModel):
 
 
 class ConversationMessageStore(Protocol):
-    """Persistence contract for full conversation transcripts."""
+    """完整对话记录的持久化契约。"""
 
     async def append_message(self, document: ConversationMessageDocument) -> None: ...
 
@@ -62,7 +62,7 @@ class ConversationMessageStore(Protocol):
 
 
 class InMemoryConversationMessageStore:
-    """In-memory message store used by tests and local fallback mode."""
+    """测试和本地回退模式使用的内存消息存储。"""
 
     def __init__(self) -> None:
         self.documents: list[ConversationMessageDocument] = []
@@ -91,7 +91,7 @@ class InMemoryConversationMessageStore:
 
 
 class MongoConversationMessageStore:
-    """Mongo-backed store for conversation transcripts."""
+    """基于 MongoDB 的对话记录存储。"""
 
     def __init__(
         self,
@@ -116,11 +116,11 @@ class MongoConversationMessageStore:
         return self._collection
 
     async def append_message(self, document: ConversationMessageDocument) -> None:
-        # Populate MongoDB-required fields from conversation_id
+        # 从 conversation_id 填充 MongoDB 必需的字段
         if document.qna_session_id is None:
             document.qna_session_id = document.conversation_id
         if document.message_seq is None:
-            # Auto-generate sequence number based on existing messages in this conversation
+            # 根据该对话中的已有消息自动生成序列号
             count = await asyncio.to_thread(
                 self.collection.count_documents,
                 {"qnaSessionId": document.conversation_id},

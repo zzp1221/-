@@ -13,7 +13,7 @@ import org.springframework.stereotype.Component;
 import java.io.IOException;
 
 /**
- * Returns a stable JSON payload when an anonymous caller hits a protected endpoint.
+ * 匿名用户访问受保护端点时返回稳定的 JSON 响应。
  */
 @Component
 public class RestAuthenticationEntryPoint implements AuthenticationEntryPoint {

@@ -35,7 +35,7 @@ import java.util.List;
 import java.util.UUID;
 
 /**
- * Conversation endpoints for tutoring-style flows.
+ * 辅导式对话流程的会话端点。
  */
 @RestController
 @RequestMapping("/api/conversations")

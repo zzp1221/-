@@ -1,4 +1,4 @@
-"""Resource push agent that selects existing resources and returns delivery links."""
+"""资源推送 Agent，选择现有资源并返回投递链接。"""
 
 from __future__ import annotations
 
@@ -45,7 +45,7 @@ class PushResourceCandidate:
 
 
 class ResourcePushAgent(PlaceholderAgent):
-    """Recommend external resources or generate downloadable push assets."""
+    """推荐外部资源或生成可下载的推送资源。"""
 
     def __init__(self) -> None:
         super().__init__("Resource Push Agent", "resource_push")

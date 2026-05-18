@@ -10,7 +10,7 @@ import java.util.Map;
 import java.util.UUID;
 
 /**
- * Centralized audit service for security-sensitive and traceable actions.
+ * 面向安全敏感与可追溯操作的集中式审计服务。
  */
 @Service
 public class AuditService {

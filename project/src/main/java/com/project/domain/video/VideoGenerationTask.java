@@ -16,7 +16,7 @@ import java.util.Map;
 import java.util.UUID;
 
 /**
- * Persistent snapshot for a generated teaching video task.
+ * 教学视频生成任务的持久化快照。
  */
 @Entity
 @Table(name = "video_generation_task", schema = "rag")

@@ -25,7 +25,7 @@ import java.util.Map;
 import java.util.UUID;
 
 /**
- * Signs, resolves, and serves sandbox-generated artifacts.
+ * 签名、解析并提供沙箱生成的制品下载。
  */
 @Service
 public class ArtifactDownloadService {

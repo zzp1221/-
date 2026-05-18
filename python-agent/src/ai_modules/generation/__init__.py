@@ -1,4 +1,4 @@
-"""Generation services for resource assets."""
+"""资源资产的生成服务。"""
 
 from src.ai_modules.generation.content_chain import (
     BailianStructuredGenerator,

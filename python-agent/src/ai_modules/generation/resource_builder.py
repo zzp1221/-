@@ -1,8 +1,7 @@
-"""Structured sandbox asset generation for early integration."""
+"""用于早期集成的结构化沙箱资产生成。"""
 
 from __future__ import annotations
 
-import asyncio
 import json
 import base64
 from dataclasses import asdict
@@ -23,13 +22,12 @@ from src.ai_modules.generation.content_chain import (
 from src.ai_modules.models import (
     VideoGenerationTaskPayload,
     VideoSandboxArtifact,
-    VideoScriptPayload,
 )
 from src.ai_modules.runtime import SystemSnapshot
 
 
 class GeneratedAsset(BaseModel):
-    """Metadata for a generated asset written to sandbox storage."""
+    """写入沙箱存储的已生成资产的元数据。"""
 
     asset_type: str = Field(alias="assetType")
     title: str
@@ -53,7 +51,7 @@ class GeneratedAsset(BaseModel):
 
 
 class SectionPlan(BaseModel):
-    """A planned section in a generated teaching asset."""
+    """已生成教学资产中的规划章节。"""
 
     title: str
     objective: str
@@ -63,7 +61,7 @@ class SectionPlan(BaseModel):
 
 
 class ResourceGenerationService:
-    """Write structured asset outputs to the local sandbox directory."""
+    """将结构化资产输出写入本地沙箱目录。"""
 
     def __init__(
         self,
@@ -472,7 +470,7 @@ class ResourceGenerationService:
         topic = str(params.get("rewrittenQuery", params.get("query", "主题")))
         generation_snapshot = self._build_generation_snapshot(params=params, snapshot=snapshot)
 
-        # ── Attempt MiMo-V2-Omni PPTX generation ──
+        # ── 尝试使用 MiMo-V2-Omni 生成 PPTX ──
         pptx_bytes = self._generate_pptx_with_omni(
             title=title, topic=topic, snapshot=snapshot, sources=sources
         )
@@ -491,7 +489,7 @@ class ResourceGenerationService:
                 mimeType="application/vnd.openxmlformats-officedocument.presentationml.presentation",
             )
 
-        # ── Fallback to LLM + markdown ──
+        # ── 回退到 LLM + markdown ──
         generated_slides = self.content_chain.generate_slides_asset(
             title=title,
             topic=topic,
@@ -535,7 +533,7 @@ class ResourceGenerationService:
         snapshot: SystemSnapshot,
         sources: list[dict[str, Any]],
     ) -> bytes | None:
-        """Attempt to generate a PPTX via MiMo-V2-Omni; returns None on failure."""
+        """尝试通过 MiMo-V2-Omni 生成 PPTX；失败时返回 None。"""
         settings = get_settings()
         if not settings.mimo_api_key:
             return None
@@ -588,12 +586,10 @@ class ResourceGenerationService:
         slides: list[dict[str, Any]],
         course: str,
     ) -> bytes:
-        """Build a PPTX file in memory using python-pptx."""
+        """使用 python-pptx 在内存中构建 PPTX 文件。"""
         try:
             from pptx import Presentation
             from pptx.util import Inches, Pt
-            from pptx.enum.text import PP_ALIGN
-            from pptx.dml.color import RGBColor
         except ImportError:
             return None
 
@@ -601,26 +597,26 @@ class ResourceGenerationService:
         prs.slide_width = Inches(13.333)
         prs.slide_height = Inches(7.5)
 
-        # ── Title slide ──
-        title_slide_layout = prs.slide_layouts[0]  # title slide layout
+        # ── 标题页 ──
+        title_slide_layout = prs.slide_layouts[0]  # 标题页布局
         slide = prs.slides.add_slide(title_slide_layout)
         title_placeholder = slide.shapes.title
         subtitle_placeholder = slide.placeholders[1]
         title_placeholder.text = title
         subtitle_placeholder.text = f"{course}\n{topic}"
 
-        # ── Content slides ──
+        # ── 内容页 ──
         for slide_info in slides:
             slide_title = slide_info.get("slideTitle", slide_info.get("title", ""))
             bullets = slide_info.get("bullets", [])
             speaker_notes_text = slide_info.get("speakerNotes", slide_info.get("speaker_notes", ""))
 
-            bullet_layout = prs.slide_layouts[1]  # title + content
+            bullet_layout = prs.slide_layouts[1]  # 标题 + 内容
             slide = prs.slides.add_slide(bullet_layout)
             if slide.shapes.title:
                 slide.shapes.title.text = slide_title
 
-            # Add bullets
+            # 添加要点
             body_shape = slide.placeholders[1] if len(slide.placeholders) > 1 else None
             if body_shape and bullets:
                 tf = body_shape.text_frame
@@ -634,12 +630,12 @@ class ResourceGenerationService:
                     p.level = 0
                     p.font.size = Pt(24)
 
-            # Speaker notes
+            # 讲解备注
             if speaker_notes_text:
                 notes_slide = slide.notes_slide
                 notes_slide.notes_text_frame.text = str(speaker_notes_text)
 
-        # ── Summary slide ──
+        # ── 总结页 ──
         summary_layout = prs.slide_layouts[1]
         slide = prs.slides.add_slide(summary_layout)
         if slide.shapes.title:
@@ -790,7 +786,7 @@ class ResourceGenerationService:
         )
         script_text_path.write_text(script_payload.full_text, encoding="utf-8")
 
-        # TTS must narrate the finalized script instead of raw retrieval evidence.
+        # TTS 必须朗读最终脚本，而不是原始检索证据。
         tts_audio_bytes = params.get("tts_audio_bytes")
         if not tts_audio_bytes or not isinstance(tts_audio_bytes, bytes) or len(tts_audio_bytes) < 100:
             from src.ai_modules.llms.mimo_client import MiMoClient
@@ -810,7 +806,7 @@ class ResourceGenerationService:
             params["tts_audio_bytes"] = tts_audio_bytes
         audio_path.write_bytes(tts_audio_bytes)
 
-        # Thumbnail
+        # 缩略图
         thumbnail_path.write_text(
             self._build_video_thumbnail_svg(
                 title=script_payload.title,

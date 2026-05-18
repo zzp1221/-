@@ -1,4 +1,4 @@
-"""Critic and safety agents used to review generated teaching content."""
+"""用于复核生成教学内容的评审和安全 Agent。"""
 
 from __future__ import annotations
 
@@ -34,7 +34,7 @@ LOGGER = logging.getLogger(__name__)
 
 
 class CriticAgent(PlaceholderAgent):
-    """Review generated content for quality, difficulty, and source support."""
+    """复核生成内容的质量、难度和来源支撑。"""
 
     def __init__(
         self,
@@ -301,7 +301,7 @@ class CriticAgent(PlaceholderAgent):
 
 
 class SafetyAgent(PlaceholderAgent):
-    """Review generated content for boundary, compliance, and misconduct risks."""
+    """复核生成内容的边界、合规和学术违规风险。"""
 
     def __init__(
         self,

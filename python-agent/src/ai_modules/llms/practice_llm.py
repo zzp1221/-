@@ -1,4 +1,4 @@
-"""Rule-based LLM adapters for Practice and Judge tool orchestration."""
+"""用于练习和判题工具编排的基于规则的 LLM 适配器。"""
 
 from __future__ import annotations
 
@@ -8,7 +8,7 @@ from src.ai_modules.runtime import AssistantTurn, ToolCall
 
 
 class RuleBasedPracticeLLM:
-    """Deterministic orchestrator for Practice Agent."""
+    """练习 Agent 的确定性编排器。"""
 
     async def complete(
         self,
@@ -53,7 +53,7 @@ class RuleBasedPracticeLLM:
 
 
 class RuleBasedJudgeLLM:
-    """Deterministic orchestrator for Judge Agent."""
+    """判题 Agent 的确定性编排器。"""
 
     async def complete(
         self,

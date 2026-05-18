@@ -16,11 +16,10 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
- * Application service that owns registration and login use cases.
+ * 拥有注册和登录用例的应用服务。
  *
- * <p>Keeping credential workflows in a dedicated service avoids leaking password
- * handling concerns into controllers and creates a clean seam for future RBAC,
- * refresh-token persistence, or SSO integration.</p>
+ * <p>将凭证工作流保留在专用服务中，避免密码处理逻辑泄漏到控制器，
+ * 并为未来的 RBAC、刷新令牌持久化或 SSO 集成创建清晰的接缝。</p>
  */
 @Service
 public class AuthService {

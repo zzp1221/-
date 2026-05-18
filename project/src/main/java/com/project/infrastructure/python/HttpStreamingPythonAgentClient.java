@@ -19,6 +19,8 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.time.Duration;
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -26,12 +28,14 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Consumer;
 
 /**
- * JDK {@link HttpClient}-based implementation for the Python streaming endpoint
- * with retry on transient failures and support for task cancellation.
+ * 基于 JDK {@link HttpClient} 的 Python 流式端点实现，
+ * 支持瞬态故障重试和任务取消。
  */
 @Component
 public class HttpStreamingPythonAgentClient implements PythonAgentClient {
 
+    private static final String INTERNAL_TOKEN_HEADER = "X-Zhixue-Internal-Token";
+    private static final Path INTERNAL_TOKEN_FILE = Path.of("/run/secrets/zhixue-python-agent-internal-token");
     private static final TypeReference<Map<String, Object>> MAP_TYPE = new TypeReference<>() {
     };
     private static final Logger LOGGER = LoggerFactory.getLogger(HttpStreamingPythonAgentClient.class);
@@ -88,6 +92,7 @@ public class HttpStreamingPythonAgentClient implements PythonAgentClient {
                 .uri(URI.create(appProperties.getPythonAgent().getBaseUrl() + "/internal/smart-engine/stream"))
                 .header("Content-Type", "application/json")
                 .header("Accept", "text/event-stream")
+                .header(INTERNAL_TOKEN_HEADER, internalToken())
                 .timeout(appProperties.getPythonAgent().getReadTimeout())
                 .POST(HttpRequest.BodyPublishers.ofString(requestBody))
                 .build();
@@ -143,12 +148,32 @@ public class HttpStreamingPythonAgentClient implements PythonAgentClient {
         try {
             HttpRequest request = HttpRequest.newBuilder()
                 .uri(URI.create(appProperties.getPythonAgent().getBaseUrl() + "/internal/smart-engine/" + taskId + "/cancel"))
+                .header(INTERNAL_TOKEN_HEADER, internalToken())
                 .timeout(Duration.ofSeconds(3))
                 .POST(HttpRequest.BodyPublishers.noBody())
                 .build();
             httpClient.send(request, HttpResponse.BodyHandlers.discarding());
         } catch (Exception ex) {
             LOGGER.debug("Python cancel notification failed for taskId={}: {}", taskId, ex.getMessage());
+        }
+    }
+
+    private String internalToken() {
+        String token = appProperties.getPythonAgent().getInternalToken();
+        if (token == null || token.isBlank()) {
+            token = readInternalTokenFile();
+        }
+        if (token == null || token.isBlank()) {
+            throw new IllegalStateException("PYTHON_AGENT_INTERNAL_TOKEN must be configured");
+        }
+        return token.trim();
+    }
+
+    private String readInternalTokenFile() {
+        try {
+            return Files.exists(INTERNAL_TOKEN_FILE) ? Files.readString(INTERNAL_TOKEN_FILE, StandardCharsets.UTF_8) : "";
+        } catch (IOException ex) {
+            throw new IllegalStateException("Failed to read Python agent internal token file", ex);
         }
     }
 
@@ -246,7 +271,7 @@ public class HttpStreamingPythonAgentClient implements PythonAgentClient {
     }
 
     /**
-     * Exception that signals a retryable failure (5xx, rate-limit, connection error).
+     * 表示可重试故障（5xx、限流、连接错误）的异常。
      */
     private static class RetryableStreamException extends Exception {
         RetryableStreamException(String message) {

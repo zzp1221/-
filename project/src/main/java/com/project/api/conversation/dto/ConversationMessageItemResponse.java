@@ -4,7 +4,7 @@ import java.time.OffsetDateTime;
 import java.util.List;
 
 /**
- * Full message item exposed for conversation history replay.
+ * 用于会话历史回放的完整消息项。
  */
 public record ConversationMessageItemResponse(
     String messageId,

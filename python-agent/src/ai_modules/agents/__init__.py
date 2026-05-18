@@ -1,4 +1,4 @@
-"""Agent exports for the Python supervisor."""
+"""Python 监督器的 Agent 导出模块。"""
 
 from src.ai_modules.agents.common_agents import (
     CriticAgent,

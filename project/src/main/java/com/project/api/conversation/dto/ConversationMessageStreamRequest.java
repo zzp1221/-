@@ -6,7 +6,7 @@ import com.project.domain.task.ServiceType;
 import java.util.List;
 
 /**
- * Request payload for sending a message into a conversation stream.
+ * 向会话流发送消息的请求体。
  */
 public record ConversationMessageStreamRequest(
     String message,

@@ -6,7 +6,7 @@ import java.util.Map;
 import java.util.UUID;
 
 /**
- * External SSE event contract produced by the Java control plane.
+ * 由 Java 控制平面生成的外部 SSE 事件契约。
  */
 public record TaskStreamEventPayload(
     String event,

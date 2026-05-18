@@ -7,11 +7,11 @@ import org.springframework.core.task.TaskExecutor;
 import org.springframework.scheduling.annotation.EnableScheduling;
 
 /**
- * Virtual-thread-backed executor for smart-engine and conversation task dispatch.
+ * 基于虚拟线程的任务执行器，用于智学引擎和对话任务调度。
  *
- * <p>Each task runs on a virtual thread so blocking I/O (Python SSE, DB writes)
- * does not consume a platform thread. A concurrency limit protects the Python
- * agent and PostgreSQL connection pool from unbounded fan-out.</p>
+ * <p>每个任务运行在虚拟线程上，阻塞 I/O（Python SSE、数据库写入）
+ * 不会占用平台线程。并发上限保护 Python Agent 和 PostgreSQL
+ * 连接池免受无限制扇出的影响。</p>
  */
 @Configuration
 @EnableScheduling
@@ -24,8 +24,7 @@ public class TaskExecutionConfiguration {
 
     @Bean
     public TaskExecutor conversationTaskExecutor() {
-        // Reserve dedicated capacity for tutoring streams so they do not queue
-        // behind long-running smart-engine tasks.
+        // 为辅导流预留独立容量，避免排在耗时较长的智学引擎任务之后。
         return buildExecutor("conversation-", 8);
     }
 

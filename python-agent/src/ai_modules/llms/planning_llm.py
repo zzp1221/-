@@ -1,4 +1,4 @@
-"""Tool-calling LLM adapters used by evaluation and path-planning agents."""
+"""评估和路径规划 Agent 使用的工具调用 LLM 适配器。"""
 
 from __future__ import annotations
 
@@ -10,7 +10,7 @@ from src.ai_modules.runtime import AssistantTurn, ToolCall
 
 
 class RuleBasedPlanningLLM:
-    """Deterministic fallback LLM that preserves the planned tool sequence."""
+    """保持规划工具调用顺序的确定性回退 LLM。"""
 
     _TOOL_SEQUENCE = (
         "aggregate_behavior",
@@ -83,7 +83,7 @@ class RuleBasedPlanningLLM:
 
 
 class PlanningLLMClientFactory:
-    """Create the planning LLM client with OpenAI-compatible primary and rule fallback."""
+    """创建规划 LLM 客户端，支持 OpenAI 兼容主模型和规则回退。"""
 
     @staticmethod
     def create() -> Any:

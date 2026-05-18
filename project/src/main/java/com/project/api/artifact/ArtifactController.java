@@ -2,7 +2,6 @@ package com.project.api.artifact;
 
 import com.project.application.artifact.ArtifactDownloadService;
 import com.project.security.AuthenticatedUserResolver;
-import com.project.security.JwtAuthenticatedUser;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import org.springframework.core.io.Resource;
@@ -14,7 +13,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
- * Download endpoints for sandbox-generated artifacts.
+ * 沙箱生成产物的下载端点。
  */
 @RestController
 @RequestMapping("/api/assets")

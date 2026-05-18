@@ -1,4 +1,4 @@
-"""Subjective judging evaluators with provider routing and heuristic fallback."""
+"""支持提供商路由和启发式回退的主观题判题评估器。"""
 
 from __future__ import annotations
 
@@ -13,7 +13,6 @@ from pydantic import ValidationError
 
 from src.ai_modules.config import get_settings
 from src.ai_modules.llms.agent_models import create_compatible_client
-from src.ai_modules.llms.openai_compatible import OpenAICompatibleClient
 from src.ai_modules.models import PracticeQuestion, SubjectiveJudgeEvaluation
 
 LOGGER = logging.getLogger(__name__)
@@ -21,7 +20,7 @@ TRACER = trace.get_tracer(__name__)
 
 
 class SupportsSubjectiveJudgeEvaluator(Protocol):
-    """Protocol for subjective-answer evaluation clients."""
+    """主观题评估客户端的协议。"""
 
     async def evaluate(
         self,
@@ -32,7 +31,7 @@ class SupportsSubjectiveJudgeEvaluator(Protocol):
 
 
 class HeuristicSubjectiveJudgeEvaluator:
-    """Fallback evaluator based on keyword coverage."""
+    """基于关键词覆盖的回退评估器。"""
 
     async def evaluate(
         self,
@@ -89,7 +88,7 @@ class HeuristicSubjectiveJudgeEvaluator:
 
 
 class OpenAICompatibleSubjectiveJudgeEvaluator:
-    """Provider-aware evaluator that returns validated structured judging output."""
+    """支持多提供商的评估器，返回经过验证的结构化判题输出。"""
 
     def __init__(
         self,
@@ -178,7 +177,7 @@ class OpenAICompatibleSubjectiveJudgeEvaluator:
 
 
 class SubjectiveJudgeEvaluatorFactory:
-    """Create a subjective evaluator with provider routing and heuristic fallback."""
+    """创建支持提供商路由和启发式回退的主观题评估器。"""
 
     @staticmethod
     def create() -> SupportsSubjectiveJudgeEvaluator:

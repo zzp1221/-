@@ -1,4 +1,4 @@
-"""Memory stores for conversation summaries and long-term tutoring context."""
+"""对话摘要和长期辅导上下文的记忆存储。"""
 
 from src.ai_modules.memory.conversation_message_store import (
     ConversationMessageDocument,

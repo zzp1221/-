@@ -3,7 +3,7 @@ package com.project.api.auth.dto;
 import java.util.UUID;
 
 /**
- * Minimal user view exposed to clients.
+ * 暴露给客户端的最小用户视图。
  */
 public record UserView(
     UUID userId,

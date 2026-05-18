@@ -1,4 +1,4 @@
-"""Conversation compaction utilities for tutoring flows."""
+"""辅导对话流的会话压缩工具。"""
 
 from __future__ import annotations
 
@@ -10,7 +10,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 
 class StructuredConversationSummary(BaseModel):
-    """Structured information extracted from historical dialogue."""
+    """从历史对话中提取的结构化信息。"""
 
     topic_focus: list[str] = Field(default_factory=list, alias="topicFocus")
     learner_goal: str | None = Field(default=None, alias="learnerGoal")
@@ -26,7 +26,7 @@ class StructuredConversationSummary(BaseModel):
 
 @dataclass(slots=True)
 class CompactionResult:
-    """Result of a compaction pass over conversation messages."""
+    """对会话消息执行压缩操作的结果。"""
 
     compacted_messages: list[dict[str, Any]]
     summary: str
@@ -38,7 +38,7 @@ class CompactionResult:
 
 @dataclass(slots=True)
 class TopicCandidate:
-    """A scored topic candidate extracted from a user message."""
+    """从用户消息中提取的带评分主题候选。"""
 
     text: str
     source: str
@@ -47,7 +47,7 @@ class TopicCandidate:
 
 
 class ConversationCompactor:
-    """Compress long conversations while keeping recent tutoring context."""
+    """压缩长对话，同时保留最近的辅导上下文。"""
 
     def __init__(
         self,
@@ -60,7 +60,7 @@ class ConversationCompactor:
         self.summary_max_chars = summary_max_chars
 
     def estimate_tokens(self, messages: list[dict[str, Any]]) -> int:
-        """Rough token estimate based on character count."""
+        """基于字符数的粗略 token 估算。"""
 
         total_chars = 0
         for message in messages:
@@ -73,7 +73,7 @@ class ConversationCompactor:
         messages: list[dict[str, Any]],
         previous_summary: StructuredConversationSummary | None = None,
     ) -> CompactionResult:
-        """Compact earlier turns into a short tutoring summary if over budget."""
+        """当超出 token 预算时，将早期对话压缩为简短的辅导摘要。"""
 
         estimated_before = self.estimate_tokens(messages)
         structured_summary = self._extract_structured_summary(messages)
@@ -122,7 +122,7 @@ class ConversationCompactor:
         self,
         messages: list[dict[str, Any]],
     ) -> StructuredConversationSummary:
-        """Extract structured tutoring signals from historical dialogue."""
+        """从历史对话中提取结构化的辅导信号。"""
 
         user_messages = [
             str(message.get("content", "")).replace("\n", " ").strip()

@@ -1,4 +1,4 @@
-"""Async Spark OpenAI-compatible client helpers."""
+"""异步 Spark OpenAI 兼容客户端辅助工具。"""
 
 from __future__ import annotations
 
@@ -10,7 +10,7 @@ from src.ai_modules.llms.openai_compatible import (
 
 
 class SparkCompatibleClient(OpenAICompatibleClient):
-    """Small async client for Spark OpenAI-compatible chat completions."""
+    """用于 Spark OpenAI 兼容聊天补全的小型异步客户端。"""
 
     def __init__(
         self,
@@ -31,7 +31,7 @@ class SparkCompatibleClient(OpenAICompatibleClient):
 
 
 class SparkCompatibleToolCallingLLM(OpenAICompatibleToolCallingLLM):
-    """Tool-calling adapter over Spark OpenAI-compatible chat completions."""
+    """基于 Spark OpenAI 兼容聊天补全的工具调用适配器。"""
 
     def __init__(
         self,

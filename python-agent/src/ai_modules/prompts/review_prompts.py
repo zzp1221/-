@@ -1,4 +1,4 @@
-"""Prompt builders for critic and safety review workflows."""
+"""批评审查和安全审查工作流的提示词构建器。"""
 
 from __future__ import annotations
 

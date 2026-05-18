@@ -1,4 +1,4 @@
-"""Context snapshot models and builders for agent prompts."""
+"""智能体提示词的上下文快照模型与构建器。"""
 
 from __future__ import annotations
 
@@ -7,7 +7,7 @@ from dataclasses import dataclass, field
 
 @dataclass(slots=True)
 class SystemSnapshot:
-    """Aggregated runtime context injected into each agent prompt."""
+    """注入每个智能体提示词的聚合运行时上下文。"""
 
     current_course: str
     current_chapter: str
@@ -26,7 +26,7 @@ class SystemSnapshot:
 
 
 class SnapshotBuilder:
-    """Build snapshots from current request context and placeholder defaults."""
+    """根据当前请求上下文和占位默认值构建快照。"""
 
     async def build(
         self,
@@ -84,7 +84,7 @@ class SnapshotBuilder:
 
     @staticmethod
     def render_prompt_context(snapshot: SystemSnapshot) -> str:
-        """Render a snapshot into a system prompt section."""
+        """将快照渲染为系统提示词片段。"""
 
         return "\n".join(
             [

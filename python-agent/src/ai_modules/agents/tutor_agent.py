@@ -1,8 +1,10 @@
-"""Tutor agent backed by AgentCoreLoop, structured compaction and persisted memory."""
+"""基于 AgentCoreLoop、结构化压缩和持久化记忆的辅导 Agent。"""
 
 from __future__ import annotations
 
+import logging
 from collections.abc import AsyncIterator
+from datetime import datetime
 from typing import Any
 
 from src.ai_modules.agents.base import PlaceholderAgent
@@ -23,14 +25,16 @@ from src.ai_modules.runtime import (
     PermissionLevel,
     RecoveryEngine,
     StructuredConversationSummary,
-    SnapshotBuilder,
     SystemSnapshot,
     ToolRegistry,
 )
+from src.ai_modules.runtime.skill_loader import SkillPromptLoader
+
+LOGGER = logging.getLogger(__name__)
 
 
 class TutorAgent(PlaceholderAgent):
-    """Guide the learner using recent dialogue and retrieved evidence."""
+    """使用近期对话和检索证据指导学习者。"""
 
     def __init__(
         self,
@@ -42,9 +46,14 @@ class TutorAgent(PlaceholderAgent):
         self.compactor = compactor or ConversationCompactor()
         self.summary_store = summary_store or MongoConversationSummaryStore()
         self.llm_client = llm_client or TutorLLMClientFactory.create()
+        self.skill_loader = SkillPromptLoader()
 
     def system_prompt(self, snapshot: SystemSnapshot) -> str:
-        return build_tutor_system_prompt(snapshot)
+        return self.skill_loader.build_system_prompt(
+            skill_name="tutor",
+            snapshot=snapshot,
+            fallback_prompt=build_tutor_system_prompt(snapshot),
+        )
 
     async def run(
         self,
@@ -149,7 +158,7 @@ class TutorAgent(PlaceholderAgent):
                 )
                 current_seq += 1
         except Exception:
-            pass
+            LOGGER.debug("Direct tutor stream failed; falling back to agent core loop", exc_info=True)
 
         if not streamed:
             response_text = await self._run_agent_core_loop(
@@ -184,11 +193,11 @@ class TutorAgent(PlaceholderAgent):
         return normalized
 
     def _select_strategy(self, *, snapshot: SystemSnapshot, params: dict[str, Any]) -> str:
-        """Select pedagogy strategy with Sigma-style Socratic as the default.
+        """选择教学策略，默认采用 Sigma 风格的苏格拉底式提问法。
 
-        - mastery_socratic: Socratic questioning + mastery rubric + misconception tracking
-        - retrieval_grounded_scaffold: evidence-augmented Socratic tutoring
-        - diagnostic_scaffold: gap-focused diagnostic breakdown
+        - mastery_socratic: 苏格拉底式提问 + 掌握程度评分标准 + 误解追踪
+        - retrieval_grounded_scaffold: 基于检索证据的苏格拉底式辅导
+        - diagnostic_scaffold: 聚焦薄弱点的诊断式分解
         """
         retrieval_result = params.get("retrievalResult", {})
         documents = retrieval_result.get("documents", [])
@@ -217,8 +226,8 @@ class TutorAgent(PlaceholderAgent):
                 params=params,
                 persisted_summary=persisted_summary,
             )
-        except (AttributeError, Exception):
-            pass
+        except Exception:
+            LOGGER.debug("Direct tutor response failed; falling back to agent core loop", exc_info=True)
         return await self._run_with_agent_core_loop(
             system_prompt=system_prompt,
             user_query=user_query,
@@ -275,7 +284,7 @@ class TutorAgent(PlaceholderAgent):
         params: dict[str, Any],
         persisted_summary: dict[str, Any] | None,
     ):
-        """Stream tokens from the LLM for real-time tutoring display."""
+        """从 LLM 流式输出 token 以实现实时辅导展示。"""
         client = self.llm_client.client
         user_query = self._resolve_user_query(params)
         memory_data = self._tool_load_conversation_memory(
@@ -306,7 +315,7 @@ class TutorAgent(PlaceholderAgent):
             user_query=user_query,
         )
 
-        # Accumulate tokens in batches of 3 for smoother UI updates
+        # 每累积 3 个 token 批量输出，使 UI 更新更平滑
         batch: list[str] = []
         async for token in client.chat_completion_stream(
             messages=llm_messages,
@@ -337,8 +346,14 @@ class TutorAgent(PlaceholderAgent):
         unresolved = memory.get("unresolvedQuestions") or context.get("unresolvedQuestions") or []
         teaching_state = recent_dialogue.get("teachingState", {})
         recent_messages = recent_dialogue.get("recentMessages", [])
+        now = datetime.now().astimezone()
+        parts.append(
+            "Runtime date/time (server local): "
+            f"{now.isoformat(timespec='seconds')}; weekday: {now.strftime('%A')}. "
+            "Use this for questions about today, current date, current weekday, or current time."
+        )
         parts.append(f"当前输入模式：{input_mode}")
-        # Sigma: surface recorded misconceptions for targeted counter-example design
+        # Sigma: 展示已记录的误解，用于针对性反例设计
         recorded_misconceptions = (
             profile.get("misconceptions")
             or memory.get("misconceptions")
@@ -400,7 +415,10 @@ class TutorAgent(PlaceholderAgent):
             for i, doc in enumerate(documents[:5], 1):
                 title = str(doc.get("title") or "")
                 snippet = str(doc.get("evidence") or doc.get("snippet") or "")[:200]
-                parts.append(f"  {i}. {title}: {snippet}")
+                url = str(doc.get("url") or "").strip()
+                channel = str(doc.get("channel") or "").strip()
+                source_hint = f" [{url}]" if channel == "web" and url else ""
+                parts.append(f"  {i}. {title}{source_hint}: {snippet}")
         image_summary = str(image_analysis.get("summary") or "").strip()
         if image_summary:
             parts.append("图片识别结果：")
@@ -431,7 +449,7 @@ class TutorAgent(PlaceholderAgent):
                 persisted_summary=persisted_summary,
             ),
             permission_level=PermissionLevel.READ_ONLY,
-            description="Load the latest structured conversation summary from persistent memory.",
+            description="从持久化记忆中加载最新的结构化对话摘要。",
             parameters={"type": "object", "properties": {}, "additionalProperties": False},
         )
         tool_registry.register(
@@ -441,7 +459,7 @@ class TutorAgent(PlaceholderAgent):
                 params=params,
             ),
             permission_level=PermissionLevel.READ_ONLY,
-            description="Read the latest structured compacted conversation context.",
+            description="读取最新的结构化压缩对话上下文。",
             parameters={"type": "object", "properties": {}, "additionalProperties": False},
         )
         tool_registry.register(
@@ -451,7 +469,7 @@ class TutorAgent(PlaceholderAgent):
                 params=params,
             ),
             permission_level=PermissionLevel.READ_ONLY,
-            description="Read the retrieved evidence supporting the tutoring answer.",
+            description="读取支持辅导回答的检索证据。",
             parameters={"type": "object", "properties": {}, "additionalProperties": False},
         )
         tool_registry.register(
@@ -461,7 +479,7 @@ class TutorAgent(PlaceholderAgent):
                 params=params,
             ),
             permission_level=PermissionLevel.READ_ONLY,
-            description="Read the recent dialogue turns and teaching state for multi-turn continuity.",
+            description="读取近期对话轮次和教学状态，用于多轮连续性。",
             parameters={"type": "object", "properties": {}, "additionalProperties": False},
         )
         tool_registry.register(
@@ -471,7 +489,7 @@ class TutorAgent(PlaceholderAgent):
                 params=params,
             ),
             permission_level=PermissionLevel.READ_ONLY,
-            description="Read multimodal image analysis results extracted from uploaded question images.",
+            description="读取从上传题目图片中提取的多模态图片分析结果。",
             parameters={"type": "object", "properties": {}, "additionalProperties": False},
         )
         core_loop = AgentCoreLoop(

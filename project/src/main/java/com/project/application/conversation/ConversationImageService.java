@@ -21,7 +21,7 @@ import java.util.Set;
 import java.util.UUID;
 
 /**
- * Handles chat image uploads and signed public read URLs for multimodal analysis.
+ * 处理聊天图片上传及用于多模态分析的签名公开读取 URL。
  */
 @Service
 public class ConversationImageService {

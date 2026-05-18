@@ -1,4 +1,4 @@
-"""Hybrid retrieval agent implementation."""
+"""混合检索 Agent 实现。"""
 
 from __future__ import annotations
 
@@ -25,7 +25,7 @@ LOGGER = logging.getLogger(__name__)
 
 
 class RetrievalAgent(PlaceholderAgent):
-    """Run hybrid retrieval and attach source evidence to params."""
+    """运行混合检索并将来源证据附加到参数中。"""
 
     def __init__(
         self,
@@ -57,11 +57,13 @@ class RetrievalAgent(PlaceholderAgent):
         query = str(params.get("query") or params.get("rewrittenQuery") or "未提供查询")
         rewritten_query = str(params.get("rewrittenQuery") or query)
         keywords = list(params.get("keywords", []))
+        web_search_enabled = self._web_search_enabled(params)
 
         retrieval_response, summary_text = await self._run_agent_core_loop(
             query=query,
             rewritten_query=rewritten_query,
             keywords=keywords,
+            web_search_enabled=web_search_enabled,
             params=params,
             system_prompt=system_prompt,
         )
@@ -95,22 +97,26 @@ class RetrievalAgent(PlaceholderAgent):
         query: str,
         rewritten_query: str,
         keywords: list[str],
+        web_search_enabled: bool,
         params: dict[str, Any],
         system_prompt: str,
     ):
         try:
-            # Step 1: Get raw retrieval results (1 DB query, with recovery)
+            # 步骤 1: 获取原始检索结果（1 次数据库查询，带恢复机制）
             raw_result = await self._safe_get_raw_result(
-                rewritten_query=rewritten_query, keywords=keywords,
+                rewritten_query=rewritten_query,
+                keywords=keywords,
+                web_search_enabled=web_search_enabled,
             )
             params["retrievalRawResult"] = raw_result
 
-            # Step 2: Channel results (deterministic, parallel)
+            # 步骤 2: 分渠道结果（确定性操作，并行执行）
             grep_task = asyncio.to_thread(self.service.channel_results, raw_result, "grep")
             vector_task = asyncio.to_thread(self.service.channel_results, raw_result, "vector")
             graph_task = asyncio.to_thread(self.service.channel_results, raw_result, "graph")
-            grep_result, vector_result, graph_result = await asyncio.gather(
-                grep_task, vector_task, graph_task,
+            web_task = asyncio.to_thread(self.service.channel_results, raw_result, "web")
+            grep_result, vector_result, graph_result, web_result = await asyncio.gather(
+                grep_task, vector_task, graph_task, web_task,
             )
             params["grepRetrievalResult"] = {
                 "priority": grep_result.get("priority", []) if isinstance(grep_result, dict) else [],
@@ -124,14 +130,19 @@ class RetrievalAgent(PlaceholderAgent):
                 "results": list(graph_result) if not isinstance(graph_result, dict) else graph_result.get("results", []),
                 "query": rewritten_query,
             }
+            params["webRetrievalResult"] = {
+                "enabled": web_search_enabled,
+                "results": list(web_result) if not isinstance(web_result, dict) else web_result.get("results", []),
+                "query": rewritten_query,
+            }
 
-            # Step 3: RRF merge (deterministic)
+            # 步骤 3: RRF 融合（确定性操作）
             retrieval_response = self.service.build_response(
                 query=query, rewritten_query=rewritten_query, keywords=keywords, raw_result=raw_result,
             )
             params["mergedRetrievalResult"] = retrieval_response
 
-            # Step 4: Summarize sources (1 LLM call)
+            # 步骤 4: 摘要来源（1 次 LLM 调用）
             summary_text = await self._safe_summarize(
                 retrieval_response=retrieval_response, system_prompt=system_prompt,
             )
@@ -146,6 +157,7 @@ class RetrievalAgent(PlaceholderAgent):
             query=query,
             rewritten_query=rewritten_query,
             keywords=keywords,
+            web_search_enabled=web_search_enabled,
         )
         summary_text = await self._safe_summarize(
             retrieval_response=retrieval_response, system_prompt=system_prompt,
@@ -280,9 +292,14 @@ class RetrievalAgent(PlaceholderAgent):
         *,
         rewritten_query: str,
         keywords: list[str],
+        web_search_enabled: bool = False,
     ) -> dict[str, Any]:
         async def operation() -> dict[str, Any]:
-            return await asyncio.to_thread(self.service.retrieve_raw, rewritten_query)
+            return await asyncio.to_thread(
+                self.service.retrieve_raw,
+                rewritten_query,
+                web_search_enabled=web_search_enabled,
+            )
 
         async def fallback_operation() -> dict[str, Any]:
             fallback_payload = self.service.fallback_raw_result(
@@ -299,6 +316,13 @@ class RetrievalAgent(PlaceholderAgent):
             failure_type=RecoveryFailureType.RETRIEVAL_UNAVAILABLE,
             operation=operation,
             fallback_operation=fallback_operation,
+        )
+
+    def _web_search_enabled(self, params: dict[str, Any]) -> bool:
+        return bool(
+            params.get("webSearchEnabled") is True
+            or params.get("enableWebSearch") is True
+            or params.get("tavilySearchEnabled") is True
         )
 
     async def _safe_summarize(

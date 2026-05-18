@@ -14,7 +14,7 @@ import java.util.Map;
 import java.util.UUID;
 
 /**
- * Historical user profile snapshot for timeline rendering.
+ * 用于时间线渲染的用户画像历史快照。
  */
 @Entity
 @Table(name = "user_profile_snapshot", schema = "app")

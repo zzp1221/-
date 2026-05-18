@@ -14,7 +14,7 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 import java.util.stream.Collectors;
 
 /**
- * Converts internal exceptions into stable API responses.
+ * 将内部异常转换为稳定的 API 响应。
  */
 @RestControllerAdvice
 public class GlobalExceptionHandler {

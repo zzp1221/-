@@ -1,8 +1,9 @@
-"""Profile agent backed by AgentCoreLoop and profile persistence tools."""
+"""基于 AgentCoreLoop 和画像持久化工具的画像 Agent。"""
 
 from __future__ import annotations
 
 import asyncio
+import logging
 from collections.abc import AsyncIterator
 from typing import Any
 
@@ -31,10 +32,13 @@ from src.ai_modules.runtime import (
     RecoveryFailureType,
     SystemSnapshot,
 )
+from src.ai_modules.runtime.skill_loader import SkillPromptLoader
+
+LOGGER = logging.getLogger(__name__)
 
 
 class ProfileAgent(PlaceholderAgent):
-    """Extract and persist learner profile dimensions from dialogue."""
+    """从对话中提取并持久化学习者画像维度。"""
 
     def __init__(
         self,
@@ -50,9 +54,14 @@ class ProfileAgent(PlaceholderAgent):
         self.profile_analyzer = profile_analyzer or ProfileAnalyzer()
         self.recovery_engine = RecoveryEngine()
         self.heartbeat_interval_seconds = heartbeat_interval_seconds
+        self.skill_loader = SkillPromptLoader()
 
     def system_prompt(self, snapshot: SystemSnapshot) -> str:
-        return build_profile_system_prompt(snapshot)
+        return self.skill_loader.build_system_prompt(
+            skill_name="profile",
+            snapshot=snapshot,
+            fallback_prompt=build_profile_system_prompt(snapshot),
+        )
 
     async def run(
         self,
@@ -132,13 +141,13 @@ class ProfileAgent(PlaceholderAgent):
         params: dict[str, Any],
         system_prompt: str,
     ) -> dict[str, Any]:
-        # Step 1: Read profile (DB read, deterministic)
+        # 步骤 1: 读取画像（数据库读取，确定性操作）
         await self._tool_read_profile(tool_input={}, user_id=user_id)
 
-        # Step 2: Analyze dialogue (1 LLM call)
+        # 步骤 2: 分析对话（1 次 LLM 调用）
         await self._tool_analyze_dialogue(tool_input={}, params=params)
 
-        # Step 3: Update profile (DB write, deterministic)
+        # 步骤 3: 更新画像（数据库写入，确定性操作）
         return await self._tool_update_profile(tool_input={}, user_id=user_id, params=params)
 
     async def _tool_read_profile(
@@ -195,7 +204,13 @@ class ProfileAgent(PlaceholderAgent):
         try:
             dimensions = await self.profile_analyzer.analyze(context_payload=context_payload)
         except Exception as exc:
-            raise RuntimeError("Profile LLM analysis failed") from exc
+            LOGGER.warning("画像 LLM 分析失败，使用规则兜底画像: %s", exc)
+            dimensions = self._build_fallback_dimensions(
+                structured_summary=structured_summary,
+                profile_context=profile_context,
+                combined_text=combined_text,
+                profile_source=profile_source,
+            )
         dimensions = self._finalize_dimensions(
             dimensions=dimensions,
             messages=messages,
@@ -209,6 +224,29 @@ class ProfileAgent(PlaceholderAgent):
         serialized_dimensions = dimensions.model_dump(by_alias=True)
         params["analyzedProfileDimensions"] = serialized_dimensions
         return serialized_dimensions
+
+    def _build_fallback_dimensions(
+        self,
+        *,
+        structured_summary: dict[str, Any],
+        profile_context: dict[str, Any],
+        combined_text: str,
+        profile_source: str,
+    ) -> LearnerProfileDimensions:
+        return LearnerProfileDimensions(
+            knowledge_foundation=self._infer_knowledge_foundation(combined_text, profile_context),
+            learning_goal=self._infer_learning_goal(structured_summary, combined_text),
+            professional_background=str(
+                profile_context.get("professionalBackground") or profile_context.get("major") or ""
+            ).strip(),
+            learning_preference=self._infer_learning_preference(structured_summary, combined_text),
+            cognitive_style=self._infer_cognitive_style(combined_text),
+            weak_points=self._infer_weak_points(structured_summary, combined_text),
+            learning_pace=self._infer_learning_pace(combined_text),
+            confidence_level=self._infer_confidence(combined_text),
+            source=profile_source,
+            summary_text="",
+        )
 
     async def _tool_update_profile(
         self,
@@ -367,9 +405,29 @@ class ProfileAgent(PlaceholderAgent):
         )
 
     def _infer_knowledge_foundation(self, text: str, profile_context: dict[str, Any]) -> str:
-        if profile_context.get("studentLevel"):
-            return str(profile_context["studentLevel"])
-        if any(keyword in text for keyword in ("不太懂", "刚学", "入门")):
+        for key in ("knowledgeFoundation", "knowledgeBase", "foundationLevel", "studentLevel"):
+            value = str(profile_context.get(key) or "").strip()
+            if value and value.upper() not in {"UNKNOWN", "待分析", "--"}:
+                return value
+        if any(
+            keyword in text
+            for keyword in (
+                "不太懂",
+                "不懂",
+                "刚学",
+                "入门",
+                "新手",
+                "零基础",
+                "从零",
+                "什么是",
+                "是什么",
+                "是什么意思",
+                "解释一下",
+                "介绍一下",
+                "基础概念",
+                "基本概念",
+            )
+        ):
             return "BASIC"
         if any(keyword in text for keyword in ("熟悉", "会做", "复习")):
             return "INTERMEDIATE"

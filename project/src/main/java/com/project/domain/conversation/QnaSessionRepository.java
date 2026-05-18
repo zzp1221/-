@@ -9,7 +9,7 @@ import java.util.Optional;
 import java.util.UUID;
 
 /**
- * Repository for conversation metadata.
+ * 对话元数据仓库。
  */
 public interface QnaSessionRepository extends JpaRepository<QnaSession, UUID> {
 

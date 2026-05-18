@@ -6,7 +6,7 @@ import java.util.List;
 import java.util.UUID;
 
 /**
- * Repository for persisted smart-engine events.
+ * 智学引擎事件持久化仓库。
  */
 public interface SmartEngineTaskEventRepository extends JpaRepository<SmartEngineTaskEvent, Long> {
 

@@ -5,7 +5,7 @@ import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
 
 /**
- * Request payload for user registration.
+ * 用户注册请求体。
  */
 public record RegisterRequest(
     @NotBlank @Size(max = 64) String loginId,

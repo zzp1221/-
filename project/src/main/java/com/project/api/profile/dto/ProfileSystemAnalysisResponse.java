@@ -3,7 +3,7 @@ package com.project.api.profile.dto;
 import java.util.List;
 
 /**
- * Read-only analysis derived from profile fields and behavior aggregates.
+ * 基于画像字段与行为聚合数据的只读分析。
  */
 public record ProfileSystemAnalysisResponse(
     String strongestSkill,

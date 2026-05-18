@@ -8,7 +8,7 @@ import java.util.Map;
 import java.util.UUID;
 
 /**
- * Request payload for submitting a smart-engine task.
+ * 提交智学引擎任务的请求体。
  */
 public record SubmitTaskRequest(
     @NotNull UUID conversationId,

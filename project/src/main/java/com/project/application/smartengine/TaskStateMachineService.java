@@ -23,7 +23,7 @@ import java.util.Map;
 import java.util.UUID;
 
 /**
- * Owns task state transitions and event persistence.
+ * 管理任务状态流转与事件持久化。
  */
 @Service
 public class TaskStateMachineService {

@@ -1,7 +1,7 @@
 package com.project.domain.conversation;
 
 /**
- * Conversation operating mode stored in PostgreSQL native enum column.
+ * 存储在 PostgreSQL 原生枚举列中的对话运行模式。
  */
 public enum ConversationMode {
     QNA,

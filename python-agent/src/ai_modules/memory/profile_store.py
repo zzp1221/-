@@ -1,4 +1,4 @@
-"""Persistence layer for learner profile snapshots."""
+"""学习者画像快照的持久化层。"""
 
 from __future__ import annotations
 
@@ -17,7 +17,7 @@ from src.ai_modules.models.profile import ErrorPattern, WeakPointDetail
 
 
 class ProfileStore(Protocol):
-    """Persistence contract for learner profiles."""
+    """学习者画像的持久化契约。"""
 
     async def read_profile(self, user_id: str) -> LearnerProfileSnapshot | None: ...
 
@@ -40,7 +40,7 @@ def _adapt_json_payload(payload: Any) -> Any:
 
 
 class InMemoryProfileStore:
-    """In-memory store for tests and local fallback."""
+    """用于测试和本地回退的内存存储。"""
 
     def __init__(self) -> None:
         self.snapshots: dict[str, LearnerProfileSnapshot] = {}
@@ -68,7 +68,7 @@ class InMemoryProfileStore:
 
 
 class PostgresProfileStore:
-    """PostgreSQL-backed profile store with snapshot/current tables."""
+    """基于 PostgreSQL 的画像存储，支持快照表和当前表。"""
 
     def __init__(
         self,
@@ -933,7 +933,7 @@ class PostgresProfileStore:
                     ),
                 )
 
-                # Keep snapshot/current atomic, but skip profile vectors when embedding is unavailable.
+                # 保持快照/当前表的原子性，但在嵌入向量不可用时跳过画像向量。
                 cur.execute("SAVEPOINT profile_vector_insert")
                 try:
                     embedding = self._generate_embedding(self._build_embedding_text(profile_payload, summary_text))

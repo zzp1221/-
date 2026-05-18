@@ -21,7 +21,7 @@ import java.time.Duration;
 import java.util.Map;
 
 /**
- * Applies IP-level throttling before JWT parsing to reduce authentication abuse.
+ * 在 JWT 解析之前进行 IP 级限流，减少认证滥用。
  */
 @Component
 public class IpRateLimitFilter extends OncePerRequestFilter {

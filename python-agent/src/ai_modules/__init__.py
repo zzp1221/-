@@ -1,1 +1,1 @@
-"""AI runtime modules for the zhixue Python agent."""
+"""智学引擎 Python Agent 的 AI 运行时模块。"""

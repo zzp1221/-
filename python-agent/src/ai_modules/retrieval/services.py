@@ -1,4 +1,4 @@
-"""Query rewrite and hybrid retrieval services."""
+"""查询改写和混合检索服务。"""
 
 from __future__ import annotations
 
@@ -23,7 +23,7 @@ class SupportsHybridRetrieve(Protocol):
 
 
 class LegacyHybridRetrieverAdapter:
-    """Adapter around the legacy retrieval implementation in `python-agent/retrieval`."""
+    """对 `python-agent/retrieval` 中旧版检索实现的适配器。"""
 
     def __init__(self) -> None:
         settings = get_settings()
@@ -43,16 +43,20 @@ class LegacyHybridRetrieverAdapter:
             domain=self.domain,
         )
 
-    def retrieve(self, query: str) -> dict[str, Any]:
+    def retrieve(self, query: str, *, web_search_enabled: bool = False) -> dict[str, Any]:
         import psycopg2
 
         with psycopg2.connect(**self._db_config) as conn:
             with conn.cursor() as cur:
-                return self._retriever.retrieve(cur, query)
+                return self._retriever.retrieve(
+                    cur,
+                    query,
+                    web_search_enabled=web_search_enabled,
+                )
 
 
 class QueryRewriteService:
-    """Low-cost deterministic query rewrite for the retrieval stage."""
+    """检索阶段的低成本确定性查询改写。"""
 
     def extract_query(self, params: dict[str, Any]) -> str:
         explicit_query = self._first_non_empty(
@@ -190,7 +194,7 @@ class QueryRewriteService:
 
 
 class HybridRetrievalService:
-    """Hybrid retrieval with legacy-adapter and deterministic fallback."""
+    """支持旧版适配器和确定性回退的混合检索。"""
 
     def __init__(
         self,
@@ -205,8 +209,12 @@ class HybridRetrievalService:
         query: str,
         rewritten_query: str,
         keywords: list[str],
+        web_search_enabled: bool = False,
     ) -> RetrievalResponse:
-        raw_result = self.retrieve_raw(rewritten_query)
+        raw_result = self.retrieve_raw(
+            rewritten_query,
+            web_search_enabled=web_search_enabled,
+        )
         return self.build_response(
             query=query,
             rewritten_query=rewritten_query,
@@ -214,14 +222,20 @@ class HybridRetrievalService:
             raw_result=raw_result,
         )
 
-    def retrieve_raw(self, rewritten_query: str) -> dict[str, Any]:
-        cache_key = self._build_raw_result_cache_key(rewritten_query)
+    def retrieve_raw(self, rewritten_query: str, *, web_search_enabled: bool = False) -> dict[str, Any]:
+        cache_key = self._build_raw_result_cache_key(
+            rewritten_query,
+            web_search_enabled=web_search_enabled,
+        )
         if cache_key:
             cached_result = _RETRIEVAL_RESULT_CACHE.get(cache_key)
             if isinstance(cached_result, dict):
                 return cached_result
 
-        raw_result = self._retrieve_raw(rewritten_query)
+        raw_result = self._retrieve_raw(
+            rewritten_query,
+            web_search_enabled=web_search_enabled,
+        )
         if cache_key and self._is_cacheable_raw_result(raw_result):
             _RETRIEVAL_RESULT_CACHE.set(
                 cache_key,
@@ -274,13 +288,16 @@ class HybridRetrievalService:
         channels = raw_result.get("channels", {}) if isinstance(raw_result, dict) else {}
         return channels.get(channel_name, {} if channel_name == "grep" else [])
 
-    def _retrieve_raw(self, rewritten_query: str) -> dict[str, Any]:
+    def _retrieve_raw(self, rewritten_query: str, *, web_search_enabled: bool = False) -> dict[str, Any]:
         if self.retriever is not None:
             return self.retriever.retrieve(rewritten_query)
 
         try:
             adapter = LegacyHybridRetrieverAdapter()
-            return adapter.retrieve(rewritten_query)
+            return adapter.retrieve(
+                rewritten_query,
+                web_search_enabled=web_search_enabled,
+            )
         except Exception as exc:
             LOGGER.warning("Hybrid retrieval failed for query %r: %s", rewritten_query, exc)
             return {
@@ -295,7 +312,7 @@ class HybridRetrievalService:
         _RETRIEVAL_RESULT_CACHE.max_entries = max(1, settings.runtime_cache_max_entries)
         return ttl_seconds
 
-    def _build_raw_result_cache_key(self, rewritten_query: str) -> str:
+    def _build_raw_result_cache_key(self, rewritten_query: str, *, web_search_enabled: bool = False) -> str:
         ttl_seconds = self._raw_result_cache_ttl_seconds()
         if ttl_seconds <= 0:
             return ""
@@ -305,6 +322,7 @@ class HybridRetrievalService:
                 "scope": self._raw_result_cache_scope(),
                 "domain": self.domain,
                 "query": rewritten_query,
+                "webSearchEnabled": web_search_enabled,
             },
         )
 
@@ -352,10 +370,13 @@ class HybridRetrievalService:
         grep_priority = channels.get("grep", {}).get("priority", [])
         vector_results = channels.get("vector", [])
         graph_results = channels.get("graph", [])
+        web_results = channels.get("web", [])
 
         priority_slugs = {str(item[0]) for item in grep_priority}
         vector_slugs = {str(item[0]) for item in vector_results}
         graph_slugs = {str(item[0]) for item in graph_results}
+        web_metadata = self._build_web_metadata(web_results)
+        web_slugs = set(web_metadata)
 
         scored_documents: list[tuple[float, RetrievalDocument]] = []
         phrase_anchor = self._phrase_anchor(keywords)
@@ -377,6 +398,9 @@ class HybridRetrievalService:
                 channel = "vector"
             elif slug in graph_slugs:
                 channel = "graph"
+            elif slug in web_slugs:
+                channel = "web"
+                snippet = snippet or web_metadata.get(slug, {}).get("snippet")
 
             scored_documents.append(
                 (
@@ -392,6 +416,9 @@ class HybridRetrievalService:
                             f"{', '.join(self._matched_keywords(title, keywords)) or '无'}"
                         ),
                         snippet=snippet,
+                        url=web_metadata.get(slug, {}).get("url"),
+                        sourceTitle=web_metadata.get(slug, {}).get("sourceTitle"),
+                        publishedDate=web_metadata.get(slug, {}).get("publishedDate"),
                     ),
                 )
             )
@@ -410,6 +437,25 @@ class HybridRetrievalService:
             if existing is None or score > existing[0]:
                 deduped[dedupe_key] = (score, document)
         return sorted(deduped.values(), key=lambda item: item[0], reverse=True)
+
+    def _build_web_metadata(self, web_results: Any) -> dict[str, dict[str, str]]:
+        if not isinstance(web_results, list):
+            return {}
+        metadata: dict[str, dict[str, str]] = {}
+        for item in web_results:
+            if not isinstance(item, (list, tuple)) or len(item) < 2:
+                continue
+            slug = str(item[0])
+            info: dict[str, str] = {"url": slug, "sourceTitle": str(item[1])}
+            for extra in item[3:]:
+                if not isinstance(extra, dict):
+                    continue
+                for key in ("url", "snippet", "sourceTitle", "publishedDate"):
+                    value = extra.get(key)
+                    if isinstance(value, str) and value.strip():
+                        info[key] = value.strip()
+            metadata[slug] = info
+        return metadata
 
     def _document_dedupe_key(self, document: RetrievalDocument) -> str:
         title_key = self._normalize_similarity_text(document.title)

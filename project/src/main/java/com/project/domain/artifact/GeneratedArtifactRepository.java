@@ -6,7 +6,7 @@ import java.util.Optional;
 import java.util.UUID;
 
 /**
- * Repository for generated artifact tokens.
+ * 生成产物令牌仓库。
  */
 public interface GeneratedArtifactRepository extends JpaRepository<GeneratedArtifact, UUID> {
 

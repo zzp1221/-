@@ -16,7 +16,7 @@ import java.io.IOException;
 import java.util.List;
 
 /**
- * Extracts bearer tokens from incoming requests and populates the Spring security context.
+ * 从请求中提取 Bearer Token 并填充 Spring Security 上下文。
  */
 @Component
 public class JwtAuthenticationFilter extends OncePerRequestFilter {

@@ -3,7 +3,7 @@ package com.project.application.smartengine;
 import java.util.Arrays;
 
 /**
- * Known SSE event types emitted by the Python runtime.
+ * Python 运行时发出的已知 SSE 事件类型。
  */
 public enum StreamEventType {
     MESSAGE("message"),

@@ -8,14 +8,13 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayDeque;
 import java.util.Deque;
-import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * Sliding-window rate limiter with an in-memory store.
+ * 基于内存存储的滑动窗口限流器。
  *
- * <p>This service is a drop-in placeholder for a future Redis-backed
- * implementation while keeping the calling contract stable.</p>
+ * <p>此服务是未来 Redis 实现的即插即用占位符，
+ * 同时保持调用契约不变。</p>
  */
 @Service
 @ConditionalOnMissingBean(name = "stringRedisTemplate")
@@ -45,7 +44,7 @@ public class InMemorySlidingWindowRateLimiter implements RateLimiter {
         evictExpired(Duration.ofMinutes(5));
     }
 
-    /** Remove buckets that have been idle for longer than the window. */
+    /** 移除空闲时间超过窗口期的桶。 */
     public void evictExpired(Duration window) {
         Instant cutoff = Instant.now().minus(window).minus(window);
         buckets.entrySet().removeIf(entry -> {

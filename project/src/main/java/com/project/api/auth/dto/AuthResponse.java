@@ -1,7 +1,7 @@
 package com.project.api.auth.dto;
 
 /**
- * Authentication response returned after successful registration or login.
+ * 注册或登录成功后返回的认证响应。
  */
 public record AuthResponse(
     String token,

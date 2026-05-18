@@ -4,7 +4,6 @@ import com.project.api.smartengine.dto.SubmitTaskRequest;
 import com.project.api.smartengine.dto.SubmitTaskResponse;
 import com.project.api.smartengine.dto.TaskStatusResponse;
 import com.project.application.audit.AuditService;
-import com.project.application.common.ApplicationException;
 import com.project.application.idempotency.IdempotencyService;
 import com.project.domain.profile.UserProfileCurrentRepository;
 import com.project.domain.task.SmartEngineTask;
@@ -13,7 +12,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.core.task.TaskExecutor;
-import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
@@ -23,7 +21,7 @@ import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * Coordinates task submission, background execution, cancellation, and external SSE exposure.
+ * 协调任务提交、后台执行、取消及外部 SSE 暴露。
  */
 @Service
 public class SmartEngineOrchestratorService {
@@ -162,7 +160,7 @@ public class SmartEngineOrchestratorService {
     }
 
     /**
-     * Cancel a running task. No-op if the task is already in a terminal state.
+     * 取消正在运行的任务。如果任务已处于终态则不执行任何操作。
      */
     public void cancel(JwtAuthenticatedUser currentUser, UUID taskId) {
         SmartEngineTask task = taskStateMachineService.getOwnedTask(taskId, currentUser.userId());
@@ -181,8 +179,7 @@ public class SmartEngineOrchestratorService {
 
         pythonAgentClient.cancel(taskId.toString());
 
-        // The actual cancellation must happen inside the Python runtime; interrupt only helps
-        // unblock the local worker thread if it is waiting on I/O or retries.
+        // 实际取消必须在 Python 运行时内部完成；interrupt 仅帮助解除本地工作线程在 I/O 或重试等待时的阻塞。
         Thread thread = runningThreads.get(taskId);
         if (thread != null) {
             thread.interrupt();

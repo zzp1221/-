@@ -1,4 +1,4 @@
-"""Async OpenAI-compatible client helpers."""
+"""异步 OpenAI 兼容客户端辅助工具。"""
 
 from __future__ import annotations
 
@@ -18,7 +18,7 @@ TRACER = trace.get_tracer(__name__)
 
 
 def extract_json_object_from_text(content: str) -> dict[str, Any]:
-    """Extract the last valid JSON object from mixed model output."""
+    """从混合模型输出中提取最后一个有效的 JSON 对象。"""
 
     stripped = content.strip()
     if stripped:
@@ -60,7 +60,7 @@ def extract_json_object_from_text(content: str) -> dict[str, Any]:
 
 
 class OpenAICompatibleClient:
-    """Small async client for OpenAI-compatible chat completions."""
+    """用于 OpenAI 兼容聊天补全的小型异步客户端。"""
 
     _shared_clients: ClassVar[dict[str, httpx.AsyncClient]] = {}
 
@@ -214,7 +214,7 @@ class OpenAICompatibleClient:
 
 
 class OpenAICompatibleToolCallingLLM:
-    """Tool-calling adapter over OpenAI-compatible chat completions."""
+    """基于 OpenAI 兼容聊天补全的工具调用适配器。"""
 
     def __init__(
         self,
@@ -322,6 +322,6 @@ class OpenAICompatibleToolCallingLLM:
         return json.dumps(value, ensure_ascii=False)
 
 
-# Backward-compatible aliases during migration from the old provider-specific naming.
+# 从旧的提供商特定命名迁移期间的向后兼容别名。
 BailianCompatibleClient = OpenAICompatibleClient
 BailianCompatibleToolCallingLLM = OpenAICompatibleToolCallingLLM

@@ -124,7 +124,7 @@ export const ChatPanel = memo(function ChatPanel({ messages }: { messages: ChatM
         setCopiedMessageId((prev) => (prev === message.id ? null : prev));
       }, 1200);
     } catch {
-      // ignore clipboard errors
+      // 忽略剪贴板错误
     }
   };
 

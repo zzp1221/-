@@ -1,4 +1,4 @@
-"""Tool registry for AgentCoreLoop."""
+"""AgentCoreLoop 的工具注册中心。"""
 
 from __future__ import annotations
 
@@ -12,7 +12,7 @@ ToolHandler = Callable[[dict[str, Any]], Any] | Callable[[dict[str, Any]], Await
 
 @dataclass(slots=True)
 class ToolDefinition:
-    """Tool metadata used by the agent runtime."""
+    """智能体运行时使用的工具元数据。"""
 
     name: str
     handler: ToolHandler
@@ -21,7 +21,7 @@ class ToolDefinition:
     parameters: dict[str, Any] | None = None
 
     def as_llm_tool(self) -> dict[str, Any]:
-        """Return a minimal function-tool schema for model calls."""
+        """返回用于模型调用的最小函数工具 schema。"""
 
         schema = self.parameters or {
             "type": "object",
@@ -38,7 +38,7 @@ class ToolDefinition:
 
 
 class ToolRegistry:
-    """Runtime registry for tool lookup and execution."""
+    """用于工具查找和执行的运行时注册中心。"""
 
     def __init__(self) -> None:
         self._tools: dict[str, ToolDefinition] = {}
@@ -65,7 +65,7 @@ class ToolRegistry:
     def get(self, name: str) -> ToolDefinition:
         try:
             return self._tools[name]
-        except KeyError as exc:  # pragma: no cover - defensive branch
+        except KeyError as exc:  # pragma: no cover - 防御性分支
             raise KeyError(f"Unknown tool: {name}") from exc
 
     def list_for_agent(self, agent_level: int) -> list[ToolDefinition]:

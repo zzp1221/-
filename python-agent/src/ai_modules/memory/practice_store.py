@@ -1,4 +1,4 @@
-"""Persistence layer for practice question batches and judging results."""
+"""练习题批次和判题结果的持久化层。"""
 
 from __future__ import annotations
 
@@ -8,7 +8,7 @@ from typing import Any, Protocol
 from uuid import uuid4
 
 from src.ai_modules.config import get_settings
-from src.ai_modules.models import JudgeItemResult, JudgeResultPayload, PracticeQuestion, QuestionBatchPayload
+from src.ai_modules.models import JudgeResultPayload, QuestionBatchPayload
 
 
 def _adapt_json_payload(payload: dict[str, Any] | list[Any]) -> Any:
@@ -21,7 +21,7 @@ def _adapt_json_payload(payload: dict[str, Any] | list[Any]) -> Any:
 
 
 class PracticeStore(Protocol):
-    """Persistence contract for practice generation and judging."""
+    """练习生成和判题的持久化契约。"""
 
     async def save_question_batch(
         self,
@@ -42,7 +42,7 @@ class PracticeStore(Protocol):
 
 
 class InMemoryPracticeStore:
-    """In-memory store for tests and local fallback."""
+    """用于测试和本地回退的内存存储。"""
 
     def __init__(self) -> None:
         self.question_batches: dict[str, dict[str, Any]] = {}
@@ -119,7 +119,7 @@ class InMemoryPracticeStore:
 
 
 class PostgresPracticeStore:
-    """PostgreSQL-backed store for practice sets, items, and submissions."""
+    """基于 PostgreSQL 的练习集、题目和提交记录存储。"""
 
     def __init__(
         self,

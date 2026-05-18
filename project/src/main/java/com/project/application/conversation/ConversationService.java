@@ -32,7 +32,7 @@ import java.util.UUID;
 import java.util.concurrent.atomic.AtomicInteger;
 
 /**
- * Manages conversation metadata and streaming message forwarding.
+ * 管理会话元数据与流式消息转发。
  */
 @Service
 public class ConversationService {
@@ -139,7 +139,7 @@ public class ConversationService {
         }
         appendConversationMessage(conversationId, currentUser.userId(), "user", normalizedMessage, imageUrls, true);
 
-        // Fetch conversation history for multi-turn memory
+        // 获取会话历史用于多轮记忆
         List<ConversationMessageItemResponse> history = fetchRecentHistory(conversationId, currentUser.userId());
 
         SseEmitter emitter = new SseEmitter(DEFAULT_TIMEOUT_MS);

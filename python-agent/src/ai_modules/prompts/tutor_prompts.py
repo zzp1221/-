@@ -1,4 +1,4 @@
-"""Prompt helpers for Tutor Agent — Sigma-style Socratic mastery tutoring."""
+"""Tutor Agent 的提示词辅助工具 — 基于 Sigma 风格的苏格拉底式掌握学习辅导。"""
 
 from __future__ import annotations
 
@@ -6,7 +6,7 @@ from src.ai_modules.runtime import SystemSnapshot
 
 
 def build_tutor_system_prompt(snapshot: SystemSnapshot) -> str:
-    """Return a Sigma-inspired tutoring prompt with continuity-aware response rules."""
+    """返回具有上下文连续性的 Sigma 风格辅导提示词。"""
 
     return "\n".join(
         [

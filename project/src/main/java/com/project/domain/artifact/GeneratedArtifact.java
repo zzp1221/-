@@ -14,7 +14,7 @@ import java.time.OffsetDateTime;
 import java.util.UUID;
 
 /**
- * Downloadable sandbox artifact issued by the control plane.
+ * 控制平面签发的可下载沙箱产物。
  */
 @Entity
 @Table(name = "generated_artifact", schema = "app")

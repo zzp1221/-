@@ -1,4 +1,4 @@
-"""Query rewrite agent implementation."""
+"""查询改写 Agent 实现。"""
 
 from __future__ import annotations
 
@@ -29,7 +29,7 @@ LOGGER = logging.getLogger(__name__)
 
 
 class QueryRewriteAgent(PlaceholderAgent):
-    """Rewrite retrieval queries before the hybrid retriever runs."""
+    """在混合检索器运行前改写检索查询。"""
 
     def __init__(
         self,
@@ -96,11 +96,11 @@ class QueryRewriteAgent(PlaceholderAgent):
         snapshot: SystemSnapshot,
         system_prompt: str,
     ):
-        # Step 1: Extract query context (deterministic)
+        # 步骤 1: 提取查询上下文（确定性操作）
         context = self._tool_extract_query_context(tool_input={}, params=params)
         original_query = context["originalQuery"]
 
-        # Step 2: Rewrite query via LLM (1 LLM call)
+        # 步骤 2: 通过 LLM 改写查询（1 次 LLM 调用）
         try:
             rewritten_payload = await self._tool_rewrite_query(
                 tool_input={}, params=params, snapshot=snapshot, system_prompt=system_prompt,
@@ -109,7 +109,7 @@ class QueryRewriteAgent(PlaceholderAgent):
             LOGGER.warning("LLM query rewrite failed, falling back to direct rewrite.", exc_info=True)
             return self.service.rewrite(params)
 
-        # Step 3: Validate result (deterministic)
+        # 步骤 3: 验证结果（确定性操作）
         try:
             return self._tool_finalize_rewrite(rewritten_payload)
         except Exception:

@@ -11,11 +11,11 @@ import java.time.OffsetDateTime;
 import java.util.UUID;
 
 /**
- * User aggregate root mapped to the {@code app.users} table.
+ * 映射到 {@code app.users} 表的用户聚合根。
  *
- * <p>The control plane only needs the identity subset for authentication and
- * authorization concerns. Domain-specific profile data remains in dedicated
- * profile tables so authentication stays isolated and easily testable.</p>
+ * <p>控制平面仅需要身份子集用于认证和授权。
+ * 领域特定的画像数据保留在专用画像表中，
+ * 使认证逻辑保持隔离且易于测试。</p>
  */
 @Entity
 @Table(name = "users", schema = "app")

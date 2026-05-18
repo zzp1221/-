@@ -1,4 +1,4 @@
-"""Tool-calling LLM adapters used by Tutor Agent."""
+"""Tutor Agent 使用的工具调用 LLM 适配器。"""
 
 from __future__ import annotations
 
@@ -11,7 +11,7 @@ from src.ai_modules.runtime import AssistantTurn, ToolCall
 
 
 class RuleBasedTutorLLM:
-    """Deterministic fallback LLM that still exercises AgentCoreLoop tool usage."""
+    """仍然执行 AgentCoreLoop 工具调用的确定性回退 LLM。"""
 
     async def complete(
         self,
@@ -195,14 +195,14 @@ class RuleBasedTutorLLM:
 
 
 class OpenAICompatibleTutorLLM(OpenAICompatibleToolCallingLLM):
-    """Compatibility alias for the project's default OpenAI-compatible adapter."""
+    """项目默认 OpenAI 兼容适配器的兼容别名。"""
 
 
 BailianToolCallingLLM = OpenAICompatibleTutorLLM
 
 
 class TutorLLMClientFactory:
-    """Create the Tutor LLM client with OpenAI-compatible primary and rule-based fallback."""
+    """创建 Tutor LLM 客户端，支持 OpenAI 兼容主模型和基于规则的回退。"""
 
     @staticmethod
     def create() -> Any:

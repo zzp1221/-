@@ -32,7 +32,7 @@ import java.util.Set;
 import java.util.UUID;
 
 /**
- * Read-only analytics assembled from real persisted learning records.
+ * 基于真实持久化学习记录组装的只读分析服务。
  */
 @Service
 public class UserProfileAnalyticsService {

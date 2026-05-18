@@ -6,7 +6,7 @@ import java.util.Optional;
 import java.util.UUID;
 
 /**
- * Repository for persisted video-generation task snapshots.
+ * 视频生成任务快照持久化仓库。
  */
 public interface VideoGenerationTaskRepository extends JpaRepository<VideoGenerationTask, UUID> {
 

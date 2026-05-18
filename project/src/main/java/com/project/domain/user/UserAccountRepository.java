@@ -6,7 +6,7 @@ import java.util.Optional;
 import java.util.UUID;
 
 /**
- * Repository abstraction for user authentication queries.
+ * 用户认证查询的仓库抽象。
  */
 public interface UserAccountRepository extends JpaRepository<UserAccount, UUID> {
 

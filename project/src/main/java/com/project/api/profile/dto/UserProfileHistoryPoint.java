@@ -5,7 +5,7 @@ import java.time.OffsetDateTime;
 import java.util.Map;
 
 /**
- * Historical profile point used by the front-end timeline panel.
+ * 供前端时间线面板使用的历史画像数据点。
  */
 public record UserProfileHistoryPoint(
     Integer version,

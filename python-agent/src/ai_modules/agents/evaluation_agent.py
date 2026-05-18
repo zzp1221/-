@@ -1,4 +1,4 @@
-"""Evaluation agent backed by AgentCoreLoop and LLM-generated reports."""
+"""基于 AgentCoreLoop 和 LLM 生成报告的评估 Agent。"""
 
 from __future__ import annotations
 
@@ -9,7 +9,6 @@ from typing import Any
 from src.ai_modules.agents.base import PlaceholderAgent
 from src.ai_modules.llms import EvaluationGenerator, PlanningLLMClientFactory, PracticeQuestionGenerator
 from src.ai_modules.models import (
-    EvaluationDimension,
     EvaluationPayload,
     PracticeQuestion,
     ProgressPayload,
@@ -32,7 +31,7 @@ INTERACTIVE_DIMENSIONS = {"案例迁移", "练习掌握", "学习主动性", "�
 
 
 class EvaluationAgent(PlaceholderAgent):
-    """Evaluate learner readiness and feed planning context."""
+    """评估学习者准备情况并为规划上下文提供输入。"""
 
     def __init__(
         self,

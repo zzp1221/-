@@ -1,4 +1,4 @@
-"""Base placeholder agent implementations for early integration steps."""
+"""早期集成阶段的基础占位 Agent 实现。"""
 
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ from src.ai_modules.runtime import SnapshotBuilder, SystemSnapshot
 
 
 class PlaceholderAgent:
-    """Minimal agent skeleton used before real business logic is connected."""
+    """接入实际业务逻辑前使用的最小 Agent 骨架。"""
 
     def __init__(
         self,

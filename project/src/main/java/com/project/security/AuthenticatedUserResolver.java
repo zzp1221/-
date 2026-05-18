@@ -5,7 +5,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.security.core.Authentication;
 
 /**
- * Resolves the authenticated JWT principal with a stable 401 response when unavailable.
+ * 解析已认证的 JWT 主体，未认证时返回稳定的 401 响应。
  */
 public final class AuthenticatedUserResolver {
 

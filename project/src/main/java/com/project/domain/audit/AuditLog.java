@@ -16,7 +16,7 @@ import java.util.Map;
 import java.util.UUID;
 
 /**
- * Audit trail entry for control-plane security and business actions.
+ * 控制平面安全和业务操作的审计追踪条目。
  */
 @Entity
 @Table(name = "audit_log", schema = "app")

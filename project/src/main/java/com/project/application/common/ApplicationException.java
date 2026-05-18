@@ -3,7 +3,7 @@ package com.project.application.common;
 import org.springframework.http.HttpStatus;
 
 /**
- * Domain-oriented application exception carrying a stable API code and status.
+ * 面向领域的应用异常，携带稳定的 API 错误码和状态。
  */
 public class ApplicationException extends RuntimeException {
 

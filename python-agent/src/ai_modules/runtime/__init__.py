@@ -1,4 +1,4 @@
-"""Runtime primitives for the zhixue Agent loop."""
+"""智学引擎智能体循环的运行时原语。"""
 
 from src.ai_modules.runtime.agent_core_loop import (
     AgentCoreLoop,

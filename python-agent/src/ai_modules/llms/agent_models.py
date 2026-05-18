@@ -1,4 +1,4 @@
-"""Provider-aware structured helpers and model-selection factories."""
+"""支持多提供商的结构化辅助工具和模型选择工厂。"""
 
 from __future__ import annotations
 
@@ -87,7 +87,7 @@ def create_compatible_client(
     model_name: str | None = None,
     provider_name: str | None = None,
 ) -> Any:
-    """Build the currently configured OpenAI-compatible client."""
+    """构建当前配置的 OpenAI 兼容客户端。"""
 
     resolved_provider = (provider_name or _provider_name()).strip().lower()
     if resolved_provider == "spark":
@@ -100,7 +100,7 @@ def create_tool_calling_llm(
     model_name: str | None = None,
     provider_name: str | None = None,
 ) -> Any:
-    """Build the currently configured tool-calling LLM adapter."""
+    """构建当前配置的工具调用 LLM 适配器。"""
 
     resolved_provider = (provider_name or _provider_name()).strip().lower()
     if resolved_provider == "spark":
@@ -109,7 +109,7 @@ def create_tool_calling_llm(
 
 
 class OpenAICompatibleJSONGenerator:
-    """Generate structured JSON with the active OpenAI-compatible provider."""
+    """使用活跃的 OpenAI 兼容提供商生成结构化 JSON。"""
 
     def __init__(
         self,
@@ -192,7 +192,7 @@ class OpenAICompatibleJSONGenerator:
 
 
 class OpenAICompatibleQueryRewriteGenerator:
-    """Use a lightweight OpenAI-compatible model to rewrite retrieval queries."""
+    """使用轻量级 OpenAI 兼容模型改写检索查询。"""
 
     def __init__(self) -> None:
         provider_name, model_name = _resolve_component_binding("query_rewrite_llm", default_logical_model="fast_model")
@@ -225,7 +225,7 @@ class OpenAICompatibleQueryRewriteGenerator:
 
 
 class OpenAICompatibleRetrievalSummaryGenerator:
-    """Use a lightweight OpenAI-compatible model to summarize retrieval evidence."""
+    """使用轻量级 OpenAI 兼容模型总结检索证据。"""
 
     def __init__(self) -> None:
         provider_name, model_name = _resolve_component_binding("retrieval_llm", default_logical_model="fast_model")
@@ -294,7 +294,7 @@ class OpenAICompatibleRetrievalSummaryGenerator:
 
 
 class OpenAICompatibleEvaluationGenerator:
-    """Generate structured learner evaluation with the primary provider model."""
+    """使用主提供商模型生成结构化学习者评估。"""
 
     def __init__(self) -> None:
         if not _component_provider_ready("evaluation_llm"):
@@ -320,7 +320,7 @@ class OpenAICompatibleEvaluationGenerator:
 
 
 class OpenAICompatibleLearningPathGenerator:
-    """Generate structured learning path with the primary provider model."""
+    """使用主提供商模型生成结构化学习路径。"""
 
     def __init__(self) -> None:
         if not _component_provider_ready("path_planning_llm"):
@@ -452,7 +452,7 @@ class OpenAICompatibleLearningPathGenerator:
 
 
 class OpenAICompatiblePracticeQuestionGenerator:
-    """Generate a structured practice batch with the primary provider model."""
+    """使用主提供商模型生成结构化练习批次。"""
 
     def __init__(self) -> None:
         provider_name, model_name = _resolve_component_binding("practice_llm", default_logical_model="main_chat_model")
@@ -496,7 +496,7 @@ class OpenAICompatiblePracticeQuestionGenerator:
 
 
 class OpenAICompatibleObjectiveJudgeGenerator:
-    """Use the active provider to judge objective questions and return structured results."""
+    """使用活跃提供商判分客观题并返回结构化结果。"""
 
     def __init__(self) -> None:
         provider_name, model_name = _resolve_component_binding("judge_llm", default_logical_model="main_chat_model")
@@ -543,7 +543,7 @@ class OpenAICompatibleObjectiveJudgeGenerator:
 
 
 class OpenAICompatibleJudgeFeedbackGenerator:
-    """Generate the final judging summary with the primary provider model."""
+    """使用主提供商模型生成最终判题汇总。"""
 
     def __init__(self) -> None:
         provider_name, model_name = _resolve_component_binding("judge_llm", default_logical_model="main_chat_model")
@@ -583,7 +583,7 @@ class OpenAICompatibleJudgeFeedbackGenerator:
 
 
 class OpenAICompatibleProfileAnalyzer:
-    """Extract learner profile dimensions with the primary provider model."""
+    """使用主提供商模型提取学习者画像维度。"""
 
     def __init__(self) -> None:
         if not _component_provider_ready("profile_llm"):
@@ -635,7 +635,7 @@ class OpenAICompatibleProfileAnalyzer:
 
 
 class ResourcePushRerankItem(BaseModel):
-    """A reranked resource candidate returned by the LLM."""
+    """LLM 返回的重排序资源候选。"""
 
     index: int
     score: float = 0.0
@@ -645,7 +645,7 @@ class ResourcePushRerankItem(BaseModel):
 
 
 class ResourcePushRerankPayload(BaseModel):
-    """Structured rerank payload for resource push."""
+    """资源推送的结构化重排序载荷。"""
 
     ranked_items: list[ResourcePushRerankItem] = Field(default_factory=list, alias="rankedItems")
     summary_text: str = Field(default="", alias="summaryText")
@@ -654,7 +654,7 @@ class ResourcePushRerankPayload(BaseModel):
 
 
 class OpenAICompatibleResourcePushReranker:
-    """Rerank resource-push candidates with an OpenAI-compatible rerank model."""
+    """使用 OpenAI 兼容的重排序模型对资源推送候选进行重排序。"""
 
     def __init__(self) -> None:
         settings = get_settings()
@@ -725,7 +725,7 @@ def _split_text_list(value: str) -> list[str]:
     return filtered or [value.strip()]
 
 
-# Provider-neutral aliases used by current agents.
+# 当前 Agent 使用的提供商无关别名。
 StructuredJSONGenerator = OpenAICompatibleJSONGenerator
 QueryRewriteGenerator = OpenAICompatibleQueryRewriteGenerator
 RetrievalSummaryGenerator = OpenAICompatibleRetrievalSummaryGenerator
@@ -750,7 +750,7 @@ BailianResourcePushReranker = OpenAICompatibleResourcePushReranker
 
 
 class PracticeLLMClientFactory:
-    """Create the Practice Agent LLM with provider routing and rule fallback."""
+    """创建练习 Agent LLM，支持提供商路由和规则回退。"""
 
     @staticmethod
     def create() -> Any:
@@ -761,7 +761,7 @@ class PracticeLLMClientFactory:
 
 
 class JudgeLLMClientFactory:
-    """Create the Judge Agent LLM with provider routing and rule fallback."""
+    """创建判题 Agent LLM，支持提供商路由和规则回退。"""
 
     @staticmethod
     def create() -> Any:
@@ -772,7 +772,7 @@ class JudgeLLMClientFactory:
 
 
 class ProfileLLMClientFactory:
-    """Create the Profile Agent LLM with provider routing and rule fallback."""
+    """创建画像 Agent LLM，支持提供商路由和规则回退。"""
 
     @staticmethod
     def create() -> Any:
@@ -783,7 +783,7 @@ class ProfileLLMClientFactory:
 
 
 class TutorToolLLMClientFactory:
-    """Create the Tutor Agent LLM with provider routing and rule fallback."""
+    """创建 Tutor Agent LLM，支持提供商路由和规则回退。"""
 
     @staticmethod
     def create() -> Any:

@@ -1,4 +1,4 @@
-"""Deep reasoning agent for multi-step tutoring answers."""
+"""用于多步辅导回答的深度推理 Agent。"""
 
 from __future__ import annotations
 
@@ -29,7 +29,7 @@ LOGGER = logging.getLogger(__name__)
 
 
 class DeepReasoningAgent(TutorAgent):
-    """Run a bounded analysis -> reasoning -> critique -> final pipeline."""
+    """运行有限的分析 -> 推理 -> 批判 -> 最终回答流水线。"""
 
     def __init__(self, **kwargs: Any) -> None:
         super().__init__(**kwargs)
@@ -253,7 +253,7 @@ class DeepReasoningAgent(TutorAgent):
                 persisted_summary=persisted_summary,
             ),
             permission_level=PermissionLevel.READ_ONLY,
-            description="Load the latest structured conversation summary.",
+            description="加载最新的结构化对话摘要。",
             parameters={"type": "object", "properties": {}, "additionalProperties": False},
         )
         tool_registry.register(
@@ -263,7 +263,7 @@ class DeepReasoningAgent(TutorAgent):
                 params=params,
             ),
             permission_level=PermissionLevel.READ_ONLY,
-            description="Read compacted conversation context.",
+            description="读取压缩后的对话上下文。",
             parameters={"type": "object", "properties": {}, "additionalProperties": False},
         )
         tool_registry.register(
@@ -273,7 +273,7 @@ class DeepReasoningAgent(TutorAgent):
                 params=params,
             ),
             permission_level=PermissionLevel.READ_ONLY,
-            description="Read retrieval evidence for the answer.",
+            description="读取回答的检索证据。",
             parameters={"type": "object", "properties": {}, "additionalProperties": False},
         )
         tool_registry.register(
@@ -283,7 +283,7 @@ class DeepReasoningAgent(TutorAgent):
                 params=params,
             ),
             permission_level=PermissionLevel.READ_ONLY,
-            description="Read learner profile context.",
+            description="读取学习者画像上下文。",
             parameters={"type": "object", "properties": {}, "additionalProperties": False},
         )
         tool_registry.register(
@@ -293,7 +293,7 @@ class DeepReasoningAgent(TutorAgent):
                 params=params,
             ),
             permission_level=PermissionLevel.READ_ONLY,
-            description="Read uploaded image analysis context.",
+            description="读取上传图片的分析上下文。",
             parameters={"type": "object", "properties": {}, "additionalProperties": False},
         )
         tool_registry.register(
@@ -303,7 +303,7 @@ class DeepReasoningAgent(TutorAgent):
                 artifacts=artifacts,
             ),
             permission_level=PermissionLevel.READ_ONLY,
-            description="Read outputs produced by earlier deep-reasoning steps.",
+            description="读取之前深度推理步骤产生的输出。",
             parameters={"type": "object", "properties": {}, "additionalProperties": False},
         )
         return tool_registry

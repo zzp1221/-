@@ -1,4 +1,4 @@
-"""Persistence layer for learning plans and their snapshots."""
+"""学习路径及其快照的持久化层。"""
 
 from __future__ import annotations
 
@@ -22,7 +22,7 @@ def _adapt_json_payload(payload: dict[str, Any]) -> Any:
 
 
 class LearningPlanStore(Protocol):
-    """Persistence contract for learning plan current state and snapshots."""
+    """学习路径当前状态和快照的持久化契约。"""
 
     async def save_plan(
         self,
@@ -35,7 +35,7 @@ class LearningPlanStore(Protocol):
 
 
 class InMemoryLearningPlanStore:
-    """In-memory store for tests and local fallback."""
+    """用于测试和本地回退的内存存储。"""
 
     def __init__(self) -> None:
         self.active_plans_by_user: dict[str, dict[str, Any]] = {}
@@ -72,7 +72,7 @@ class InMemoryLearningPlanStore:
 
 
 class PostgresLearningPlanStore:
-    """PostgreSQL-backed store for learning plan current state and snapshots."""
+    """基于 PostgreSQL 的学习路径当前状态和快照存储。"""
 
     def __init__(
         self,

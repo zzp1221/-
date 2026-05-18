@@ -1,4 +1,4 @@
-"""Judge agent backed by AgentCoreLoop and structured scoring output."""
+"""基于 AgentCoreLoop 和结构化评分输出的判题 Agent。"""
 
 from __future__ import annotations
 
@@ -29,10 +29,11 @@ from src.ai_modules.models import (
 )
 from src.ai_modules.prompts import build_judge_system_prompt
 from src.ai_modules.runtime import SystemSnapshot
+from src.ai_modules.runtime.skill_loader import SkillPromptLoader
 
 
 class JudgeAgent(PlaceholderAgent):
-    """Grade learner answers and summarize profile-impacting deltas."""
+    """评判学习者答案并总结影响画像的差异。"""
 
     def __init__(
         self,
@@ -52,9 +53,14 @@ class JudgeAgent(PlaceholderAgent):
         self.objective_judge_generator = objective_judge_generator or ObjectiveJudgeGenerator()
         self.feedback_generator = feedback_generator or JudgeFeedbackGenerator()
         self.heartbeat_interval_seconds = heartbeat_interval_seconds
+        self.skill_loader = SkillPromptLoader()
 
     def system_prompt(self, snapshot: SystemSnapshot) -> str:
-        return build_judge_system_prompt(snapshot)
+        return self.skill_loader.build_system_prompt(
+            skill_name="judge",
+            snapshot=snapshot,
+            fallback_prompt=build_judge_system_prompt(snapshot),
+        )
 
     async def run(
         self,

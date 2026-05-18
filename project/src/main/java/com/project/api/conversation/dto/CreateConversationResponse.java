@@ -3,7 +3,7 @@ package com.project.api.conversation.dto;
 import java.util.UUID;
 
 /**
- * Response returned after creating a new conversation.
+ * 创建新会话后返回的响应。
  */
 public record CreateConversationResponse(
     UUID conversationId,

@@ -1,7 +1,7 @@
 package com.project.api.profile.dto;
 
 /**
- * Counts of real data sources used for profile analytics.
+ * 画像分析所用真实数据源的计数统计。
  */
 public record ProfileDataCoverageResponse(
     int activeDays,

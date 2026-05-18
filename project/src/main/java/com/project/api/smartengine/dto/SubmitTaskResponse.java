@@ -5,7 +5,7 @@ import com.project.domain.task.TaskStatus;
 import java.util.UUID;
 
 /**
- * Response returned after the control plane accepts a task.
+ * 控制平面接受任务后返回的响应。
  */
 public record SubmitTaskResponse(
     UUID taskId,

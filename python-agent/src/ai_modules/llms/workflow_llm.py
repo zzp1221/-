@@ -1,4 +1,4 @@
-"""Rule-based tool orchestration for routing and generation workflows."""
+"""用于路由和生成工作流的基于规则的工具编排。"""
 
 from __future__ import annotations
 
@@ -10,7 +10,7 @@ from src.ai_modules.runtime import AssistantTurn, ToolCall
 
 
 class _BaseSequenceLLM:
-    """Drive AgentCoreLoop by executing tools in a deterministic sequence."""
+    """通过按确定性顺序执行工具来驱动 AgentCoreLoop。"""
 
     tool_sequence: tuple[str, ...] = ()
 

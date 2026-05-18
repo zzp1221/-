@@ -1,7 +1,7 @@
 package com.project.api.common.dto;
 
 /**
- * Lightweight response structure for message-only API replies.
+ * 仅包含消息的轻量级 API 响应结构。
  */
 public record ApiMessageResponse(
     String code,

@@ -4,7 +4,7 @@ import java.time.OffsetDateTime;
 import java.util.Map;
 
 /**
- * SSE payload exposed for conversation streaming.
+ * 会话流式传输的 SSE 载荷。
  */
 public record ConversationStreamEventPayload(
     String event,

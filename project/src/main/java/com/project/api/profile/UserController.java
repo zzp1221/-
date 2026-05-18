@@ -18,7 +18,7 @@ import org.springframework.web.bind.annotation.RestController;
 import java.util.UUID;
 
 /**
- * User-related read endpoints owned by the control plane.
+ * 控制平面拥有的用户相关只读端点。
  */
 @RestController
 @RequestMapping("/api/users")

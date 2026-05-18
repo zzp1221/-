@@ -15,7 +15,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 
 /**
- * Manages live SSE subscribers and replays persisted events for reconnect scenarios.
+ * 管理实时 SSE 订阅者，并为重连场景重放已持久化的事件。
  */
 @Service
 public class SseEmitterService {
@@ -106,7 +106,7 @@ public class SseEmitterService {
     }
 
     /**
-     * Force-complete all emitters for a cancelled task and publish the final event.
+     * 强制完成已取消任务的所有 emitter 并发布最终事件。
      */
     public synchronized void cancelTask(UUID taskId, TaskStreamEventPayload cancelPayload) {
         CopyOnWriteArrayList<Subscriber> taskEmitters = emitters.remove(taskId);

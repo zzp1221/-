@@ -1,4 +1,4 @@
-"""Minimal observability bootstrap with optional OpenTelemetry export."""
+"""可选 OpenTelemetry 导出的最小化可观测性引导。"""
 
 from __future__ import annotations
 
@@ -15,7 +15,7 @@ LOGGER = logging.getLogger(__name__)
 
 
 def configure_observability(settings: Settings) -> None:
-    """Configure tracing if an OTLP endpoint is available."""
+    """如果 OTLP 端点可用则配置链路追踪。"""
 
     provider = TracerProvider(
         resource=Resource.create({"service.name": settings.otel_service_name})

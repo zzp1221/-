@@ -3,7 +3,7 @@ package com.project.application.ratelimit;
 import java.time.Duration;
 
 /**
- * Port for request rate limiting.
+ * 请求限流端口。
  */
 public interface RateLimiter {
 

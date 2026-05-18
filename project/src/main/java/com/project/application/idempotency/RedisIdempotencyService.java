@@ -10,7 +10,7 @@ import java.util.Optional;
 import java.util.UUID;
 
 /**
- * Redis-backed idempotency store using {@code SETNX + TTL}.
+ * 基于 Redis 的幂等存储，使用 {@code SETNX + TTL}。
  */
 @Service
 @ConditionalOnBean(StringRedisTemplate.class)

@@ -6,7 +6,7 @@ import java.util.List;
 import java.util.UUID;
 
 /**
- * Repository for historical user profile snapshots.
+ * 用户画像历史快照仓库。
  */
 public interface UserProfileSnapshotRepository extends JpaRepository<UserProfileSnapshot, UUID> {
 

@@ -3,7 +3,7 @@ package com.project.api.profile.dto;
 import java.time.LocalDate;
 
 /**
- * Daily real behavior counters used by the profile analytics page.
+ * 画像分析页面使用的每日真实行为计数器。
  */
 public record ProfileBehaviorTrendPoint(
     LocalDate date,

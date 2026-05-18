@@ -6,7 +6,7 @@ import java.util.Map;
 import java.util.UUID;
 
 /**
- * Immutable command object sent from the control plane to the Python runtime.
+ * 从控制平面发送到 Python 运行时的不可变命令对象。
  */
 public record SmartEngineInvocation(
     UUID userId,

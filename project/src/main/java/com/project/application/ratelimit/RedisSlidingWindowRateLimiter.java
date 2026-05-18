@@ -11,10 +11,10 @@ import java.util.List;
 import java.util.UUID;
 
 /**
- * Redis sorted-set based sliding window rate limiter.
+ * 基于 Redis 有序集合的滑动窗口限流器。
  *
- * <p>A Lua script keeps cleanup, counting, and insertion in a single atomic
- * roundtrip, which avoids race conditions under concurrent requests.</p>
+ * <p>通过 Lua 脚本将清理、计数和插入保持在单次原子操作中完成，
+ * 避免并发请求下的竞态条件。</p>
  */
 @Service
 @ConditionalOnBean(StringRedisTemplate.class)

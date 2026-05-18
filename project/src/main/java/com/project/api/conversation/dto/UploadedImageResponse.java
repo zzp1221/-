@@ -1,7 +1,7 @@
 package com.project.api.conversation.dto;
 
 /**
- * Uploaded chat image descriptor returned to the frontend.
+ * 返回给前端的已上传聊天图片描述符。
  */
 public record UploadedImageResponse(
     String imageUrl,

@@ -1,6 +1,6 @@
-"""Local Qwen3-0.6B-GGUF judge for subjective evaluation.
-Mimics the exact interface and error handling of OpenAICompatibleSubjectiveJudgeEvaluator
-(judge_subjective_evaluator.py:114-168) so it can be injected via the factory.
+"""用于主观题评估的本地 Qwen3-0.6B-GGUF 判题器。
+完全模拟 OpenAICompatibleSubjectiveJudgeEvaluator 的接口和错误处理
+(judge_subjective_evaluator.py:114-168)，以便通过工厂注入。
 """
 from __future__ import annotations
 
@@ -16,11 +16,10 @@ LOGGER = logging.getLogger(__name__)
 
 
 class LocalSubjectiveJudgeEvaluator:
-    """CPU-based subjective judge backed by a fine-tuned Qwen3-0.6B GGUF.
+    """基于 CPU 的主观题判题器，由微调的 Qwen3-0.6B GGUF 模型驱动。
 
-    Implements the same evaluate(question, learner_answer) -> SubjectiveJudgeEvaluation
-    contract as the remote evaluator, including max_retries, proper exception types,
-    and score clamping to [0, 20].
+    实现与远程评估器相同的 evaluate(question, learner_answer) -> SubjectiveJudgeEvaluation
+    接口契约，包括最大重试次数、正确的异常类型和分数限制到 [0, 20]。
     """
 
     SYSTEM_PROMPT = (
@@ -31,7 +30,7 @@ class LocalSubjectiveJudgeEvaluator:
 
     _DEFAULT_MODEL = str(
         (Path(__file__).parent.parent.parent.parent / "grpo_output" / "judge_model.gguf").resolve()
-    )  # Local path; set model_path="/app/models/judge_model.gguf" for Docker
+    )  # 本地路径；Docker 环境下设置 model_path="/app/models/judge_model.gguf"
 
     def __init__(
         self,
@@ -52,7 +51,7 @@ class LocalSubjectiveJudgeEvaluator:
         self.backoff_seconds = backoff_seconds
 
     async def evaluate(
-        self, *, question, learner_answer: str  # question: PracticeQuestion
+        self, *, question, learner_answer: str  # question: PracticeQuestion（练习题对象）
     ) -> SubjectiveJudgeEvaluation:
         user_prompt = "\n".join([
             f"题目: {question.stem}",

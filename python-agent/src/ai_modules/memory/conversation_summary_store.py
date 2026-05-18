@@ -1,4 +1,4 @@
-"""Persistence layer for structured conversation summaries."""
+"""结构化对话摘要的持久化层。"""
 
 from __future__ import annotations
 
@@ -12,7 +12,7 @@ from src.ai_modules.config import get_settings
 
 
 class ConversationSummaryDocument(BaseModel):
-    """Structured summary persisted for a conversation."""
+    """对话的结构化持久化摘要。"""
 
     conversation_id: str = Field(alias="conversationId")
     user_id: str | None = Field(default=None, alias="userId")
@@ -32,7 +32,7 @@ class ConversationSummaryDocument(BaseModel):
 
 
 class ConversationSummaryStore(Protocol):
-    """Persistence contract for structured summaries."""
+    """结构化摘要的持久化契约。"""
 
     async def save_summary(self, document: ConversationSummaryDocument) -> None: ...
 
@@ -47,7 +47,7 @@ class ConversationSummaryStore(Protocol):
 
 
 class InMemoryConversationSummaryStore:
-    """In-memory summary store used by tests and local fallback mode."""
+    """测试和本地回退模式使用的内存摘要存储。"""
 
     def __init__(self) -> None:
         self.documents: list[ConversationSummaryDocument] = []
@@ -85,7 +85,7 @@ class InMemoryConversationSummaryStore:
 
 
 class MongoConversationSummaryStore:
-    """Mongo-backed store for conversation summaries."""
+    """基于 MongoDB 的对话摘要存储。"""
 
     def __init__(
         self,

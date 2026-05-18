@@ -8,7 +8,7 @@ import java.util.Map;
 import java.util.UUID;
 
 /**
- * Snapshot view of a submitted task.
+ * 已提交任务的快照视图。
  */
 public record TaskStatusResponse(
     UUID taskId,
