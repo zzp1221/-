@@ -4,7 +4,6 @@ import {
   BookOpen,
   Brain,
   CalendarClock,
-  CircleDashed,
   Clock3,
   Gauge,
   LineChart,
@@ -17,7 +16,11 @@ import {
 } from 'lucide-react';
 import RadarChart from '../components/RadarChart';
 import { getErrorMessage } from '../api/request';
-import { smartEngineApi } from '../api/smartEngine';
+import {
+  smartEngineApi,
+  type ProfileBehaviorTrendPoint,
+  type UserProfileAnalyticsResponse,
+} from '../api/smartEngine';
 import type { LayoutOutletContext } from '../components/Layout';
 import {
   EMPTY_VALUE,
@@ -28,12 +31,12 @@ import {
 import { mapProfileResponse } from './LearningStudioDemoPage.utils';
 
 const navItems = [
-  { id: 'overview', label: '概览', disabled: false },
-  { id: 'goals', label: '学习目标', disabled: false },
-  { id: 'knowledge', label: '知识基础', disabled: false },
-  { id: 'behavior', label: '学习行为', disabled: true },
-  { id: 'preference', label: '讲解偏好', disabled: false },
-  { id: 'analysis', label: '系统分析', disabled: true },
+  { id: 'overview', label: '概览' },
+  { id: 'goals', label: '学习目标' },
+  { id: 'knowledge', label: '知识基础' },
+  { id: 'behavior', label: '学习行为' },
+  { id: 'preference', label: '讲解偏好' },
+  { id: 'analysis', label: '系统分析' },
 ];
 
 export default function ProfilePage() {
@@ -42,6 +45,9 @@ export default function ProfilePage() {
   const [updatedAt, setUpdatedAt] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [analytics, setAnalytics] = useState<UserProfileAnalyticsResponse | null>(null);
+  const [analyticsLoading, setAnalyticsLoading] = useState(false);
+  const [analyticsError, setAnalyticsError] = useState('');
   const [showAllWeakPoints, setShowAllWeakPoints] = useState(false);
 
   const loadProfile = useCallback(async () => {
@@ -66,9 +72,29 @@ export default function ProfilePage() {
     }
   }, [currentUser, isAuthenticated]);
 
+  const loadAnalytics = useCallback(async () => {
+    if (!isAuthenticated || !currentUser) {
+      setAnalytics(null);
+      setAnalyticsError('');
+      return;
+    }
+    setAnalyticsLoading(true);
+    setAnalyticsError('');
+    try {
+      const response = await smartEngineApi.getProfileAnalytics(String(currentUser.id), 30);
+      setAnalytics(response);
+    } catch (loadError) {
+      setAnalytics(null);
+      setAnalyticsError(getErrorMessage(loadError));
+    } finally {
+      setAnalyticsLoading(false);
+    }
+  }, [currentUser, isAuthenticated]);
+
   useEffect(() => {
     void loadProfile();
-  }, [loadProfile]);
+    void loadAnalytics();
+  }, [loadAnalytics, loadProfile]);
 
   const displayName = currentUser?.fullName || currentUser?.loginId || currentUser?.username || '同学';
 
@@ -93,7 +119,6 @@ export default function ProfilePage() {
       behaviorSignals,
       goalCount,
       preferenceCount,
-      strongestSkill: profile.skillMastery[0] ?? null,
     };
   }, [profile]);
 
@@ -170,7 +195,10 @@ export default function ProfilePage() {
             </div>
             <button
               type="button"
-              onClick={() => void loadProfile()}
+              onClick={() => {
+                void loadProfile();
+                void loadAnalytics();
+              }}
               className="inline-flex h-10 items-center justify-center gap-2 rounded-xl border border-blue-100 bg-white px-4 text-sm font-medium text-primary-600 shadow-sm shadow-blue-100/60 transition-colors hover:bg-primary-50 dark:border-slate-700 dark:bg-slate-900 dark:text-primary-300 dark:hover:bg-slate-800"
             >
               <CalendarClock className="h-4 w-4" />
@@ -190,9 +218,9 @@ export default function ProfilePage() {
               icon={<Clock3 className="h-5 w-5" />}
               label="学习节奏"
               value={profile.learningPace || profile.learningHabits.studyFrequency || EMPTY_VALUE}
-              description={profile.learningHabits.studyFrequency || '真实行为趋势待接入'}
+              description={profile.learningHabits.studyFrequency || analyticsTrendSummary(analytics) || '暂无节奏信号'}
               accent="cyan"
-              mutedHint="趋势数据待接入真实数据"
+              mutedHint={analyticsLoading ? '正在读取近 30 天行为趋势' : analyticsError ? '行为趋势读取失败，画像主体不受影响' : undefined}
             />
             <MetricCard
               icon={<Gauge className="h-5 w-5" />}
@@ -218,7 +246,13 @@ export default function ProfilePage() {
                 <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
                   <DimensionCard icon={<Target className="h-5 w-5" />} title="学习目标" value={`${metrics.goalCount}项`} detail={profile.currentGoal.shortTerm || profile.goal || '暂无短期目标'} href="#goals-detail" />
                   <DimensionCard icon={<Brain className="h-5 w-5" />} title="知识基础" value={`${profile.skillMastery.length}项维度`} detail={profile.knowledgeBase || '待分析'} href="#knowledge" />
-                  <DimensionCard icon={<LineChart className="h-5 w-5" />} title="学习行为" value={`${metrics.behaviorSignals}项信号`} detail={metrics.behaviorSignals > 0 ? '来自 learningHabits' : '待接入真实数据'} disabled={metrics.behaviorSignals === 0} />
+                  <DimensionCard
+                    icon={<LineChart className="h-5 w-5" />}
+                    title="学习行为"
+                    value={analyticsLoading ? '读取中' : analytics ? `${analytics.systemAnalysis.coverage.activeDays}天记录` : `${metrics.behaviorSignals}项信号`}
+                    detail={analytics ? `近 ${analytics.days} 天真实行为聚合` : metrics.behaviorSignals > 0 ? '来自 learningHabits' : '暂无真实行为记录'}
+                    href="#behavior"
+                  />
                   <DimensionCard icon={<BookOpen className="h-5 w-5" />} title="讲解偏好" value={`${metrics.preferenceCount}项偏好`} detail={profile.explanationPreference || profile.preference.join('、') || '暂无偏好'} href="#preference" />
                 </div>
               </section>
@@ -263,9 +297,15 @@ export default function ProfilePage() {
                 <InfoCard title="当前薄弱点" value={`${metrics.weakPointCount}个知识点`} detail="来自 weakPointDetails/weakPoints" />
                 <InfoCard
                   title="擅长领域"
-                  value={metrics.strongestSkill ? metrics.strongestSkill.topic : EMPTY_VALUE}
-                  detail={metrics.strongestSkill ? '根据掌握度推断' : '待接入真实数据'}
-                  muted={!metrics.strongestSkill}
+                  value={analytics?.systemAnalysis.strongestSkill || EMPTY_VALUE}
+                  detail={analyticsLoading
+                    ? '正在读取系统分析'
+                    : analyticsError
+                      ? '分析接口读取失败'
+                      : analytics?.systemAnalysis.strongestSkillScore
+                        ? `来自 analytics，掌握度 ${analytics.systemAnalysis.strongestSkillScore}%`
+                        : '真实证据不足，暂不判断'}
+                  muted={!analytics?.systemAnalysis.strongestSkill}
                 />
               </section>
 
@@ -283,9 +323,19 @@ export default function ProfilePage() {
                 </div>
               </section>
 
-              <section id="behavior" className="grid gap-4 md:grid-cols-2">
-                <UnsupportedPanel title="学习行为趋势" text="当前没有按日期聚合的学习行为时间序列，待接入真实数据。" />
-                <UnsupportedPanel title="系统分析" text="当前没有独立系统分析接口，待接入真实数据。" />
+              <section className="grid gap-4 xl:grid-cols-[minmax(0,1.1fr)_minmax(300px,0.8fr)]">
+                <BehaviorTrendPanel
+                  analytics={analytics}
+                  loading={analyticsLoading}
+                  error={analyticsError}
+                  onRetry={() => void loadAnalytics()}
+                />
+                <SystemAnalysisPanel
+                  analytics={analytics}
+                  loading={analyticsLoading}
+                  error={analyticsError}
+                  onRetry={() => void loadAnalytics()}
+                />
               </section>
             </div>
 
@@ -351,15 +401,7 @@ function ProfileSubnav({ updatedAt }: { updatedAt: string }) {
           学习画像
         </div>
         <nav className="space-y-1">
-          {navItems.map((item) => item.disabled ? (
-            <div
-              key={item.id}
-              className="flex items-center justify-between rounded-xl px-3 py-2 text-sm text-slate-300 dark:text-slate-600"
-            >
-              <span>{item.label}</span>
-              <span className="text-[10px]">待接入</span>
-            </div>
-          ) : (
+          {navItems.map((item) => (
             <a
               key={item.id}
               href={`#${item.id}`}
@@ -443,19 +485,16 @@ function DimensionCard(props: {
   value: string;
   detail: string;
   href?: string;
-  disabled?: boolean;
 }) {
   return (
-    <article className={`rounded-2xl border px-4 py-4 ${props.disabled ? 'border-slate-200 bg-slate-50 opacity-75 dark:border-slate-800 dark:bg-slate-800/50' : 'border-blue-100 bg-white shadow-sm shadow-blue-100/50 dark:border-slate-800 dark:bg-slate-950/40'}`}>
+    <article className="rounded-2xl border border-blue-100 bg-white px-4 py-4 shadow-sm shadow-blue-100/50 dark:border-slate-800 dark:bg-slate-950/40">
       <div className="mb-3 inline-flex rounded-xl bg-primary-50 p-2 text-primary-600 dark:bg-primary-500/10 dark:text-primary-300">
         {props.icon}
       </div>
       <div className="text-sm font-medium text-slate-500 dark:text-slate-400">{props.title}</div>
       <div className="mt-2 text-lg font-semibold text-slate-900 dark:text-white">{props.value}</div>
       <div className="mt-1 line-clamp-2 text-xs leading-5 text-slate-500 dark:text-slate-400">{props.detail}</div>
-      {props.disabled ? (
-        <div className="mt-3 text-xs font-medium text-slate-400 dark:text-slate-500">待接入真实数据</div>
-      ) : props.href ? (
+      {props.href ? (
         <a href={props.href} className="mt-3 inline-flex text-xs font-medium text-primary-600 hover:text-primary-700 dark:text-primary-300">
           查看详情
         </a>
@@ -558,15 +597,156 @@ function FactRow({ label, value }: { label: string; value: string }) {
   );
 }
 
-function UnsupportedPanel({ title, text }: { title: string; text: string }) {
+function BehaviorTrendPanel(props: {
+  analytics: UserProfileAnalyticsResponse | null;
+  loading: boolean;
+  error: string;
+  onRetry: () => void;
+}) {
+  const trend = props.analytics?.behaviorTrend ?? [];
+  const hasData = trend.some((point) => sumTrendActivity(point) > 0);
+  const visibleTrend = trend.slice(-14);
+  const maxActivity = Math.max(1, ...visibleTrend.map(sumTrendActivity));
+  const coverage = props.analytics?.systemAnalysis.coverage;
+  const practiceAccuracy = trend.length > 0 && coverage && coverage.practiceSubmissionCount > 0
+    ? trend.reduce((sum, point) => sum + ((point.practiceAccuracy ?? 0) * point.practiceSubmissionCount), 0) / coverage.practiceSubmissionCount
+    : null;
+
   return (
-    <section className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 p-5 text-slate-400 dark:border-slate-800 dark:bg-slate-900/50 dark:text-slate-500">
-      <div className="mb-2 flex items-center gap-2 font-semibold">
-        <CircleDashed className="h-4 w-4" />
-        {title}
-      </div>
-      <p className="text-sm leading-6">{text}</p>
+    <section id="behavior" className="rounded-2xl border border-blue-100/80 bg-white/85 p-5 shadow-sm shadow-blue-100/60 dark:border-slate-800 dark:bg-slate-900/80">
+      <SectionTitle title="学习行为趋势" subtitle="来自近 30 天真实行为表聚合，不包含学习时长推测" />
+      {props.loading ? (
+        <AnalyticsStateMessage kind="loading" text="正在读取行为趋势" />
+      ) : props.error ? (
+        <AnalyticsStateMessage kind="error" text={props.error} onRetry={props.onRetry} />
+      ) : !props.analytics || !hasData ? (
+        <EmptyInline text={props.analytics ? `近 ${props.analytics.days} 天暂无真实行为记录。` : '暂无行为趋势数据。'} />
+      ) : (
+        <>
+          <div className="mt-4 overflow-x-auto pb-1">
+            <div
+              className="grid min-w-[560px] gap-2"
+              style={{ gridTemplateColumns: `repeat(${visibleTrend.length}, minmax(0, 1fr))` }}
+            >
+              {visibleTrend.map((point) => {
+                const activity = sumTrendActivity(point);
+                const height = activity === 0 ? 0 : Math.max(8, Math.round((activity / maxActivity) * 100));
+                return (
+                  <div key={point.date} className="flex min-h-[144px] flex-col items-center justify-end gap-2">
+                    <div
+                      className="flex h-24 w-full items-end rounded-xl bg-slate-100 px-1.5 py-1.5 dark:bg-slate-800"
+                      title={`${point.date}：${activity} 次真实行为`}
+                    >
+                      <div
+                        className="w-full rounded-lg bg-primary-500 transition-[height]"
+                        style={{ height: `${height}%` }}
+                      />
+                    </div>
+                    <span className="text-[11px] text-slate-400 dark:text-slate-500">{formatTrendDate(point.date)}</span>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+          {coverage ? (
+            <div className="mt-4 grid gap-2 sm:grid-cols-3">
+              <CoverageStat label="对话" value={`${coverage.conversationCount}次`} />
+              <CoverageStat label="学习服务" value={`${coverage.serviceTaskCount}个`} />
+              <CoverageStat label="练习提交" value={`${coverage.practiceSubmissionCount}次`} />
+              <CoverageStat label="练习正确率" value={formatPercent(practiceAccuracy)} />
+              <CoverageStat label="新增错题" value={`${coverage.newMistakeCount}条`} />
+              <CoverageStat label="复习" value={`${coverage.reviewCount}次`} />
+            </div>
+          ) : null}
+        </>
+      )}
     </section>
+  );
+}
+
+function SystemAnalysisPanel(props: {
+  analytics: UserProfileAnalyticsResponse | null;
+  loading: boolean;
+  error: string;
+  onRetry: () => void;
+}) {
+  const analysis = props.analytics?.systemAnalysis;
+  return (
+    <section id="analysis" className="rounded-2xl border border-blue-100/80 bg-white/85 p-5 shadow-sm shadow-blue-100/60 dark:border-slate-800 dark:bg-slate-900/80">
+      <SectionTitle title="系统分析" subtitle="由画像字段与真实行为聚合生成" />
+      {props.loading ? (
+        <AnalyticsStateMessage kind="loading" text="正在读取系统分析" />
+      ) : props.error ? (
+        <AnalyticsStateMessage kind="error" text={props.error} onRetry={props.onRetry} />
+      ) : !analysis ? (
+        <EmptyInline text="暂无系统分析数据。" />
+      ) : !analysis.dataAvailable ? (
+        <EmptyInline text={analysis.summary || '暂无足够真实数据生成系统分析。'} />
+      ) : (
+        <div className="mt-4 space-y-4">
+          <p className="rounded-2xl bg-slate-50 px-4 py-3 text-sm leading-6 text-slate-600 dark:bg-slate-800/60 dark:text-slate-300">
+            {analysis.summary}
+          </p>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <InfoCard
+              title="强项领域"
+              value={analysis.strongestSkill || EMPTY_VALUE}
+              detail={analysis.strongestSkillScore ? `掌握度 ${analysis.strongestSkillScore}%` : '真实证据不足'}
+              muted={!analysis.strongestSkill}
+            />
+            <InfoCard
+              title="重点关注"
+              value={analysis.focusAreas.length > 0 ? analysis.focusAreas.join('、') : EMPTY_VALUE}
+              detail={analysis.focusAreas.length > 0 ? '来自薄弱点与低掌握度字段' : '暂无明确关注项'}
+              muted={analysis.focusAreas.length === 0}
+            />
+          </div>
+          <div className="grid gap-2 sm:grid-cols-2">
+            <CoverageStat label="画像掌握度字段" value={`${analysis.coverage.profileSkillCount}项`} />
+            <CoverageStat label="薄弱点字段" value={`${analysis.coverage.weakPointCount}项`} />
+            <CoverageStat label="近 30 天活跃日" value={`${analysis.coverage.activeDays}天`} />
+            <CoverageStat label="可聚合行为" value={`${sumCoverageActivity(analysis.coverage)}次`} />
+          </div>
+        </div>
+      )}
+    </section>
+  );
+}
+
+function CoverageStat({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-xl bg-slate-50 px-3 py-2 dark:bg-slate-800/60">
+      <div className="text-[11px] text-slate-400 dark:text-slate-500">{label}</div>
+      <div className="mt-1 text-sm font-semibold text-slate-700 dark:text-slate-200">{value}</div>
+    </div>
+  );
+}
+
+function AnalyticsStateMessage(props: {
+  kind: 'loading' | 'error';
+  text: string;
+  onRetry?: () => void;
+}) {
+  return (
+    <div className="mt-4 rounded-2xl border border-dashed border-slate-200 px-4 py-5 text-sm text-slate-500 dark:border-slate-700 dark:text-slate-400">
+      <div className="flex items-center gap-2">
+        {props.kind === 'loading' ? (
+          <LoaderCircle className="h-4 w-4 animate-spin text-primary-500" />
+        ) : (
+          <TriangleAlert className="h-4 w-4 text-orange-500" />
+        )}
+        <span>{props.text}</span>
+      </div>
+      {props.kind === 'error' && props.onRetry ? (
+        <button
+          type="button"
+          onClick={props.onRetry}
+          className="mt-3 rounded-xl border border-blue-100 px-3 py-1.5 text-xs font-medium text-primary-600 transition-colors hover:bg-primary-50 dark:border-slate-700 dark:text-primary-300 dark:hover:bg-slate-800"
+        >
+          重试分析
+        </button>
+      ) : null}
+    </div>
   );
 }
 
@@ -611,4 +791,49 @@ function countBehaviorSignals(habits: ProfileLearningHabits): number {
     habits.noteTaking ? 'noteTaking' : '',
     habits.selfTesting ? 'selfTesting' : '',
   ].filter(Boolean).length;
+}
+
+function sumTrendActivity(point: ProfileBehaviorTrendPoint): number {
+  return point.conversationCount
+    + point.serviceTaskCount
+    + point.practiceSubmissionCount
+    + point.newMistakeCount
+    + point.reviewCount;
+}
+
+function sumCoverageActivity(coverage: UserProfileAnalyticsResponse['systemAnalysis']['coverage']): number {
+  return coverage.conversationCount
+    + coverage.serviceTaskCount
+    + coverage.practiceSubmissionCount
+    + coverage.newMistakeCount
+    + coverage.reviewCount;
+}
+
+function analyticsTrendSummary(analytics: UserProfileAnalyticsResponse | null): string {
+  if (!analytics) {
+    return '';
+  }
+  const activeDays = analytics.systemAnalysis.coverage.activeDays;
+  if (activeDays <= 0) {
+    return `近 ${analytics.days} 天暂无真实行为记录`;
+  }
+  return `近 ${analytics.days} 天有 ${activeDays} 天学习行为记录`;
+}
+
+function formatTrendDate(date: string): string {
+  const parsed = new Date(`${date}T00:00:00`);
+  if (Number.isNaN(parsed.getTime())) {
+    return date.slice(5);
+  }
+  return parsed.toLocaleDateString('zh-CN', {
+    month: '2-digit',
+    day: '2-digit',
+  });
+}
+
+function formatPercent(value: number | null): string {
+  if (value === null || !Number.isFinite(value)) {
+    return EMPTY_VALUE;
+  }
+  return `${Math.round(value)}%`;
 }

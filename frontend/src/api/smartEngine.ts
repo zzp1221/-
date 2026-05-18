@@ -71,6 +71,45 @@ export interface UserProfileResponse {
   }>;
 }
 
+export interface ProfileBehaviorTrendPoint {
+  date: string;
+  conversationCount: number;
+  serviceTaskCount: number;
+  practiceSubmissionCount: number;
+  practiceAccuracy: number | null;
+  newMistakeCount: number;
+  reviewCount: number;
+}
+
+export interface ProfileDataCoverage {
+  activeDays: number;
+  conversationCount: number;
+  serviceTaskCount: number;
+  practiceSubmissionCount: number;
+  newMistakeCount: number;
+  reviewCount: number;
+  profileSkillCount: number;
+  weakPointCount: number;
+}
+
+export interface ProfileSystemAnalysis {
+  strongestSkill?: string | null;
+  strongestSkillScore?: number | null;
+  focusAreas: string[];
+  coverage: ProfileDataCoverage;
+  summary: string;
+  dataAvailable: boolean;
+}
+
+export interface UserProfileAnalyticsResponse {
+  userId: string;
+  days: number;
+  fromDate: string;
+  toDate: string;
+  behaviorTrend: ProfileBehaviorTrendPoint[];
+  systemAnalysis: ProfileSystemAnalysis;
+}
+
 export const smartEngineApi = {
   submit(payload: SmartEngineSubmitRequest): Promise<SmartEngineSubmitResponse> {
     return request.post<SmartEngineSubmitResponse>('/api/smart-engine/submit', payload);
@@ -131,5 +170,11 @@ export const smartEngineApi = {
 
   getCurrentProfile(userId: string): Promise<UserProfileResponse> {
     return request.get<UserProfileResponse>(`/api/users/${userId}/profile/current`);
+  },
+
+  getProfileAnalytics(userId: string, days = 30): Promise<UserProfileAnalyticsResponse> {
+    return request.get<UserProfileAnalyticsResponse>(`/api/users/${userId}/profile/analytics`, {
+      params: { days },
+    });
   },
 };
