@@ -224,8 +224,8 @@ function LearningEffectPreview(props: {
   const assetPercent = Math.min(100, props.downloadCount * 25);
 
   return (
-    <section className="h-full rounded-[24px] border border-blue-100/80 bg-white/88 p-6 shadow-sm shadow-blue-100/50 dark:border-slate-800 dark:bg-slate-900/80">
-      <div className="flex items-center gap-3">
+    <section className="h-full rounded-[22px] border border-blue-100/80 bg-white/88 p-4 shadow-sm shadow-blue-100/50 dark:border-slate-800 dark:bg-slate-900/80 sm:rounded-[24px] sm:p-6">
+      <div className="flex items-start gap-3 sm:items-center">
         <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-blue-50 text-primary-600 ring-1 ring-blue-100 dark:bg-primary-500/10 dark:text-primary-300 dark:ring-primary-500/20">
           <TrendingUp className="h-4 w-4" />
         </div>
@@ -236,8 +236,8 @@ function LearningEffectPreview(props: {
       </div>
 
       {hasTask ? (
-        <div className="mt-8 grid gap-6 md:grid-cols-[160px_minmax(0,1fr)] md:items-center">
-          <div className="mx-auto flex h-36 w-36 items-center justify-center rounded-full bg-[conic-gradient(#3b82f6_var(--progress),#e8eef7_0)] p-3" style={{ '--progress': `${Math.max(1, Math.min(100, props.taskProgress))}%` } as CSSProperties}>
+        <div className="mt-6 grid gap-5 md:grid-cols-[160px_minmax(0,1fr)] md:items-center sm:mt-8 sm:gap-6">
+          <div className="mx-auto flex h-32 w-32 items-center justify-center rounded-full bg-[conic-gradient(#3b82f6_var(--progress),#e8eef7_0)] p-3 sm:h-36 sm:w-36" style={{ '--progress': `${Math.max(1, Math.min(100, props.taskProgress))}%` } as CSSProperties}>
             <div className="flex h-full w-full flex-col items-center justify-center rounded-full bg-white text-center shadow-inner dark:bg-slate-950">
               <span className="text-2xl font-bold text-primary-600 dark:text-primary-300">{progressLabel}</span>
               <span className="mt-1 text-xs text-slate-400">任务进度</span>
@@ -251,22 +251,22 @@ function LearningEffectPreview(props: {
           </div>
         </div>
       ) : (
-        <div className="mt-8 grid gap-6 md:grid-cols-[160px_minmax(0,1fr)] md:items-center">
-          <div className="mx-auto flex h-36 w-36 items-center justify-center rounded-full border border-dashed border-blue-200 bg-blue-50/60 text-center dark:border-slate-700 dark:bg-slate-950/40">
+        <div className="mt-6 grid gap-5 md:grid-cols-[160px_minmax(0,1fr)] md:items-center sm:mt-8 sm:gap-6">
+          <div className="mx-auto flex h-32 w-32 items-center justify-center rounded-full border border-dashed border-blue-200 bg-blue-50/60 text-center dark:border-slate-700 dark:bg-slate-950/40 sm:h-36 sm:w-36">
             <div>
               <div className="text-xl font-bold text-primary-600 dark:text-primary-300">待提交</div>
               <div className="mt-1 text-xs text-slate-400">暂无真实任务</div>
             </div>
           </div>
-          <div className="rounded-2xl border border-dashed border-blue-100 bg-slate-50/70 px-5 py-6 text-sm leading-7 text-slate-500 dark:border-slate-700 dark:bg-slate-950/40 dark:text-slate-400">
+          <div className="rounded-2xl border border-dashed border-blue-100 bg-slate-50/70 px-4 py-5 text-sm leading-7 text-slate-500 dark:border-slate-700 dark:bg-slate-950/40 dark:text-slate-400 sm:px-5 sm:py-6">
             提交任务后，这里只显示后端任务返回的进度、结果片段和资源产物数量。
           </div>
         </div>
       )}
 
-      <div className="mt-8 rounded-2xl border border-blue-100 bg-slate-50/60 p-4 dark:border-slate-800 dark:bg-slate-950/40">
+      <div className="mt-6 rounded-2xl border border-blue-100 bg-slate-50/60 p-4 dark:border-slate-800 dark:bg-slate-950/40 sm:mt-8">
         <div className="text-sm font-semibold text-slate-700 dark:text-slate-200">学习效果趋势预测</div>
-        <div className="mt-3 flex h-28 items-center justify-center rounded-xl border border-dashed border-blue-100 bg-white/70 px-4 text-center text-sm leading-6 text-slate-500 dark:border-slate-700 dark:bg-slate-900/60 dark:text-slate-400">
+        <div className="mt-3 flex min-h-24 items-center justify-center rounded-xl border border-dashed border-blue-100 bg-white/70 px-4 py-5 text-center text-sm leading-6 text-slate-500 dark:border-slate-700 dark:bg-slate-900/60 dark:text-slate-400 sm:h-28 sm:py-0">
           当前没有真实预测接口，已隐藏预测曲线和固定百分比。
         </div>
         <div className="mt-3 text-xs text-slate-400">
@@ -306,15 +306,15 @@ function AssistantActionBar(props: {
   onStop: () => void;
 }) {
   return (
-    <section className="rounded-[24px] border border-blue-100/80 bg-white/90 p-5 shadow-sm shadow-blue-100/50 dark:border-slate-800 dark:bg-slate-900/80">
+    <section className="rounded-[24px] border border-blue-100/80 bg-white/90 p-4 shadow-sm shadow-blue-100/50 dark:border-slate-800 dark:bg-slate-900/80 sm:p-5">
       <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(260px,0.75fr)_180px] lg:items-center">
-        <div className="flex items-center gap-4">
-          <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full bg-blue-50 ring-1 ring-blue-100">
-            <div className="flex h-10 w-10 items-center justify-center rounded-full bg-gradient-to-br from-blue-500 to-cyan-400 text-white shadow-md shadow-blue-300/50">
+        <div className="flex items-start gap-3 sm:items-center sm:gap-4">
+          <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-blue-50 ring-1 ring-blue-100 sm:h-14 sm:w-14">
+            <div className="flex h-9 w-9 items-center justify-center rounded-full bg-gradient-to-br from-blue-500 to-cyan-400 text-white shadow-md shadow-blue-300/50 sm:h-10 sm:w-10">
               <BrainCircuit className="h-5 w-5" />
             </div>
           </div>
-          <div>
+          <div className="min-w-0">
             <div className="text-base font-semibold text-slate-900 dark:text-white">智学助手</div>
             <p className="mt-1 text-sm leading-6 text-slate-500 dark:text-slate-400">
               {props.busy ? props.status : props.selectedServiceLabel ? `已选择 ${props.selectedServiceLabel}，提交后开始执行真实服务任务。` : '请选择一项服务后提交任务。'}
@@ -326,7 +326,7 @@ function AssistantActionBar(props: {
           type="button"
           onClick={props.onSubmit}
           disabled={props.disabled}
-          className="inline-flex h-16 items-center justify-center gap-3 rounded-2xl bg-gradient-to-r from-blue-600 to-primary-500 px-6 text-lg font-semibold text-white shadow-lg shadow-blue-500/24 transition-all hover:-translate-y-0.5 hover:shadow-xl hover:shadow-blue-500/28 disabled:cursor-not-allowed disabled:opacity-45 disabled:shadow-none disabled:hover:translate-y-0"
+          className="inline-flex h-14 items-center justify-center gap-3 rounded-2xl bg-gradient-to-r from-blue-600 to-primary-500 px-5 text-base font-semibold text-white shadow-lg shadow-blue-500/24 transition-all hover:-translate-y-0.5 hover:shadow-xl hover:shadow-blue-500/28 disabled:cursor-not-allowed disabled:opacity-45 disabled:shadow-none disabled:hover:translate-y-0 sm:h-16 sm:px-6 sm:text-lg"
         >
           <Send className="h-6 w-6" />
           {props.busy ? '提交中...' : '提交任务'}
@@ -336,7 +336,7 @@ function AssistantActionBar(props: {
           type="button"
           onClick={props.onStop}
           disabled={!props.canStop}
-          className="inline-flex h-14 items-center justify-center gap-2 rounded-2xl border border-blue-100 bg-white px-5 text-sm font-semibold text-slate-600 shadow-sm shadow-blue-100/60 transition-all hover:border-primary-200 hover:text-primary-600 disabled:cursor-not-allowed disabled:opacity-45 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-300"
+          className="inline-flex h-12 items-center justify-center gap-2 rounded-2xl border border-blue-100 bg-white px-5 text-sm font-semibold text-slate-600 shadow-sm shadow-blue-100/60 transition-all hover:border-primary-200 hover:text-primary-600 disabled:cursor-not-allowed disabled:opacity-45 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-300 sm:h-14"
         >
           <Square className="h-4 w-4" />
           停止任务
@@ -1758,40 +1758,40 @@ export default function LearningStudioDemoPage({ mode }: { mode: 'qna' | 'engine
 
   return (
     <Suspense fallback={<div className="mx-auto max-w-[1180px] rounded-[28px] border border-blue-100 bg-white/85 px-6 py-10 text-center text-sm text-slate-500 shadow-sm shadow-blue-100/60">正在加载学习服务...</div>}>
-      <div className="mx-auto max-w-[1120px] space-y-7 pb-10 px-1 md:px-0">
-        <section className="overflow-hidden rounded-[28px] border border-blue-100/80 bg-white/92 shadow-xl shadow-blue-100/55 dark:border-slate-800 dark:bg-slate-900/86 dark:shadow-slate-950/30">
-          <div className="flex items-center justify-between border-b border-blue-100/80 px-6 py-5 dark:border-slate-800 md:px-8">
-            <div className="flex items-center gap-4">
-              <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-gradient-to-br from-blue-600 to-sky-400 text-white shadow-lg shadow-blue-500/20">
+      <div className="mx-auto max-w-[1120px] space-y-5 px-0 pb-8 sm:space-y-7 sm:pb-10 md:px-0">
+        <section className="overflow-hidden rounded-[22px] border border-blue-100/80 bg-white/92 shadow-xl shadow-blue-100/55 dark:border-slate-800 dark:bg-slate-900/86 dark:shadow-slate-950/30 sm:rounded-[28px]">
+          <div className="flex items-center justify-between gap-3 border-b border-blue-100/80 px-4 py-4 dark:border-slate-800 sm:px-6 sm:py-5 md:px-8">
+            <div className="flex min-w-0 flex-wrap items-center gap-3 sm:gap-4">
+              <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-gradient-to-br from-blue-600 to-sky-400 text-white shadow-lg shadow-blue-500/20 sm:h-11 sm:w-11">
                 <GraduationCap className="h-5 w-5" />
               </div>
-              <div className="text-2xl font-bold tracking-tight text-slate-900 dark:text-white">学习服务</div>
-              <span className="rounded-full bg-blue-50 px-3 py-1 text-sm font-semibold text-primary-600 ring-1 ring-blue-100 dark:bg-primary-500/10 dark:text-primary-300 dark:ring-primary-500/20">
+              <div className="text-xl font-bold tracking-tight text-slate-900 dark:text-white sm:text-2xl">学习服务</div>
+              <span className="rounded-full bg-blue-50 px-3 py-1 text-xs font-semibold text-primary-600 ring-1 ring-blue-100 dark:bg-primary-500/10 dark:text-primary-300 dark:ring-primary-500/20 sm:text-sm">
                 智学引擎
               </span>
             </div>
             <button
               type="button"
               onClick={() => navigate('/')}
-              className="flex h-10 w-10 items-center justify-center rounded-full text-slate-400 transition-colors hover:bg-blue-50 hover:text-primary-600 dark:text-slate-500 dark:hover:bg-slate-800 dark:hover:text-primary-300"
+              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-slate-400 transition-colors hover:bg-blue-50 hover:text-primary-600 dark:text-slate-500 dark:hover:bg-slate-800 dark:hover:text-primary-300"
               aria-label="返回对话"
             >
               <X className="h-5 w-5" />
             </button>
           </div>
 
-          <div className="relative overflow-hidden px-6 py-8 dark:bg-slate-900/40 md:px-8 md:py-10">
+          <div className="relative overflow-hidden px-4 py-6 dark:bg-slate-900/40 sm:px-6 sm:py-8 md:px-8 md:py-10">
             <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_80%_20%,rgba(59,130,246,0.18),transparent_34%),linear-gradient(120deg,rgba(248,251,255,0.95),rgba(255,255,255,0.55)_48%,rgba(231,243,255,0.82))] dark:bg-[radial-gradient(circle_at_80%_20%,rgba(59,130,246,0.2),transparent_34%),linear-gradient(120deg,rgba(15,23,42,0.95),rgba(30,41,59,0.82)_52%,rgba(17,24,39,0.92))]" />
-            <div className="relative grid gap-8 lg:grid-cols-[minmax(0,0.95fr)_minmax(360px,0.78fr)] lg:items-center">
+            <div className="relative grid gap-6 lg:grid-cols-[minmax(0,0.95fr)_minmax(360px,0.78fr)] lg:items-center lg:gap-8">
               <div>
-                <h1 className="text-[34px] font-bold leading-tight text-slate-900 dark:text-white md:text-[46px]">
+                <h1 className="text-3xl font-bold leading-tight text-slate-900 dark:text-white sm:text-[34px] md:text-[46px]">
                   选择一项<span className="text-primary-600 dark:text-primary-300">智能服务</span>
                 </h1>
-                <p className="mt-3 text-base leading-7 text-slate-500 dark:text-slate-400">
+                <p className="mt-3 text-sm leading-7 text-slate-500 dark:text-slate-400 sm:text-base">
                   智学引擎为你量身定制专属学习体验
                 </p>
 
-                <div className="mt-8 grid gap-4 sm:grid-cols-2">
+                <div className="mt-6 grid gap-3 sm:mt-8 sm:grid-cols-2 sm:gap-4">
                   {serviceButtons.map((item) => {
                     const active = selectedService === item.id;
                     const description = serviceDescriptions[item.id];
@@ -1800,14 +1800,14 @@ export default function LearningStudioDemoPage({ mode }: { mode: 'qna' | 'engine
                         key={item.id}
                         type="button"
                         onClick={() => withAuth(() => handleSelectService(item.id))}
-                        className={`group relative min-h-[148px] rounded-2xl border bg-white/86 p-6 text-left shadow-sm shadow-blue-100/40 transition-all duration-200 hover:-translate-y-0.5 hover:border-primary-200 hover:shadow-lg hover:shadow-blue-100/60 dark:bg-slate-950/42 dark:shadow-none ${
+                        className={`group relative min-h-[132px] rounded-2xl border bg-white/86 p-4 text-left shadow-sm shadow-blue-100/40 transition-all duration-200 hover:-translate-y-0.5 hover:border-primary-200 hover:shadow-lg hover:shadow-blue-100/60 dark:bg-slate-950/42 dark:shadow-none sm:min-h-[148px] sm:p-6 ${
                           active
                             ? 'border-primary-400 ring-2 ring-primary-500/15 dark:border-primary-500'
                             : 'border-blue-100/80 dark:border-slate-800'
                         }`}
                       >
-                        <div className="flex items-center gap-5">
-                          <span className={`flex h-14 w-14 shrink-0 items-center justify-center rounded-full bg-gradient-to-br ${description.accent} text-white shadow-md shadow-blue-500/18`}>
+                        <div className="flex items-center gap-3 sm:gap-5">
+                          <span className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-gradient-to-br ${description.accent} text-white shadow-md shadow-blue-500/18 sm:h-14 sm:w-14`}>
                             <item.icon className="h-6 w-6" />
                           </span>
                           <span className="min-w-0">
@@ -1820,7 +1820,7 @@ export default function LearningStudioDemoPage({ mode }: { mode: 'qna' | 'engine
                           </span>
                         </div>
                         {active ? (
-                          <span className="absolute right-5 top-5 flex h-6 w-6 items-center justify-center rounded-full bg-primary-600 text-white">
+                          <span className="absolute right-4 top-4 flex h-6 w-6 items-center justify-center rounded-full bg-primary-600 text-white sm:right-5 sm:top-5">
                             <CheckCircle2 className="h-4 w-4" />
                           </span>
                         ) : null}
@@ -1835,14 +1835,14 @@ export default function LearningStudioDemoPage({ mode }: { mode: 'qna' | 'engine
           </div>
         </section>
 
-        <div className="grid overflow-hidden rounded-[24px] border border-blue-100/80 bg-white/90 shadow-sm shadow-blue-100/50 dark:border-slate-800 dark:bg-slate-900/80 xl:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
-          <section className="border-b border-blue-100/80 p-6 dark:border-slate-800 xl:border-b-0 xl:border-r">
+        <div className="grid overflow-hidden rounded-[22px] border border-blue-100/80 bg-white/90 shadow-sm shadow-blue-100/50 dark:border-slate-800 dark:bg-slate-900/80 sm:rounded-[24px] xl:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
+          <section className="border-b border-blue-100/80 p-4 dark:border-slate-800 sm:p-6 xl:border-b-0 xl:border-r">
             <EngineSectionHeader
               icon={<FileText className="h-4 w-4" />}
               title={selectedServiceButton ? `${selectedServiceButton.label}参数` : '服务参数'}
               subtitle={selectedServiceDescription?.detail ?? '选择服务后填写参数，提交前不会生成任何预置推荐。'}
             />
-            <div className="mt-6">
+            <div className="mt-5 sm:mt-6">
               <ServiceDynamicForm
                 service={selectedService}
                 resourceForm={resourceForm}

@@ -255,7 +255,7 @@ function PracticeQuestionPanel(props: {
 
   return (
     <div className="mb-4 rounded-xl border border-slate-100 bg-slate-50/50 p-4 dark:border-slate-800 dark:bg-slate-900/50">
-      <div className="mb-4 flex items-start justify-between gap-3">
+      <div className="mb-4 flex flex-col items-stretch gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <div className="text-sm font-semibold text-slate-700 dark:text-slate-300">{props.batch.title}</div>
           <div className="mt-1 text-xs text-slate-500 dark:text-slate-400">
@@ -271,7 +271,7 @@ function PracticeQuestionPanel(props: {
           type="button"
           disabled={!props.canSubmit}
           onClick={() => props.onSubmitAnswers(props.batch, answers)}
-          className="shrink-0 rounded-lg bg-primary-600 px-3 py-2 text-xs font-medium text-white transition-colors hover:bg-primary-700 disabled:cursor-not-allowed disabled:opacity-40"
+          className="w-full shrink-0 rounded-lg bg-primary-600 px-3 py-2 text-xs font-medium text-white transition-colors hover:bg-primary-700 disabled:cursor-not-allowed disabled:opacity-40 sm:w-auto"
         >
           {props.batch.submitLabel || '提交答案并判题'}
         </button>
@@ -440,7 +440,7 @@ export function TaskResultPanel(props: {
             <Sparkles className="h-4 w-4 text-primary-500" />
             <span className="text-sm font-semibold text-slate-700 dark:text-slate-300">视频结果</span>
           </div>
-          <div className="p-4">
+          <div className="p-3 sm:p-4">
             <Suspense fallback={<div className="aspect-video rounded-xl border border-dashed border-slate-200 bg-slate-50 dark:border-slate-700 dark:bg-slate-900" />}>
               <LazyVideoCard
                 title={props.videoResult.title}
@@ -463,7 +463,7 @@ export function TaskResultPanel(props: {
             <Sparkles className="h-4 w-4 text-primary-500" />
             <span className="text-sm font-semibold text-slate-700 dark:text-slate-300">推荐资源</span>
           </div>
-          <div className="grid gap-3 p-4 md:grid-cols-2">
+          <div className="grid gap-3 p-3 sm:p-4 md:grid-cols-2">
             {externalRecommendations.map((item) => (
               <ExternalResourceRecommendationCard key={`${item.title}-${item.url}`} item={item} />
             ))}
@@ -476,7 +476,7 @@ export function TaskResultPanel(props: {
           <BookOpen className="h-4 w-4 text-primary-500" />
           <span className="text-sm font-semibold text-slate-700 dark:text-slate-300">任务结果</span>
         </div>
-        <div className="p-4">
+        <div className="p-3 sm:p-4">
           {props.service === 'assessment' && props.practiceBatch ? (
             <PracticeQuestionPanel
               batch={props.practiceBatch}
@@ -520,12 +520,12 @@ export function TaskResultPanel(props: {
             <FileText className="h-4 w-4 text-primary-500" />
             <span className="text-sm font-semibold text-slate-700 dark:text-slate-300">产物下载</span>
           </div>
-          <div className="p-4">
+          <div className="p-3 sm:p-4">
             <div className="grid gap-2 md:grid-cols-2">
               {fileDownloads.map((item) => (
                 <div
                   key={`${item.title}-${item.url}`}
-                  className="flex items-center justify-between gap-3 rounded-xl border border-slate-200 bg-slate-50/50 px-4 py-3 transition-all hover:border-primary-200 hover:bg-white dark:border-slate-700 dark:bg-slate-900/50 dark:hover:border-primary-700"
+                  className="flex flex-col items-stretch justify-between gap-3 rounded-xl border border-slate-200 bg-slate-50/50 px-4 py-3 transition-all hover:border-primary-200 hover:bg-white dark:border-slate-700 dark:bg-slate-900/50 dark:hover:border-primary-700 sm:flex-row sm:items-center"
                 >
                   <div className="min-w-0 flex-1">
                     <div className="truncate text-sm font-medium text-slate-700 dark:text-slate-300">{item.title}</div>
@@ -537,7 +537,7 @@ export function TaskResultPanel(props: {
                   <button
                     type="button"
                     onClick={() => { void handleDownload(item); }}
-                    className="shrink-0 rounded-lg bg-primary-50 px-3 py-1.5 text-xs font-medium text-primary-600 transition-colors hover:bg-primary-100 dark:bg-primary-500/10 dark:text-primary-400 dark:hover:bg-primary-500/20"
+                    className="w-full shrink-0 rounded-lg bg-primary-50 px-3 py-2 text-xs font-medium text-primary-600 transition-colors hover:bg-primary-100 dark:bg-primary-500/10 dark:text-primary-400 dark:hover:bg-primary-500/20 sm:w-auto sm:py-1.5"
                   >
                     下载
                   </button>
@@ -588,13 +588,13 @@ function ExternalResourceRecommendationCard(props: { item: TempDownloadLink }) {
           ) : null}
           <span className="rounded-full bg-primary-50 px-2.5 py-1 text-primary-600 dark:bg-primary-500/10 dark:text-primary-300">{typeLabel}</span>
         </div>
-        <div className="flex items-center justify-between gap-3 border-t border-slate-100 pt-3 dark:border-slate-800">
+        <div className="flex flex-col items-stretch justify-between gap-3 border-t border-slate-100 pt-3 dark:border-slate-800 sm:flex-row sm:items-center">
           <span className="text-xs text-slate-400 dark:text-slate-500">{props.item.expiresHint || '点击后将在新窗口打开资源'}</span>
           <a
             href={props.item.url}
             target="_blank"
             rel="noopener noreferrer"
-            className="inline-flex items-center gap-1 text-sm font-medium text-primary-600 transition-colors hover:text-primary-700 dark:text-primary-400 dark:hover:text-primary-300"
+            className="inline-flex items-center justify-center gap-1 text-sm font-medium text-primary-600 transition-colors hover:text-primary-700 dark:text-primary-400 dark:hover:text-primary-300 sm:justify-start"
           >
             {actionLabel}
             <ExternalLink className="h-3.5 w-3.5" />

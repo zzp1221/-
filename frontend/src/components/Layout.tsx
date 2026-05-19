@@ -522,10 +522,10 @@ export default function Layout() {
       </AnimatePresence>
 
       {/* Main Content */}
-      <main className="app-main flex-1 md:ml-[302px]">
+      <main className="app-main min-w-0 flex-1 md:ml-[302px]">
         {/* Top Header */}
-        <header className="app-topbar sticky top-0 z-30 flex items-center justify-between px-4 md:px-8">
-          <div className="flex items-center gap-3">
+        <header className="app-topbar sticky top-0 z-30 flex items-center justify-between gap-3 px-3 sm:px-4 md:px-8">
+          <div className="flex min-w-0 items-center gap-3">
             <button
               type="button"
               onClick={() => setSidebarOpen(true)}
@@ -533,7 +533,7 @@ export default function Layout() {
             >
               <Menu className="h-5 w-5" />
             </button>
-            <div className="app-breadcrumb">
+            <div className="app-breadcrumb min-w-0">
               <Compass className="h-4 w-4 text-primary-500" />
               <span className="hidden sm:inline">{inProfile ? '个人画像' : inMistakes ? '错题本' : inEngine ? '学习服务' : '新对话'}</span>
               <span className="hidden text-slate-300 sm:inline">/</span>
@@ -557,7 +557,7 @@ export default function Layout() {
         </header>
 
         {/* Page Content */}
-        <div className={inEngine || inMistakes || inProfile ? 'px-4 py-4 md:px-8 md:py-6' : ''}>
+        <div className={inEngine || inMistakes || inProfile ? 'px-3 py-4 sm:px-4 md:px-8 md:py-6' : ''}>
           <motion.div
             key={inProfile ? 'profile-shell' : inMistakes ? 'mistake-shell' : inEngine ? 'engine-shell' : 'qna-shell'}
             initial={{ opacity: 0, y: 20 }}

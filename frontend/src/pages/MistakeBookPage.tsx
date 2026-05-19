@@ -346,7 +346,7 @@ export default function MistakeBookPage() {
       </div>
 
       {data && data.total > data.size ? (
-        <div className="flex items-center justify-end gap-2">
+        <div className="flex items-center justify-center gap-2 sm:justify-end">
           <button
             type="button"
             disabled={page <= 0}
@@ -469,13 +469,13 @@ function MistakeCard(props: {
             placeholder="记录这道题为什么错、下次怎么检查"
             className="w-full rounded-xl border border-slate-200 bg-white px-3.5 py-3 text-sm leading-6 outline-none transition-all focus:border-primary-400 focus:ring-2 focus:ring-primary-500/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200"
           />
-          <div className="flex items-center justify-between gap-3">
+          <div className="flex flex-col items-stretch gap-3 sm:flex-row sm:items-center sm:justify-between">
             <span className="text-xs text-slate-400 dark:text-slate-500">错因：{mistakeTypeLabel(item.mistakeType)}</span>
             <button
               type="button"
               onClick={props.onSave}
               disabled={props.saving}
-              className="inline-flex items-center gap-2 rounded-xl bg-primary-600 px-3.5 py-2 text-xs font-medium text-white transition-colors hover:bg-primary-700 disabled:cursor-not-allowed disabled:opacity-50"
+              className="inline-flex items-center justify-center gap-2 rounded-xl bg-primary-600 px-3.5 py-2 text-xs font-medium text-white transition-colors hover:bg-primary-700 disabled:cursor-not-allowed disabled:opacity-50"
             >
               {props.saving ? <LoaderCircle className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
               保存

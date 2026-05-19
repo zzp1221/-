@@ -44,6 +44,7 @@
     background-color: var(--color-surface-50);
     color: oklch(0.25 0.02 260);
     font-family: var(--font-sans);
+    overflow-x: hidden;
     transition: background-color 0.3s ease, color 0.3s ease;
   }
 
@@ -204,11 +205,19 @@
 
   .app-breadcrumb {
     display: flex;
+    min-width: 0;
     align-items: center;
     gap: 12px;
     color: #71809d;
     font-size: 14px;
     font-weight: 600;
+  }
+
+  .app-breadcrumb span {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   .app-api-chip {
@@ -717,9 +726,18 @@
     min-height: 68px;
   }
 
+  .app-breadcrumb {
+    gap: 8px;
+    font-size: 13px;
+  }
+
+  .app-breadcrumb svg {
+    flex-shrink: 0;
+  }
+
   .qna-landing-shell {
     min-height: calc(100dvh - 68px);
-    padding: 30px 18px 48px;
+    padding: 28px 14px 40px;
   }
 
   .smart-orbit-logo {
@@ -731,28 +749,58 @@
   }
 
   .qna-hero-title {
-    font-size: 38px;
+    font-size: 36px;
   }
 
   .qna-hero-subtitle {
     font-size: 15px;
   }
 
-  .qna-composer-main {
-    padding: 20px;
+  .qna-input-frame-chat {
+    padding: 0 8px 12px;
+  }
+
+  .qna-composer-main,
+  .qna-composer-chat .qna-composer-main {
+    padding: 16px;
   }
 
   .qna-composer-landing {
-    border-radius: 26px;
+    border-radius: 24px;
+  }
+
+  .qna-composer-chat {
+    border-radius: 22px;
+  }
+
+  .qna-pending-images {
+    gap: 8px;
+    padding: 12px 16px 0;
   }
 
   .qna-composer-toolbar {
     align-items: stretch;
     flex-direction: column;
+    gap: 12px;
   }
 
   .qna-composer-actions {
     gap: 8px;
+    width: 100%;
+  }
+
+  .qna-icon-button,
+  .qna-mode-button {
+    min-height: 44px;
+  }
+
+  .qna-icon-button {
+    width: 44px;
+  }
+
+  .qna-mode-button {
+    flex: 1 1 118px;
+    padding: 0 12px;
   }
 
   .qna-send-button {
@@ -760,9 +808,15 @@
     width: 100%;
   }
 
+  .qna-composer-chat .qna-send-button {
+    width: 100%;
+  }
+
   .qna-suggestion-row {
     justify-content: flex-start;
     width: 100%;
+    gap: 10px;
+    margin-top: 22px;
   }
 
   .qna-suggestion-row > span {
@@ -771,18 +825,86 @@
 
   .qna-feature-grid {
     grid-template-columns: 1fr;
-    gap: 16px;
-    margin-top: 28px;
+    gap: 12px;
+    margin-top: 24px;
   }
 
   .qna-feature-card {
-    min-height: 162px;
-    padding: 24px;
+    min-height: 142px;
+    padding: 20px;
+  }
+
+  .qna-feature-card h2 {
+    font-size: 21px;
+  }
+
+  .qna-feature-visual {
+    bottom: 18px;
+    right: 18px;
+    height: 72px;
+    width: 92px;
   }
 
   .qna-chat-shell {
     height: calc(100dvh - 68px);
-    padding-top: 12px;
+    width: 100%;
+    padding: 8px 8px 0;
+  }
+}
+
+@media (max-width: 480px) {
+  .qna-landing-shell {
+    padding: 22px 12px 32px;
+  }
+
+  .smart-orbit-logo {
+    margin-bottom: 14px;
+    transform: scale(0.72);
+  }
+
+  .qna-hero-title {
+    font-size: 30px;
+  }
+
+  .qna-hero-subtitle {
+    font-size: 14px;
+    line-height: 1.7;
+  }
+
+  .qna-composer-landing {
+    min-height: 150px;
+    border-radius: 22px;
+  }
+
+  .qna-composer-textarea {
+    font-size: 15px;
+  }
+
+  .qna-upload-hint {
+    display: none;
+  }
+
+  .qna-pending-images img {
+    height: 76px;
+    width: 76px;
+  }
+
+  .qna-pending-images button {
+    opacity: 1;
+  }
+
+  .qna-suggestion-chip {
+    width: 100%;
+    justify-content: center;
+  }
+
+  .qna-feature-card {
+    min-height: 124px;
+    padding: 18px;
+  }
+
+  .qna-feature-visual {
+    opacity: 0.52;
   }
 }
 
