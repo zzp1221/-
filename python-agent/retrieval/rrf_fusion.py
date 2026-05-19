@@ -8,16 +8,19 @@ class RRFFusion:
     """Weighted RRF with phrase-priority boost."""
 
     def __init__(self, k: int = 60, grep_weight: float = 3.0,
-                 vector_weight: float = 5.0, graph_weight: float = 0.5):
+                 vector_weight: float = 5.0, graph_weight: float = 0.5,
+                 web_weight: float = 1.5):
         self.k = k
         self.grep_weight = grep_weight
         self.vector_weight = vector_weight
         self.graph_weight = graph_weight
+        self.web_weight = web_weight
 
     def fuse(self,
              grep_results: Optional[dict] = None,
              vector_results: Optional[list[tuple]] = None,
              graph_results: Optional[list[tuple]] = None,
+             web_results: Optional[list[tuple]] = None,
              top_n: int = 15) -> list[tuple]:
         """
         Fuse 3 ranked lists via weighted RRF.
@@ -26,6 +29,7 @@ class RRFFusion:
                            "normal":   [(slug, title, coverage, tokens), ...]}
           - vector_results: [(slug, title, similarity), ...]
           - graph_results:  [(slug, title, score), ...]
+          - web_results:    [(url, title, score, metadata), ...]
         Returns top_n as [(slug, title, rrf_score), ...].
         """
         scores: dict[str, dict] = {}  # slug -> {title, score}
@@ -52,6 +56,10 @@ class RRFFusion:
         # Graph results
         if graph_results:
             add_ranked(graph_results, self.graph_weight)
+
+        # Web results: opt-in Tavily channel with lower trust than local KB.
+        if web_results:
+            add_ranked(web_results, self.web_weight)
 
         # Sort by RRF score
         ranked = sorted(scores.items(), key=lambda x: x[1]["score"], reverse=True)

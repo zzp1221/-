@@ -3,6 +3,7 @@ package com.project;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.project.application.smartengine.PythonAgentClient;
+import com.project.application.smartengine.SmartEngineInvocation;
 import com.project.application.smartengine.PythonStreamEvent;
 import com.project.domain.profile.UserProfileCurrent;
 import com.project.domain.profile.UserProfileCurrentRepository;
@@ -54,6 +55,8 @@ class ConversationAndProfileIntegrationTest {
     @Test
     void createConversationAndStreamMessage() throws Exception {
         doAnswer(invocation -> {
+            SmartEngineInvocation agentInvocation = invocation.getArgument(0, SmartEngineInvocation.class);
+            assertThat(agentInvocation.params()).containsEntry("webSearchEnabled", true);
             @SuppressWarnings("unchecked")
             Consumer<PythonStreamEvent> consumer = invocation.getArgument(1, Consumer.class);
             consumer.accept(new PythonStreamEvent(
@@ -85,7 +88,8 @@ class ConversationAndProfileIntegrationTest {
                 .content("""
                     {
                       "message": "请给我讲一下数据库联合索引",
-                      "serviceType": "TUTORING"
+                      "serviceType": "TUTORING",
+                      "webSearchEnabled": true
                     }
                     """))
             .andExpect(request().asyncStarted())

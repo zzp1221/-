@@ -1,14 +1,19 @@
 """
 Hybrid Retriever: orchestrates grep + vector + graph channels with RRF fusion.
 """
+import logging
 import os
+from datetime import datetime
 import psycopg2
 from retrieval.fmm_tokenizer import FMMTokenizer
 from retrieval.grep_searcher import GrepSearcher
 from retrieval.vector_searcher import VectorSearcher
 from retrieval.graph_expander import GraphExpander
 from retrieval.rrf_fusion import RRFFusion
+from retrieval.tavily_searcher import TavilySearcher
 from src.ai_modules.config import get_settings
+
+LOGGER = logging.getLogger(__name__)
 
 
 class HybridRetriever:
@@ -26,6 +31,7 @@ class HybridRetriever:
         self._grep: GrepSearcher = None
         self._vector: VectorSearcher = None
         self._graph: GraphExpander = None
+        self._web: TavilySearcher = None
         self._rrf: RRFFusion = None
         self._initialized = False
 
@@ -33,9 +39,11 @@ class HybridRetriever:
         if self._initialized:
             return
         settings = get_settings()
-        embedding_api_key = settings.effective_embedding_api_key
+        embedding_api_key = self._embedding_api_key(settings)
         if embedding_api_key:
             os.environ["DASHSCOPE_API_KEY"] = embedding_api_key
+        self._web = TavilySearcher()
+        self._rrf = RRFFusion()
         self._tokenizer = FMMTokenizer()
         n = self._tokenizer.load_from_db(cur, self.domain)
         self._grep = GrepSearcher(self._tokenizer)
@@ -44,19 +52,57 @@ class HybridRetriever:
             model=settings.knowledge_embedding_model_name,
         )
         self._graph = GraphExpander()
-        self._rrf = RRFFusion()
         self._initialized = True
         print(f"  [HybridRetriever] Loaded {n} terms from term_lexicon")
 
-    def retrieve(self, cur, query: str) -> dict:
+    def _embedding_api_key(self, settings) -> str:
+        explicit_key = str(getattr(settings, "effective_embedding_api_key", "") or "").strip()
+        if explicit_key:
+            return explicit_key
+        provider_api_key = getattr(settings, "provider_api_key", None)
+        if callable(provider_api_key):
+            return str(provider_api_key() or "").strip()
+        return str(getattr(settings, "openai_compatible_api_key", "") or "").strip()
+
+    def retrieve(self, cur, query: str, web_search_enabled: bool = False) -> dict:
         """Run all 3 channels and fuse. Returns structured results."""
-        self._init(cur)
+        try:
+            self._init(cur)
+        except Exception as exc:
+            LOGGER.warning("Local hybrid retrieval init failed for query %r: %s", query, exc)
+            web_results = TavilySearcher().search(self._web_query(query), top_k=5) if web_search_enabled else []
+            fused = RRFFusion().fuse(
+                grep_results={"priority": [], "normal": []},
+                vector_results=[],
+                graph_results=[],
+                web_results=web_results,
+            )
+            return {
+                "query": query,
+                "webSearchEnabled": web_search_enabled,
+                "channels": {
+                    "grep": {"priority": [], "normal_count": 0},
+                    "vector": [],
+                    "graph": [],
+                    "web": web_results,
+                },
+                "fused": fused,
+                "top": fused[:5],
+            }
 
         # Channel A: Grep (keyword + coverage)
-        grep_results = self._grep.search(cur, query, self.domain)
+        try:
+            grep_results = self._grep.search(cur, query, self.domain)
+        except Exception as exc:
+            LOGGER.warning("Grep retrieval failed for query %r: %s", query, exc)
+            grep_results = {"priority": [], "normal": []}
 
         # Channel B: Vector (semantic) — search both knowledge + resource
-        vector_all = self._vector.search_all(cur, query, top_k=self.top_k, domain=self.domain)
+        try:
+            vector_all = self._vector.search_all(cur, query, top_k=self.top_k, domain=self.domain)
+        except Exception as exc:
+            LOGGER.warning("Vector retrieval failed for query %r: %s", query, exc)
+            vector_all = []
         # Strip source tag for RRF: [(slug, title, similarity), ...]
         vector_results = [(r[0], r[1], r[2]) for r in vector_all]
 
@@ -64,13 +110,21 @@ class HybridRetriever:
         grep_slugs = [r[0] for r in grep_results.get("priority", [])[:self.graph_seed_n]]
         vec_slugs = [r[0] for r in vector_results[:self.graph_seed_n]]
         seed_slugs = list(dict.fromkeys(grep_slugs + vec_slugs))[:self.graph_seed_n]
-        graph_results = self._graph.expand(cur, seed_slugs, top_n=5)
+        try:
+            graph_results = self._graph.expand(cur, seed_slugs, top_n=5)
+        except Exception as exc:
+            LOGGER.warning("Graph retrieval failed for query %r: %s", query, exc)
+            graph_results = []
+
+        # Channel D: Web search is strictly opt-in per user turn.
+        web_results = self._web.search(self._web_query(query), top_k=5) if web_search_enabled else []
 
         # RRF Fusion
-        fused = self._rrf.fuse(grep_results, vector_results, graph_results)
+        fused = self._rrf.fuse(grep_results, vector_results, graph_results, web_results)
 
         return {
             "query": query,
+            "webSearchEnabled": web_search_enabled,
             "channels": {
                 "grep": {
                     "priority": grep_results.get("priority", []),
@@ -78,6 +132,7 @@ class HybridRetriever:
                 },
                 "vector": [(r[0], r[1], r[2], r[3]) for r in vector_all[:5]],
                 "graph": graph_results,
+                "web": web_results,
             },
             "fused": fused,
             "top": fused[:5],
@@ -86,3 +141,11 @@ class HybridRetriever:
     def retrieve_flat(self, cur, query: str) -> list[tuple]:
         """Simple flat list of top fused results."""
         return self.retrieve(cur, query)["top"]
+
+    def _web_query(self, query: str) -> str:
+        lowered = query.lower()
+        time_sensitive_terms = ("今天", "今日", "现在", "当前", "today", "current", "now")
+        if not any(term in lowered for term in time_sensitive_terms):
+            return query
+        today = datetime.now()
+        return f"{query} {today.year}年{today.month}月{today.day}日"
