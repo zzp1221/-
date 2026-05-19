@@ -119,6 +119,10 @@ export const smartEngineApi = {
     return request.get<SmartEngineTaskResponse>(`/api/smart-engine/tasks/${taskId}`, config);
   },
 
+  cancelTask(taskId: string): Promise<void> {
+    return request.post<void>(`/api/smart-engine/tasks/${taskId}/cancel`);
+  },
+
   getTaskStreamUrl(taskId: string): string {
     return `/api/smart-engine/tasks/${taskId}/stream`;
   },

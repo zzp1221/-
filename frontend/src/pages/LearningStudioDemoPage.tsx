@@ -1,5 +1,6 @@
-import { Suspense, lazy, useCallback, useEffect, useRef, useState } from 'react';
-import { useOutletContext } from 'react-router-dom';
+import { Suspense, lazy, useCallback, useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
+import { useNavigate, useOutletContext } from 'react-router-dom';
+import { BrainCircuit, CheckCircle2, FileText, GraduationCap, Send, Square, TrendingUp, X } from 'lucide-react';
 import { conversationApi, type ConversationMessageItem } from '../api/conversation';
 import { smartEngineApi } from '../api/smartEngine';
 import { getErrorMessage } from '../api/request';
@@ -18,8 +19,6 @@ import {
   type EngineTaskSnapshot,
   type PathForm,
   type PendingChatImage,
-  type ProfileSnapshot,
-  type ProfileUpdateSource,
   type PracticeQuestionBatch,
   type PushForm,
   type QnaState,
@@ -28,31 +27,48 @@ import {
 import {
   buildServiceParams,
   cleanupStreamSchedulers,
-  mapProfileResponse,
   readConversationChunk,
   runByApiTask,
   sanitizeConversationMessageContent,
   toUiTaskStatus,
 } from './LearningStudioDemoPage.utils';
 
-const RealtimeProfile = lazy(() =>
-  import('./LearningStudioDemoPage.components').then((module) => ({ default: module.RealtimeProfile }))
-);
 const ServiceDynamicForm = lazy(() =>
   import('./LearningStudioDemoPage.components').then((module) => ({ default: module.ServiceDynamicForm }))
-);
-const ServiceSubmitPanel = lazy(() =>
-  import('./LearningStudioDemoPage.components').then((module) => ({ default: module.ServiceSubmitPanel }))
 );
 const TaskResultPanel = lazy(() =>
   import('./LearningStudioDemoPage.components').then((module) => ({ default: module.TaskResultPanel }))
 );
+
+const serviceDescriptions: Record<EngineService, { summary: string; detail: string; accent: string }> = {
+  resource: {
+    summary: '基于当前任务输入生成学习资源',
+    detail: '提交后展示真实生成结果、下载链接或内联内容。',
+    accent: 'from-blue-500 to-sky-400',
+  },
+  path: {
+    summary: '结合目标周期和当前进度规划路径',
+    detail: '只展示任务返回的真实路径建议。',
+    accent: 'from-indigo-500 to-blue-400',
+  },
+  push: {
+    summary: '依据学习上下文推送资源',
+    detail: '未返回推送结果前不展示预置推荐。',
+    accent: 'from-cyan-500 to-emerald-400',
+  },
+  assessment: {
+    summary: '围绕选定维度生成评估任务',
+    detail: '练习与判题结果均来自任务接口。',
+    accent: 'from-violet-500 to-blue-400',
+  },
+};
 
 const ENGINE_TASK_STORAGE_KEY = 'learning_studio_engine_tasks';
 const QNA_SNAPSHOT_STORAGE_KEY = 'learning_studio_qna_snapshot';
 const QNA_CONVERSATION_CACHE_STORAGE_KEY = 'learning_studio_qna_cache';
 const SELECTED_CONVERSATION_STORAGE_KEY = 'learning_studio_selected_conversation';
 const ACTIVE_CONVERSATION_ID_STORAGE_KEY = 'learning_studio_active_conversation_id';
+const DEFAULT_ENGINE_SERVICE: EngineService = 'push';
 
 interface SelectedConversationSnapshot {
   conversationId: string;
@@ -142,6 +158,191 @@ function hasResolvedAssistantResponse(messages: ChatMessage[]): boolean {
       && lastMessage.role === 'assistant'
       && lastMessage.content.trim()
       && !isProcessingOnlyAssistantContent(lastMessage.content),
+  );
+}
+
+function EngineSectionHeader(props: {
+  icon: ReactNode;
+  title: string;
+  subtitle: string;
+}) {
+  return (
+    <div className="flex items-start gap-3">
+      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-blue-50 text-primary-600 ring-1 ring-blue-100 dark:bg-primary-500/10 dark:text-primary-300 dark:ring-primary-500/20">
+        {props.icon}
+      </div>
+      <div className="min-w-0">
+        <h2 className="text-lg font-semibold text-slate-900 dark:text-white">{props.title}</h2>
+        <p className="mt-1 text-sm leading-6 text-slate-500 dark:text-slate-400">{props.subtitle}</p>
+      </div>
+    </div>
+  );
+}
+
+function ServiceHeroVisual() {
+  return (
+    <div className="relative hidden min-h-[420px] overflow-hidden lg:block">
+      <div className="absolute inset-0 bg-[radial-gradient(circle_at_52%_43%,rgba(59,130,246,0.24),transparent_32%),radial-gradient(circle_at_35%_22%,rgba(125,211,252,0.24),transparent_17%)]" />
+      <div className="absolute left-1/2 top-[61%] h-20 w-[330px] -translate-x-1/2 rounded-[50%] border border-blue-200/80 bg-blue-100/42 shadow-[0_24px_56px_rgba(61,116,239,0.2)]" />
+      <div className="absolute left-1/2 top-[58%] h-12 w-[260px] -translate-x-1/2 rounded-[50%] border border-cyan-100/80 bg-white/48 shadow-[0_18px_42px_rgba(14,165,233,0.15)]" />
+      <div className="absolute left-1/2 top-[45%] h-48 w-48 -translate-x-1/2 -translate-y-1/2 rounded-[34px] border border-blue-200/80 bg-white/35 shadow-[0_36px_90px_rgba(64,111,214,0.18)] backdrop-blur-md" />
+      <div className="absolute left-1/2 top-[42%] flex h-[136px] w-[136px] -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-[30px] border border-blue-200/80 bg-gradient-to-br from-blue-400 via-blue-600 to-cyan-400 text-5xl font-black text-white shadow-[0_28px_70px_rgba(37,99,235,0.36)]">
+        AI
+      </div>
+      <div className="absolute left-[17%] top-[30%] h-3 w-3 rounded-full bg-cyan-300 shadow-[0_0_22px_rgba(34,211,238,0.9)]" />
+      <div className="absolute right-[20%] top-[34%] h-3 w-3 rounded-full bg-blue-400 shadow-[0_0_22px_rgba(59,130,246,0.75)]" />
+      <div className="absolute left-[34%] top-[18%] h-2 w-2 rounded-full bg-emerald-300 shadow-[0_0_18px_rgba(52,211,153,0.75)]" />
+      <div className="absolute right-[23%] bottom-[25%] h-2.5 w-2.5 rounded-full bg-cyan-300 shadow-[0_0_18px_rgba(34,211,238,0.8)]" />
+      <div className="absolute left-[19%] top-[31%] h-px w-[62%] rotate-[28deg] bg-gradient-to-r from-transparent via-blue-300/80 to-transparent" />
+      <div className="absolute left-[23%] top-[57%] h-px w-[58%] -rotate-[20deg] bg-gradient-to-r from-transparent via-cyan-300/70 to-transparent" />
+      <div className="absolute left-[25%] top-[22%] h-64 w-64 rounded-full border border-blue-200/50" />
+      <div className="absolute left-[22%] top-[28%] h-52 w-72 rotate-12 rounded-[50%] border border-cyan-200/55" />
+      <span className="absolute right-9 top-20 rounded-xl bg-blue-50/90 px-3 py-1.5 text-sm font-semibold text-primary-600 shadow-sm shadow-blue-100/80 ring-1 ring-blue-100">
+        智能分析
+      </span>
+      <span className="absolute left-14 top-36 rounded-xl bg-cyan-50/90 px-3 py-1.5 text-sm font-semibold text-cyan-600 shadow-sm shadow-cyan-100/80 ring-1 ring-cyan-100">
+        精准推荐
+      </span>
+      <span className="absolute bottom-28 right-5 rounded-xl bg-emerald-50/90 px-3 py-1.5 text-sm font-semibold text-emerald-600 shadow-sm shadow-emerald-100/80 ring-1 ring-emerald-100">
+        学习进化
+      </span>
+    </div>
+  );
+}
+
+function LearningEffectPreview(props: {
+  selectedServiceLabel: string;
+  taskId: string;
+  taskProgress: number;
+  taskStatus: string;
+  resultLineCount: number;
+  downloadCount: number;
+}) {
+  const hasTask = Boolean(props.taskId);
+  const progressLabel = hasTask ? `${Math.round(props.taskProgress)}%` : '待提交';
+  const linePercent = Math.min(100, props.resultLineCount * 12);
+  const assetPercent = Math.min(100, props.downloadCount * 25);
+
+  return (
+    <section className="h-full rounded-[24px] border border-blue-100/80 bg-white/88 p-6 shadow-sm shadow-blue-100/50 dark:border-slate-800 dark:bg-slate-900/80">
+      <div className="flex items-center gap-3">
+        <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-blue-50 text-primary-600 ring-1 ring-blue-100 dark:bg-primary-500/10 dark:text-primary-300 dark:ring-primary-500/20">
+          <TrendingUp className="h-4 w-4" />
+        </div>
+        <div>
+          <h2 className="text-lg font-semibold text-slate-900 dark:text-white">学习效果预览</h2>
+          <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">只展示真实任务状态，不展示预测分假数据。</p>
+        </div>
+      </div>
+
+      {hasTask ? (
+        <div className="mt-8 grid gap-6 md:grid-cols-[160px_minmax(0,1fr)] md:items-center">
+          <div className="mx-auto flex h-36 w-36 items-center justify-center rounded-full bg-[conic-gradient(#3b82f6_var(--progress),#e8eef7_0)] p-3" style={{ '--progress': `${Math.max(1, Math.min(100, props.taskProgress))}%` } as CSSProperties}>
+            <div className="flex h-full w-full flex-col items-center justify-center rounded-full bg-white text-center shadow-inner dark:bg-slate-950">
+              <span className="text-2xl font-bold text-primary-600 dark:text-primary-300">{progressLabel}</span>
+              <span className="mt-1 text-xs text-slate-400">任务进度</span>
+            </div>
+          </div>
+
+          <div className="space-y-5">
+            <PreviewBar label="任务进度" value={`${Math.round(props.taskProgress)}%`} percent={props.taskProgress} color="bg-primary-500" />
+            <PreviewBar label="结果片段" value={`${props.resultLineCount}条`} percent={linePercent} color="bg-cyan-500" />
+            <PreviewBar label="资源产物" value={`${props.downloadCount}个`} percent={assetPercent} color="bg-violet-500" />
+          </div>
+        </div>
+      ) : (
+        <div className="mt-8 grid gap-6 md:grid-cols-[160px_minmax(0,1fr)] md:items-center">
+          <div className="mx-auto flex h-36 w-36 items-center justify-center rounded-full border border-dashed border-blue-200 bg-blue-50/60 text-center dark:border-slate-700 dark:bg-slate-950/40">
+            <div>
+              <div className="text-xl font-bold text-primary-600 dark:text-primary-300">待提交</div>
+              <div className="mt-1 text-xs text-slate-400">暂无真实任务</div>
+            </div>
+          </div>
+          <div className="rounded-2xl border border-dashed border-blue-100 bg-slate-50/70 px-5 py-6 text-sm leading-7 text-slate-500 dark:border-slate-700 dark:bg-slate-950/40 dark:text-slate-400">
+            提交任务后，这里只显示后端任务返回的进度、结果片段和资源产物数量。
+          </div>
+        </div>
+      )}
+
+      <div className="mt-8 rounded-2xl border border-blue-100 bg-slate-50/60 p-4 dark:border-slate-800 dark:bg-slate-950/40">
+        <div className="text-sm font-semibold text-slate-700 dark:text-slate-200">学习效果趋势预测</div>
+        <div className="mt-3 flex h-28 items-center justify-center rounded-xl border border-dashed border-blue-100 bg-white/70 px-4 text-center text-sm leading-6 text-slate-500 dark:border-slate-700 dark:bg-slate-900/60 dark:text-slate-400">
+          当前没有真实预测接口，已隐藏预测曲线和固定百分比。
+        </div>
+        <div className="mt-3 text-xs text-slate-400">
+          当前服务：{props.selectedServiceLabel || '未选择'}{hasTask ? ` · ${props.taskStatus}` : ''}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function PreviewBar(props: {
+  label: string;
+  value: string;
+  percent: number;
+  color: string;
+}) {
+  return (
+    <div>
+      <div className="mb-2 flex items-center justify-between text-sm">
+        <span className="font-medium text-slate-600 dark:text-slate-300">{props.label}</span>
+        <span className="font-semibold text-slate-700 dark:text-slate-200">{props.value}</span>
+      </div>
+      <div className="h-2 overflow-hidden rounded-full bg-slate-200 dark:bg-slate-800">
+        <div className={`h-full rounded-full ${props.color} transition-[width] duration-300`} style={{ width: `${Math.max(0, Math.min(100, props.percent))}%` }} />
+      </div>
+    </div>
+  );
+}
+
+function AssistantActionBar(props: {
+  selectedServiceLabel: string;
+  disabled: boolean;
+  canStop: boolean;
+  busy: boolean;
+  status: string;
+  onSubmit: () => void;
+  onStop: () => void;
+}) {
+  return (
+    <section className="rounded-[24px] border border-blue-100/80 bg-white/90 p-5 shadow-sm shadow-blue-100/50 dark:border-slate-800 dark:bg-slate-900/80">
+      <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(260px,0.75fr)_180px] lg:items-center">
+        <div className="flex items-center gap-4">
+          <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full bg-blue-50 ring-1 ring-blue-100">
+            <div className="flex h-10 w-10 items-center justify-center rounded-full bg-gradient-to-br from-blue-500 to-cyan-400 text-white shadow-md shadow-blue-300/50">
+              <BrainCircuit className="h-5 w-5" />
+            </div>
+          </div>
+          <div>
+            <div className="text-base font-semibold text-slate-900 dark:text-white">智学助手</div>
+            <p className="mt-1 text-sm leading-6 text-slate-500 dark:text-slate-400">
+              {props.busy ? props.status : props.selectedServiceLabel ? `已选择 ${props.selectedServiceLabel}，提交后开始执行真实服务任务。` : '请选择一项服务后提交任务。'}
+            </p>
+          </div>
+        </div>
+
+        <button
+          type="button"
+          onClick={props.onSubmit}
+          disabled={props.disabled}
+          className="inline-flex h-16 items-center justify-center gap-3 rounded-2xl bg-gradient-to-r from-blue-600 to-primary-500 px-6 text-lg font-semibold text-white shadow-lg shadow-blue-500/24 transition-all hover:-translate-y-0.5 hover:shadow-xl hover:shadow-blue-500/28 disabled:cursor-not-allowed disabled:opacity-45 disabled:shadow-none disabled:hover:translate-y-0"
+        >
+          <Send className="h-6 w-6" />
+          {props.busy ? '提交中...' : '提交任务'}
+        </button>
+
+        <button
+          type="button"
+          onClick={props.onStop}
+          disabled={!props.canStop}
+          className="inline-flex h-14 items-center justify-center gap-2 rounded-2xl border border-blue-100 bg-white px-5 text-sm font-semibold text-slate-600 shadow-sm shadow-blue-100/60 transition-all hover:border-primary-200 hover:text-primary-600 disabled:cursor-not-allowed disabled:opacity-45 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-300"
+        >
+          <Square className="h-4 w-4" />
+          停止任务
+        </button>
+      </div>
+    </section>
   );
 }
 
@@ -246,7 +447,8 @@ function buildConversationSyncSignature(messages: ChatMessage[]): string {
 }
 
 export default function LearningStudioDemoPage({ mode }: { mode: 'qna' | 'engine' }) {
-  const { isAuthenticated, currentUser, openAuthModal } = useOutletContext<LayoutOutletContext>();
+  const { isAuthenticated, openAuthModal } = useOutletContext<LayoutOutletContext>();
+  const navigate = useNavigate();
   const pendingActionRef = useRef<null | (() => void)>(null);
   const qnaAbortRef = useRef<AbortController | null>(null);
   const taskMonitorRefsRef = useRef<Record<EngineService, {
@@ -296,12 +498,6 @@ export default function LearningStudioDemoPage({ mode }: { mode: 'qna' | 'engine
   const engineSubmitVersionRef = useRef(0);
   const previousModeRef = useRef(mode);
 
-  const [profile, setProfile] = useState<ProfileSnapshot | null>(null);
-  const [profileSummary, setProfileSummary] = useState('');
-  const [profileUpdatedAt, setProfileUpdatedAt] = useState('');
-  const [profileSource, setProfileSource] = useState<ProfileUpdateSource>('BACKEND');
-  const [showAllWeakPoints, setShowAllWeakPoints] = useState(false);
-
   const [qnaState, setQnaState] = useState<QnaState>('QNA_IDLE');
   const [qnaMessages, setQnaMessages] = useState<ChatMessage[]>([{ id: 'qna-greeting', role: 'assistant', content: QNA_GREETING }]);
   const [qnaInput, setQnaInput] = useState('');
@@ -311,13 +507,13 @@ export default function LearningStudioDemoPage({ mode }: { mode: 'qna' | 'engine
   const [deepReasoningEnabled, setDeepReasoningEnabled] = useState(false);
   const [conversationId, setConversationId] = useState('');
 
-  const [selectedService, setSelectedService] = useState<EngineService | null>(null);
+  const [selectedService, setSelectedService] = useState<EngineService | null>(DEFAULT_ENGINE_SERVICE);
   const [serviceSnapshots, setServiceSnapshots] = useState<Record<EngineService, EngineTaskSnapshot>>(createInitialEngineSnapshots);
   const [resourceForm, setResourceForm] = useState<ResourceForm>(defaultResourceForm);
   const [pathForm, setPathForm] = useState<PathForm>({
-    targetPeriod: '14 天',
-    weeklyHours: '8',
-    currentProgress: '已完成基础概念，准备进入案例训练',
+    targetPeriod: '',
+    weeklyHours: '',
+    currentProgress: '',
   });
   const [pushForm, setPushForm] = useState<PushForm>({
     preferredType: 'CODE_CASE',
@@ -337,7 +533,8 @@ export default function LearningStudioDemoPage({ mode }: { mode: 'qna' | 'engine
   const serviceResultLines = activeEngineSnapshot.serviceResultLines;
   const downloadLinks = activeEngineSnapshot.downloadLinks;
   const videoResult = activeEngineSnapshot.videoResult;
-  const engineStateView = selectedService ? activeEngineSnapshot.engineState : 'ENGINE_IDLE';
+  const selectedServiceButton = selectedService ? serviceButtons.find((item) => item.id === selectedService) ?? null : null;
+  const selectedServiceDescription = selectedService ? serviceDescriptions[selectedService] : null;
 
   const clearPersistedEngineSnapshot = useCallback(() => {
     if (typeof window === 'undefined') {
@@ -463,7 +660,7 @@ export default function LearningStudioDemoPage({ mode }: { mode: 'qna' | 'engine
     });
     activeTaskMonitorsRef.current = {};
     setConversationId('');
-    setSelectedService(null);
+    setSelectedService(DEFAULT_ENGINE_SERVICE);
     setServiceSnapshots(createInitialEngineSnapshots());
     clearPersistedEngineSnapshot();
   }, [clearPersistedEngineSnapshot]);
@@ -677,30 +874,6 @@ export default function LearningStudioDemoPage({ mode }: { mode: 'qna' | 'engine
     }
   }, [cacheConversationView, setQnaStateView, syncConversationHistory]);
 
-  const loadCurrentProfile = useCallback(
-    async (source: ProfileUpdateSource) => {
-      if (!currentUser) {
-        setProfile(null);
-        setProfileSummary('');
-        setProfileUpdatedAt('');
-        return;
-      }
-
-      try {
-        const response = await smartEngineApi.getCurrentProfile(String(currentUser.id));
-        setProfile(mapProfileResponse(response));
-        setProfileSummary(response.summary ?? '');
-        setProfileUpdatedAt(response.updatedAt ?? '');
-        setProfileSource(source);
-      } catch {
-        setProfile(null);
-        setProfileSummary('');
-        setProfileUpdatedAt('');
-      }
-    },
-    [currentUser],
-  );
-
   useEffect(() => {
     return () => {
       mountedRef.current = false;
@@ -866,20 +1039,6 @@ export default function LearningStudioDemoPage({ mode }: { mode: 'qna' | 'engine
   }, [conversationId, mode]);
 
   useEffect(() => {
-    if (isAuthenticated && currentUser) {
-      void loadCurrentProfile('BACKEND');
-    } else {
-      setProfile(null);
-      setProfileSummary('');
-      setProfileUpdatedAt('');
-    }
-  }, [currentUser, isAuthenticated, loadCurrentProfile]);
-
-  useEffect(() => {
-    setShowAllWeakPoints(false);
-  }, [profile]);
-
-  useEffect(() => {
     if (isAuthenticated && pendingActionRef.current) {
       const action = pendingActionRef.current;
       pendingActionRef.current = null;
@@ -994,10 +1153,11 @@ export default function LearningStudioDemoPage({ mode }: { mode: 'qna' | 'engine
         taskStreamAbortRef: refs.taskStreamAbortRef,
       });
 
-      if (activeTaskMonitorsRef.current[service] === currentTaskId) {
+      const monitorStillCurrent = activeTaskMonitorsRef.current[service] === currentTaskId;
+      if (monitorStillCurrent) {
         delete activeTaskMonitorsRef.current[service];
       }
-      if (!mountedRef.current) {
+      if (!monitorStillCurrent || !mountedRef.current) {
         return;
       }
 
@@ -1007,7 +1167,6 @@ export default function LearningStudioDemoPage({ mode }: { mode: 'qna' | 'engine
           engineState: 'ENGINE_COMPLETED',
           taskStatus: '任务完成',
         }));
-        await loadCurrentProfile('TASK_REFRESH');
         return;
       }
 
@@ -1050,7 +1209,7 @@ export default function LearningStudioDemoPage({ mode }: { mode: 'qna' | 'engine
         openAuthModal('login', '登录状态已失效，重新登录后可继续查看任务结果');
       }
     },
-    [loadCurrentProfile, openAuthModal, updateServiceSnapshot],
+    [openAuthModal, updateServiceSnapshot],
   );
 
   const handleQnaSend = async () => {
@@ -1171,9 +1330,6 @@ export default function LearningStudioDemoPage({ mode }: { mode: 'qna' | 'engine
             delete qnaStreamTokensRef.current[currentConversationId];
             updateQnaConversationMessages(currentConversationId, (messages) => messages, { qnaState: 'QNA_IDLE' });
             window.dispatchEvent(new Event('app:conversation-updated'));
-            if (conversationIdRef.current === currentConversationId) {
-              void loadCurrentProfile('TASK_REFRESH');
-            }
           },
           onError: (error) => {
             if (qnaStreamTokensRef.current[currentConversationId] !== streamToken) {
@@ -1467,23 +1623,48 @@ export default function LearningStudioDemoPage({ mode }: { mode: 'qna' | 'engine
     }
   };
 
-  const handleStopService = () => {
+  const handleStopService = async () => {
     if (!selectedService) {
       return;
     }
+    const service = selectedService;
+    const currentTaskId = serviceSnapshots[service].taskId;
     const refs = taskMonitorRefsRef.current[selectedService];
     refs.taskStreamAbortRef.current?.abort();
     refs.taskStreamAbortRef.current = null;
-    activeTaskMonitorsRef.current[selectedService] = '';
+    activeTaskMonitorsRef.current[service] = '';
     cleanupStreamSchedulers(refs.streamFlushTimerRef, refs.streamRafRef);
-    updateServiceSnapshot(selectedService, (current) => ({
+    updateServiceSnapshot(service, (current) => ({
       ...current,
       engineState: 'ENGINE_FAILED',
-      taskStatus: '已停止实时接收',
-      serviceResultLines: current.serviceResultLines.includes('已停止当前页面的实时接收，任务可能仍在后台继续执行。')
+      taskStatus: currentTaskId ? '正在取消任务' : '已停止实时接收',
+      serviceResultLines: current.serviceResultLines.includes('已向后端发送取消请求，正在等待确认。')
         ? current.serviceResultLines
-        : [...current.serviceResultLines, '已停止当前页面的实时接收，任务可能仍在后台继续执行。'],
+        : [
+          ...current.serviceResultLines,
+          currentTaskId ? '已向后端发送取消请求，正在等待确认。' : '已停止当前页面的实时接收。',
+        ],
     }));
+    if (!currentTaskId) {
+      return;
+    }
+    try {
+      await smartEngineApi.cancelTask(currentTaskId);
+      updateServiceSnapshot(service, (current) => ({
+        ...current,
+        taskStatus: '任务已取消',
+        serviceResultLines: current.serviceResultLines.includes('后端任务已取消。')
+          ? current.serviceResultLines
+          : [...current.serviceResultLines, '后端任务已取消。'],
+      }));
+    } catch (error) {
+      const message = getErrorMessage(error);
+      updateServiceSnapshot(service, (current) => ({
+        ...current,
+        taskStatus: '取消失败',
+        serviceResultLines: [...current.serviceResultLines, `取消失败：${message}`],
+      }));
+    }
   };
 
   useEffect(() => {
@@ -1507,7 +1688,7 @@ export default function LearningStudioDemoPage({ mode }: { mode: 'qna' | 'engine
         snapshot.selectedService ?? null,
         snapshot.snapshots ?? createInitialEngineSnapshots(),
       );
-      setSelectedService(snapshot.selectedService ?? null);
+      setSelectedService(snapshot.selectedService ?? DEFAULT_ENGINE_SERVICE);
       setConversationId(snapshot.conversationId ?? window.sessionStorage.getItem(ACTIVE_CONVERSATION_ID_STORAGE_KEY) ?? '');
       setServiceSnapshots({
         ...createInitialEngineSnapshots(),
@@ -1536,7 +1717,7 @@ export default function LearningStudioDemoPage({ mode }: { mode: 'qna' | 'engine
     };
 
     const isEmptySnapshot =
-      !selectedService &&
+      (!selectedService || selectedService === DEFAULT_ENGINE_SERVICE) &&
       !conversationId &&
       Object.values(serviceSnapshots).every((item) => !item.taskId && item.engineState === 'ENGINE_IDLE');
 
@@ -1576,79 +1757,137 @@ export default function LearningStudioDemoPage({ mode }: { mode: 'qna' | 'engine
   }
 
   return (
-    <Suspense fallback={<div className="mx-auto max-w-[1180px] rounded-3xl border border-slate-200 bg-white/80 px-6 py-10 text-center text-sm text-slate-500 dark:border-slate-700 dark:bg-slate-900/60 dark:text-slate-400">正在加载智能服务界面...</div>}>
-      <div className="mx-auto max-w-[1180px] space-y-6 pb-10 px-1 md:px-0">
-        <RealtimeProfile
-          profile={profile}
-          summary={profileSummary}
-          updatedAt={profileUpdatedAt}
-          source={profileSource}
-          showAllWeakPoints={showAllWeakPoints}
-          onToggleWeakPoints={() => setShowAllWeakPoints((prev) => !prev)}
-        />
-
-        <div className="modern-card p-5 md:p-6">
-          <div className="mb-6 text-center">
-            <h1 className="text-2xl font-semibold tracking-tight text-slate-800 dark:text-white md:text-[34px]">你好，我是智学引擎</h1>
-            <p className="mt-1.5 text-sm text-slate-500 dark:text-slate-400">选择一项智能服务，开始你的学习之旅</p>
+    <Suspense fallback={<div className="mx-auto max-w-[1180px] rounded-[28px] border border-blue-100 bg-white/85 px-6 py-10 text-center text-sm text-slate-500 shadow-sm shadow-blue-100/60">正在加载学习服务...</div>}>
+      <div className="mx-auto max-w-[1120px] space-y-7 pb-10 px-1 md:px-0">
+        <section className="overflow-hidden rounded-[28px] border border-blue-100/80 bg-white/92 shadow-xl shadow-blue-100/55 dark:border-slate-800 dark:bg-slate-900/86 dark:shadow-slate-950/30">
+          <div className="flex items-center justify-between border-b border-blue-100/80 px-6 py-5 dark:border-slate-800 md:px-8">
+            <div className="flex items-center gap-4">
+              <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-gradient-to-br from-blue-600 to-sky-400 text-white shadow-lg shadow-blue-500/20">
+                <GraduationCap className="h-5 w-5" />
+              </div>
+              <div className="text-2xl font-bold tracking-tight text-slate-900 dark:text-white">学习服务</div>
+              <span className="rounded-full bg-blue-50 px-3 py-1 text-sm font-semibold text-primary-600 ring-1 ring-blue-100 dark:bg-primary-500/10 dark:text-primary-300 dark:ring-primary-500/20">
+                智学引擎
+              </span>
+            </div>
+            <button
+              type="button"
+              onClick={() => navigate('/')}
+              className="flex h-10 w-10 items-center justify-center rounded-full text-slate-400 transition-colors hover:bg-blue-50 hover:text-primary-600 dark:text-slate-500 dark:hover:bg-slate-800 dark:hover:text-primary-300"
+              aria-label="返回对话"
+            >
+              <X className="h-5 w-5" />
+            </button>
           </div>
 
-          <div className="mb-6 grid grid-cols-2 gap-2 md:flex md:flex-wrap md:justify-center md:gap-3">
-            {serviceButtons.map((item) => {
-              const active = selectedService === item.id;
-              return (
-                <button
-                  key={item.id}
-                  type="button"
-                  onClick={() => withAuth(() => handleSelectService(item.id))}
-                  className={`group flex flex-col items-center gap-1.5 rounded-2xl border px-4 py-3 text-sm transition-all duration-200 md:flex-row md:gap-2 md:px-4 md:py-2 ${
-                    active
-                      ? 'border-primary-300 bg-primary-50 text-primary-700 shadow-sm dark:border-primary-700 dark:bg-primary-900/50 dark:text-primary-300'
-                      : 'border-slate-200 bg-white text-slate-600 hover:border-primary-200 hover:bg-primary-50/50 hover:text-primary-600 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-400 dark:hover:border-primary-700 dark:hover:bg-primary-900/20'
-                  }`}
-                >
-                  <item.icon className={`h-5 w-5 md:h-4 md:w-4 ${active ? 'text-primary-600 dark:text-primary-400' : 'text-slate-400 group-hover:text-primary-500 dark:text-slate-500'}`} />
-                  <span className="text-xs md:text-sm">{item.label}</span>
-                </button>
-              );
-            })}
+          <div className="relative overflow-hidden px-6 py-8 dark:bg-slate-900/40 md:px-8 md:py-10">
+            <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_80%_20%,rgba(59,130,246,0.18),transparent_34%),linear-gradient(120deg,rgba(248,251,255,0.95),rgba(255,255,255,0.55)_48%,rgba(231,243,255,0.82))] dark:bg-[radial-gradient(circle_at_80%_20%,rgba(59,130,246,0.2),transparent_34%),linear-gradient(120deg,rgba(15,23,42,0.95),rgba(30,41,59,0.82)_52%,rgba(17,24,39,0.92))]" />
+            <div className="relative grid gap-8 lg:grid-cols-[minmax(0,0.95fr)_minmax(360px,0.78fr)] lg:items-center">
+              <div>
+                <h1 className="text-[34px] font-bold leading-tight text-slate-900 dark:text-white md:text-[46px]">
+                  选择一项<span className="text-primary-600 dark:text-primary-300">智能服务</span>
+                </h1>
+                <p className="mt-3 text-base leading-7 text-slate-500 dark:text-slate-400">
+                  智学引擎为你量身定制专属学习体验
+                </p>
+
+                <div className="mt-8 grid gap-4 sm:grid-cols-2">
+                  {serviceButtons.map((item) => {
+                    const active = selectedService === item.id;
+                    const description = serviceDescriptions[item.id];
+                    return (
+                      <button
+                        key={item.id}
+                        type="button"
+                        onClick={() => withAuth(() => handleSelectService(item.id))}
+                        className={`group relative min-h-[148px] rounded-2xl border bg-white/86 p-6 text-left shadow-sm shadow-blue-100/40 transition-all duration-200 hover:-translate-y-0.5 hover:border-primary-200 hover:shadow-lg hover:shadow-blue-100/60 dark:bg-slate-950/42 dark:shadow-none ${
+                          active
+                            ? 'border-primary-400 ring-2 ring-primary-500/15 dark:border-primary-500'
+                            : 'border-blue-100/80 dark:border-slate-800'
+                        }`}
+                      >
+                        <div className="flex items-center gap-5">
+                          <span className={`flex h-14 w-14 shrink-0 items-center justify-center rounded-full bg-gradient-to-br ${description.accent} text-white shadow-md shadow-blue-500/18`}>
+                            <item.icon className="h-6 w-6" />
+                          </span>
+                          <span className="min-w-0">
+                            <span className={`block text-base font-bold ${active ? 'text-primary-700 dark:text-primary-300' : 'text-slate-900 dark:text-white'}`}>
+                              {item.label}
+                            </span>
+                            <span className="mt-2 block text-sm leading-6 text-slate-500 dark:text-slate-400">
+                              {description.summary}
+                            </span>
+                          </span>
+                        </div>
+                        {active ? (
+                          <span className="absolute right-5 top-5 flex h-6 w-6 items-center justify-center rounded-full bg-primary-600 text-white">
+                            <CheckCircle2 className="h-4 w-4" />
+                          </span>
+                        ) : null}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <ServiceHeroVisual />
+            </div>
           </div>
+        </section>
 
-          <ServiceDynamicForm
-            service={selectedService}
-            resourceForm={resourceForm}
-            pathForm={pathForm}
-            pushForm={pushForm}
-            assessmentForm={assessmentForm}
-            onResourceChange={(next) => {
-              setResourceForm(next);
-              markFormEditing();
-            }}
-            onPathChange={(next) => {
-              setPathForm(next);
-              markFormEditing();
-            }}
-            onPushChange={(next) => {
-              setPushForm(next);
-              markFormEditing();
-            }}
-            onAssessmentChange={(next) => {
-              setAssessmentForm(next);
-              markFormEditing();
-            }}
-          />
+        <div className="grid overflow-hidden rounded-[24px] border border-blue-100/80 bg-white/90 shadow-sm shadow-blue-100/50 dark:border-slate-800 dark:bg-slate-900/80 xl:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
+          <section className="border-b border-blue-100/80 p-6 dark:border-slate-800 xl:border-b-0 xl:border-r">
+            <EngineSectionHeader
+              icon={<FileText className="h-4 w-4" />}
+              title={selectedServiceButton ? `${selectedServiceButton.label}参数` : '服务参数'}
+              subtitle={selectedServiceDescription?.detail ?? '选择服务后填写参数，提交前不会生成任何预置推荐。'}
+            />
+            <div className="mt-6">
+              <ServiceDynamicForm
+                service={selectedService}
+                resourceForm={resourceForm}
+                pathForm={pathForm}
+                pushForm={pushForm}
+                assessmentForm={assessmentForm}
+                onResourceChange={(next) => {
+                  setResourceForm(next);
+                  markFormEditing();
+                }}
+                onPathChange={(next) => {
+                  setPathForm(next);
+                  markFormEditing();
+                }}
+                onPushChange={(next) => {
+                  setPushForm(next);
+                  markFormEditing();
+                }}
+                onAssessmentChange={(next) => {
+                  setAssessmentForm(next);
+                  markFormEditing();
+                }}
+              />
+            </div>
+          </section>
 
-          <ServiceSubmitPanel
-            disabled={!selectedService || engineBusy}
-            onSubmit={handleSubmitService}
-            onStop={handleStopService}
-            canStop={engineBusy}
+          <LearningEffectPreview
+            selectedServiceLabel={selectedServiceButton?.label ?? ''}
             taskId={taskId}
-            progress={taskProgress}
-            status={taskStatus}
-            uiState={engineStateView}
+            taskProgress={taskProgress}
+            taskStatus={taskStatus}
+            resultLineCount={serviceResultLines.length}
+            downloadCount={downloadLinks.length}
           />
         </div>
+
+        <AssistantActionBar
+          selectedServiceLabel={selectedServiceButton?.label ?? ''}
+          disabled={!selectedService || engineBusy}
+          canStop={engineBusy}
+          busy={engineBusy}
+          status={taskStatus}
+          onSubmit={handleSubmitService}
+          onStop={handleStopService}
+        />
 
         <TaskResultPanel
           service={selectedService}

@@ -1,11 +1,10 @@
-import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { BookOpenCheck, Clock3, Compass, History, LayoutGrid, Menu, MessageCirclePlus, Search, Sparkles, UserRoundSearch } from 'lucide-react';
 import AuthModal from './AuthModal';
 import ThemeToggle from './ThemeToggle';
 
-const ServiceDrawer = lazy(() => import('./ServiceDrawer'));
 import { authApi, type AuthUser } from '../api/auth';
 import { conversationApi, type ConversationHistoryItem } from '../api/conversation';
 import { clearAuthSession, getAuthToken, isUnauthorizedError } from '../api/request';
@@ -69,7 +68,6 @@ export default function Layout() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [moreMenuOpen, setMoreMenuOpen] = useState(false);
   const moreMenuRef = useRef<HTMLDivElement>(null);
-  const [servicePanelOpen, setServicePanelOpen] = useState(false);
 
   const isAuthenticated = Boolean(currentUser);
 
@@ -198,7 +196,6 @@ export default function Layout() {
   const handleOpenProfilePage = useCallback(() => {
     setMoreMenuOpen(false);
     closeSidebar();
-    setServicePanelOpen(false);
     if (!isAuthenticated) {
       openAuthModal('login', '登录后查看个人画像');
       return;
@@ -206,11 +203,11 @@ export default function Layout() {
     navigate('/profile');
   }, [isAuthenticated, navigate]);
 
-  const handleOpenServicePanel = useCallback(() => {
+  const handleOpenServicePage = useCallback(() => {
     setMoreMenuOpen(false);
     closeSidebar();
-    setServicePanelOpen(true);
-  }, []);
+    navigate('/engine');
+  }, [navigate]);
 
   const handleOpenMistakeBook = useCallback(() => {
     setMoreMenuOpen(false);
@@ -377,7 +374,7 @@ export default function Layout() {
                 </button>
                 <button
                   type="button"
-                  onClick={handleOpenServicePanel}
+                  onClick={handleOpenServicePage}
                   className="flex w-full items-center gap-2.5 px-4 py-2.5 text-sm text-slate-600 transition-colors hover:bg-primary-50 hover:text-primary-700 dark:text-slate-400 dark:hover:bg-primary-900/50 dark:hover:text-primary-300"
                 >
                   <Sparkles className="h-4 w-4" />
@@ -525,7 +522,7 @@ export default function Layout() {
       </AnimatePresence>
 
       {/* Main Content */}
-      <main className={`app-main flex-1 md:ml-[302px] transition-[margin-right] duration-300 ${servicePanelOpen ? 'md:mr-[520px]' : ''}`}>
+      <main className="app-main flex-1 md:ml-[302px]">
         {/* Top Header */}
         <header className="app-topbar sticky top-0 z-30 flex items-center justify-between px-4 md:px-8">
           <div className="flex items-center gap-3">
@@ -538,10 +535,10 @@ export default function Layout() {
             </button>
             <div className="app-breadcrumb">
               <Compass className="h-4 w-4 text-primary-500" />
-              <span className="hidden sm:inline">{inProfile ? '个人画像' : inMistakes ? '错题本' : inEngine ? '更多功能' : '新对话'}</span>
+              <span className="hidden sm:inline">{inProfile ? '个人画像' : inMistakes ? '错题本' : inEngine ? '学习服务' : '新对话'}</span>
               <span className="hidden text-slate-300 sm:inline">/</span>
-              <span className="hidden sm:inline">{inProfile ? '真实学习画像' : inMistakes ? '自动错题复习' : inEngine ? '智能学习服务中心' : '智能学习与解题助手'}</span>
-              <span className="sm:hidden">{inProfile ? '个人画像' : inMistakes ? '错题本' : inEngine ? '服务面板' : '智能对话'}</span>
+              <span className="hidden sm:inline">{inProfile ? '真实学习画像' : inMistakes ? '自动错题复习' : inEngine ? '独立服务页面' : '智能学习与解题助手'}</span>
+              <span className="sm:hidden">{inProfile ? '个人画像' : inMistakes ? '错题本' : inEngine ? '学习服务' : '智能对话'}</span>
             </div>
           </div>
           <div className="flex items-center gap-2 md:gap-3">
@@ -584,15 +581,6 @@ export default function Layout() {
           void loadRecentConversations();
         }}
       />
-
-      <Suspense fallback={null}>
-        <ServiceDrawer
-          open={servicePanelOpen}
-          isAuthenticated={isAuthenticated}
-          onClose={() => setServicePanelOpen(false)}
-          zIndex={40}
-        />
-      </Suspense>
     </div>
   );
 }

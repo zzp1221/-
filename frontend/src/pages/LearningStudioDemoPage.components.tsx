@@ -1,38 +1,25 @@
-import { lazy, Suspense, useEffect, useId, useRef, useState, type DragEvent, type ClipboardEvent, type ReactNode } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
-import { Activity, ArrowDown, Brain, BookOpen, CheckCircle2, Clock3, ExternalLink, FileImage, FileText, LoaderCircle, Paperclip, SendHorizontal, Sparkles, Target, TrendingUp, TriangleAlert, X, XCircle } from 'lucide-react';
+import { lazy, Suspense, useState } from 'react';
+import { BookOpen, CheckCircle2, ExternalLink, FileText, Sparkles, XCircle } from 'lucide-react';
 import CodeBlock from '../components/CodeBlock';
-import ScoreProgressBar from '../components/ScoreProgressBar';
 import {
-  EMPTY_VALUE,
   assessmentDimensionOptions,
   pushResourceTypeOptions,
   resourceTypeButtons,
   type AssessmentForm,
-  type ChatMessage,
   type EngineService,
-  type EngineState,
   type InlineResourceView,
-  type ProfileDimensionScore,
   type PathForm,
-  type PendingChatImage,
-  type ProfileSnapshot,
-  type ProfileTimelinePoint,
-  type ProfileUpdateSource,
   type PracticeJudgeResult,
   type PracticeQuestionBatch,
   type PushForm,
   type ResourceForm,
   type TempDownloadLink,
   type VideoResult,
-  type WeakPointRank,
 } from './LearningStudioDemoPage.types';
 import { request } from '../api/request';
-import { normalizeCopyText } from './LearningStudioDemoPage.utils';
 
 const LazyMarkdownRenderer = lazy(() => import('../components/MarkdownRenderer'));
 const LazyMermaidDiagram = lazy(() => import('../components/MermaidDiagram'));
-const LazyRadarChart = lazy(() => import('../components/RadarChart'));
 const LazyVideoCard = lazy(() => import('../components/VideoCard'));
 
 function DeferredMarkdownRenderer(props: { content: string; isStreaming?: boolean }) {
@@ -126,7 +113,7 @@ export function ServiceDynamicForm(props: {
           value={props.resourceForm.keyPoints}
           onChange={(e) => props.onResourceChange({ ...props.resourceForm, keyPoints: e.target.value })}
           rows={2}
-          placeholder="重点知识点（如：并发编程、线程池）"
+          placeholder="重点知识点"
           className={`${baseInputClass} mt-3`}
         />
         {props.resourceForm.resourceType === 'VIDEO' ? (
@@ -146,7 +133,7 @@ export function ServiceDynamicForm(props: {
           <input
             value={props.pathForm.targetPeriod}
             onChange={(e) => props.onPathChange({ ...props.pathForm, targetPeriod: e.target.value })}
-            placeholder="目标周期（如：14 天）"
+            placeholder="目标周期"
             className={baseInputClass}
           />
           <input
@@ -169,21 +156,23 @@ export function ServiceDynamicForm(props: {
 
   if (props.service === 'push') {
     return (
-      <div className="rounded-2xl border border-slate-200 bg-slate-50/50 p-4 dark:border-slate-700 dark:bg-slate-900/50 md:p-5">
-        <div className="mb-3 text-sm font-semibold text-slate-700 dark:text-slate-300">资源推送参数</div>
-        <select
-          value={props.pushForm.preferredType}
-          onChange={(e) => props.onPushChange({ ...props.pushForm, preferredType: e.target.value as typeof props.pushForm.preferredType })}
-          className={baseSelectClass}
-        >
-          {pushResourceTypeOptions.map((item) => (
-            <option key={item.type} value={item.type}>
-              {item.label}
-            </option>
-          ))}
-        </select>
-        <div className="mt-3 rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-500 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-400">
-          具体推送内容将结合当前画像、薄弱点和学习方向自动筛选，不再手动输入关键词和课程范围。
+      <div className="space-y-5">
+        <label className="block">
+          <span className="mb-2 block text-sm font-semibold text-slate-700 dark:text-slate-300">资源类型</span>
+          <select
+            value={props.pushForm.preferredType}
+            onChange={(e) => props.onPushChange({ ...props.pushForm, preferredType: e.target.value as typeof props.pushForm.preferredType })}
+            className={`${baseSelectClass} h-14 text-base`}
+          >
+            {pushResourceTypeOptions.map((item) => (
+              <option key={item.type} value={item.type}>
+                {item.label}
+              </option>
+            ))}
+          </select>
+        </label>
+        <div className="rounded-2xl border border-blue-100 bg-blue-50/70 px-4 py-4 text-sm leading-7 text-slate-600 dark:border-slate-800 dark:bg-slate-950/40 dark:text-slate-300">
+          具体推送内容将在提交后由服务根据真实学习上下文自动筛选，不再手动输入关键词和课程范围。
         </div>
       </div>
     );
@@ -210,74 +199,6 @@ export function ServiceDynamicForm(props: {
           );
         })}
       </div>
-    </div>
-  );
-}
-
-export function ServiceSubmitPanel(props: {
-  disabled: boolean;
-  onSubmit: () => void;
-  onStop?: () => void;
-  canStop?: boolean;
-  taskId: string;
-  progress: number;
-  status: string;
-  uiState: EngineState;
-}) {
-  const progress = Math.max(0, Math.min(100, props.progress));
-  const isRunning = props.uiState === 'ENGINE_RUNNING' || props.uiState === 'ENGINE_SUBMITTING';
-
-  return (
-    <div className="mt-5 rounded-2xl border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-900 md:p-5">
-      <div className="flex gap-3">
-        <button
-          type="button"
-          onClick={props.onSubmit}
-          disabled={props.disabled}
-          className="flex-1 rounded-xl bg-primary-600 px-4 py-2.5 text-sm font-medium text-white shadow-lg shadow-primary-500/25 transition-all hover:shadow-md hover:bg-primary-700 disabled:cursor-not-allowed disabled:opacity-40 disabled:shadow-none active:scale-[0.98]"
-        >
-          {isRunning ? '提交中...' : '提交任务'}
-        </button>
-        <button
-          type="button"
-          onClick={props.onStop}
-          disabled={!props.canStop}
-          className="rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-medium text-slate-600 transition-all hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40 dark:border-slate-700 dark:text-slate-400 dark:hover:bg-slate-800"
-        >
-          停止
-        </button>
-      </div>
-
-      {props.taskId ? (
-        <div className="mt-4 space-y-2">
-          <div className="flex items-center justify-between text-xs">
-            <span className="font-mono text-slate-400 dark:text-slate-500">任务 #{props.taskId.slice(0, 12)}...</span>
-            <span className={`font-medium ${
-              progress >= 100 ? 'text-emerald-600 dark:text-emerald-400' :
-              isRunning ? 'text-primary-600 dark:text-primary-400' :
-              'text-slate-500 dark:text-slate-400'
-            }`}>
-              {props.status}
-            </span>
-          </div>
-          <div className="relative h-2.5 overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800">
-            <motion.div
-              className={`absolute inset-y-0 left-0 rounded-full ${
-                progress >= 100
-                  ? 'bg-gradient-to-r from-emerald-400 to-emerald-500'
-                  : 'bg-primary-500'
-              }`}
-              initial={false}
-              animate={{ width: `${progress}%` }}
-              transition={{ duration: 0.5, ease: 'easeOut' }}
-            />
-            {isRunning && progress < 100 ? (
-              <div className="absolute inset-y-0 left-0 w-20 animate-shimmer rounded-full bg-gradient-to-r from-transparent via-white/30 to-transparent" />
-            ) : null}
-          </div>
-          <div className="text-right text-[11px] text-slate-400 dark:text-slate-500">{progress}%</div>
-        </div>
-      ) : null}
     </div>
   );
 }
@@ -725,546 +646,4 @@ function extractFileName(url: string, fallbackTitle: string): string {
   } catch {
     return fallbackTitle;
   }
-}
-
-export function RealtimeProfile(props: {
-  profile: ProfileSnapshot | null;
-  summary: string;
-  updatedAt: string;
-  source: ProfileUpdateSource;
-  showAllWeakPoints: boolean;
-  onToggleWeakPoints: () => void;
-}) {
-  const allWeakPoints = props.profile?.weakPoints ?? [];
-  const weakPoints = props.showAllWeakPoints ? allWeakPoints : allWeakPoints.slice(0, 3);
-
-  if (!props.profile) {
-    return (
-      <div className="modern-card px-5 py-4">
-        <div className="flex items-center justify-between">
-          <h2 className="text-sm font-semibold text-slate-700 dark:text-slate-300">学习画像</h2>
-          <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[11px] text-slate-500 dark:bg-slate-800 dark:text-slate-400">暂无数据</span>
-        </div>
-        <p className="mt-4 text-sm text-slate-400 dark:text-slate-500">完成对话或提交任务后，AI 将自动生成你的学习画像。</p>
-      </div>
-    );
-  }
-
-  return (
-    <div className="modern-card overflow-hidden">
-      <div className="flex items-center justify-between border-b border-slate-100 px-5 py-3 dark:border-slate-800">
-        <h2 className="text-sm font-semibold text-slate-700 dark:text-slate-300">学习画像</h2>
-        <span className={`rounded-full px-2.5 py-1 text-[11px] font-medium ${
-          props.source === 'BACKEND'
-            ? 'bg-primary-50 text-primary-600 dark:bg-primary-500/10 dark:text-primary-400'
-            : 'bg-emerald-50 text-emerald-600 dark:bg-emerald-500/10 dark:text-emerald-400'
-        }`}>
-          {props.source === 'BACKEND' ? '系统分析' : '实时更新'}
-        </span>
-      </div>
-      <div className="space-y-5 p-5">
-        <div className="grid gap-3 xl:grid-cols-4">
-          <ProfileStatCard icon={<Target className="h-4 w-4" />} label="学习目标" value={props.profile.goal || EMPTY_VALUE} accent="primary" />
-          <ProfileStatCard icon={<Brain className="h-4 w-4" />} label="知识基础" value={props.profile.knowledgeBase || EMPTY_VALUE} accent="primary" />
-          <ProfileStatCard icon={<Activity className="h-4 w-4" />} label="置信分" value={`${props.profile.confidenceScore}/100`} accent="emerald" />
-          <ProfileStatCard icon={<Sparkles className="h-4 w-4" />} label="认知偏好" value={props.profile.explanationPreference || props.profile.cognitiveStyle || EMPTY_VALUE} accent="amber" />
-        </div>
-
-        <div className="grid gap-5 xl:grid-cols-[1.15fr_0.85fr]">
-          <section className="rounded-2xl border border-slate-100 bg-slate-50/60 p-4 dark:border-slate-800 dark:bg-slate-900/40">
-            <div className="mb-3 flex items-center justify-between">
-              <div>
-                <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-300">7维画像可视化</h3>
-                <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">从当前画像自动计算 7 个核心学习维度</p>
-              </div>
-              <span className="rounded-full bg-primary-50 px-2.5 py-1 text-[11px] font-medium text-primary-600 dark:bg-primary-500/10 dark:text-primary-400">
-                实时画像
-              </span>
-            </div>
-            <div className="grid gap-4 lg:grid-cols-[0.95fr_1.05fr]">
-              <Suspense fallback={<div className="min-h-[320px] rounded-xl border border-dashed border-slate-200 dark:border-slate-700" />}>
-                <LazyRadarChart
-                  data={props.profile.dimensionScores.map((item) => ({
-                    subject: item.subject,
-                    score: item.score,
-                    fullMark: item.fullMark,
-                  }))}
-                  height={320}
-                  className="min-h-[320px]"
-                />
-              </Suspense>
-              <div className="space-y-2.5">
-                {props.profile.dimensionScores.map((item, index) => (
-                  <DimensionProgressRow key={item.key} item={item} delay={index * 0.06} />
-                ))}
-              </div>
-            </div>
-          </section>
-
-          <section className="rounded-2xl border border-slate-100 bg-slate-50/60 p-4 dark:border-slate-800 dark:bg-slate-900/40">
-            <div className="mb-3 flex items-center justify-between">
-              <div>
-                <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-300">薄弱点排序</h3>
-                <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">按当前薄弱强度由高到低排序，优先展示最该补的内容</p>
-              </div>
-              <TriangleAlert className="h-4 w-4 text-amber-500" />
-            </div>
-            <div className="space-y-3">
-              {props.profile.weakPointRanks.length > 0 ? (
-                props.profile.weakPointRanks
-                  .slice(0, props.showAllWeakPoints ? props.profile.weakPointRanks.length : 5)
-                  .map((item, index) => (
-                    <WeakPointRankCard key={`${item.topic}-${index}`} item={item} rank={index + 1} />
-                  ))
-              ) : (
-                <div className="rounded-2xl border border-dashed border-slate-200 px-4 py-6 text-sm text-slate-400 dark:border-slate-700 dark:text-slate-500">
-                  暂无可排序的薄弱点，继续对话、练习或评估后会自动补齐。
-                </div>
-              )}
-              {props.profile.weakPointRanks.length > 5 || allWeakPoints.length > 3 ? (
-                <button
-                  type="button"
-                  onClick={props.onToggleWeakPoints}
-                  className="text-xs font-medium text-primary-600 hover:text-primary-700 dark:text-primary-400"
-                >
-                  {props.showAllWeakPoints ? '收起薄弱点列表' : `展开全部 (${props.profile.weakPointRanks.length || allWeakPoints.length}项)`}
-                </button>
-              ) : null}
-            </div>
-          </section>
-        </div>
-
-        <div className="grid gap-5 xl:grid-cols-[0.9fr_1.1fr]">
-          <section className="rounded-2xl border border-slate-100 bg-slate-50/60 p-4 dark:border-slate-800 dark:bg-slate-900/40">
-            <div className="mb-3 flex items-center justify-between">
-              <div>
-                <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-300">画像摘要</h3>
-                <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">当前学习阶段、重点弱项与推荐方向</p>
-              </div>
-              <TrendingUp className="h-4 w-4 text-emerald-500" />
-            </div>
-            <div className="space-y-3">
-              <div className="rounded-2xl bg-white/90 px-4 py-3 text-sm leading-7 text-slate-600 dark:bg-slate-950/40 dark:text-slate-300">
-                {props.summary || props.profile.summaryText || EMPTY_VALUE}
-              </div>
-              <div className="grid gap-3 md:grid-cols-2">
-                <ProfileCell label="课程方向" value={props.profile.major || EMPTY_VALUE} />
-                <ProfileCell label="偏好学习方式" value={props.profile.preference?.join('、') || EMPTY_VALUE} />
-                <ProfileCell label="认知风格" value={props.profile.cognitiveStyle || EMPTY_VALUE} />
-                <ProfileCell label="当前薄弱点" value={weakPoints.length > 0 ? weakPoints.join('、') : EMPTY_VALUE} />
-              </div>
-            </div>
-          </section>
-
-          <section className="rounded-2xl border border-slate-100 bg-slate-50/60 p-4 dark:border-slate-800 dark:bg-slate-900/40">
-            <div className="mb-3 flex items-center justify-between">
-              <div>
-                <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-300">时间线演化</h3>
-                <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">展示最近几次画像快照的目标、基础和关键弱点变化</p>
-              </div>
-              <Clock3 className="h-4 w-4 text-slate-500" />
-            </div>
-            <ProfileTimeline timeline={props.profile.timeline} />
-          </section>
-        </div>
-
-        <div className="flex items-center gap-4 border-t border-slate-100 pt-4 text-[11px] text-slate-400 dark:border-slate-800 dark:text-slate-500">
-          <span>更新于 {props.updatedAt ? new Date(props.updatedAt).toLocaleString('zh-CN') : EMPTY_VALUE}</span>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function ProfileStatCard(props: {
-  icon: ReactNode;
-  label: string;
-  value: string;
-  accent: 'primary' | 'emerald' | 'amber';
-}) {
-  const accentMap: Record<typeof props.accent, string> = {
-    primary: 'bg-primary-50 text-primary-600 dark:bg-primary-500/10 dark:text-primary-400',
-    emerald: 'bg-emerald-50 text-emerald-600 dark:bg-emerald-500/10 dark:text-emerald-400',
-    amber: 'bg-amber-50 text-amber-600 dark:bg-amber-500/10 dark:text-amber-400',
-  };
-  return (
-    <div className="rounded-2xl border border-slate-100 bg-slate-50/60 p-4 dark:border-slate-800 dark:bg-slate-900/40">
-      <div className="flex items-start justify-between gap-3">
-        <div>
-          <div className="text-xs font-medium text-slate-500 dark:text-slate-400">{props.label}</div>
-          <div className="mt-2 text-sm font-semibold leading-6 text-slate-700 dark:text-slate-200">{props.value || EMPTY_VALUE}</div>
-        </div>
-        <div className={`rounded-xl p-2 ${accentMap[props.accent]}`}>{props.icon}</div>
-      </div>
-    </div>
-  );
-}
-
-function DimensionProgressRow(props: { item: ProfileDimensionScore; delay: number }) {
-  return (
-    <div className="rounded-2xl border border-slate-100 bg-white/90 p-3 dark:border-slate-800 dark:bg-slate-950/40">
-      <ScoreProgressBar
-        label={`${props.item.subject} · ${props.item.hint}`}
-        score={props.item.score}
-        maxScore={props.item.fullMark}
-        color="bg-primary-500"
-        delay={props.delay}
-      />
-    </div>
-  );
-}
-
-function WeakPointRankCard(props: { item: WeakPointRank; rank: number }) {
-  return (
-    <div className="rounded-2xl border border-slate-100 bg-white/90 p-3 dark:border-slate-800 dark:bg-slate-950/40">
-      <div className="mb-2 flex items-center justify-between gap-3">
-        <div className="flex items-center gap-3">
-          <div className="flex h-7 w-7 items-center justify-center rounded-full bg-amber-50 text-xs font-semibold text-amber-600 dark:bg-amber-500/10 dark:text-amber-400">
-            {props.rank}
-          </div>
-          <div>
-            <div className="text-sm font-medium text-slate-700 dark:text-slate-200">{props.item.topic}</div>
-            <div className="text-xs text-slate-400 dark:text-slate-500">
-              {props.item.lastError || '等待更多练习或评估错误样本'}
-            </div>
-          </div>
-        </div>
-        <div className="text-sm font-semibold text-amber-600 dark:text-amber-400">{props.item.severity}/100</div>
-      </div>
-      <div className="h-2 overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800">
-        <div
-          className="h-full rounded-full bg-gradient-to-r from-amber-400 to-rose-500"
-          style={{ width: `${Math.max(8, Math.min(100, props.item.severity))}%` }}
-        />
-      </div>
-    </div>
-  );
-}
-
-function ProfileTimeline(props: { timeline: ProfileTimelinePoint[] }) {
-  if (props.timeline.length === 0) {
-    return (
-      <div className="rounded-2xl border border-dashed border-slate-200 px-4 py-6 text-sm text-slate-400 dark:border-slate-700 dark:text-slate-500">
-        暂无历史画像快照，继续学习后会自动累积演化记录。
-      </div>
-    );
-  }
-
-  return (
-    <div className="space-y-3">
-      {props.timeline.map((item, index) => (
-        <div key={`${item.version}-${item.updatedAt}-${index}`} className="relative rounded-2xl border border-slate-100 bg-white/90 p-4 dark:border-slate-800 dark:bg-slate-950/40">
-          <div className="mb-2 flex items-center justify-between gap-3">
-            <div className="flex items-center gap-2">
-              <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-medium text-slate-600 dark:bg-slate-800 dark:text-slate-300">
-                V{item.version}
-              </span>
-              <span className="text-xs text-slate-400 dark:text-slate-500">
-                {item.updatedAt ? new Date(item.updatedAt).toLocaleString('zh-CN') : '时间未知'}
-              </span>
-            </div>
-            <span className="text-xs font-medium text-emerald-600 dark:text-emerald-400">置信 {item.confidenceScore}/100</span>
-          </div>
-          <div className="grid gap-2 text-sm text-slate-600 dark:text-slate-300 md:grid-cols-3">
-            <div><span className="text-slate-400 dark:text-slate-500">知识基础：</span>{item.knowledgeBase || EMPTY_VALUE}</div>
-            <div><span className="text-slate-400 dark:text-slate-500">目标：</span>{item.goal || EMPTY_VALUE}</div>
-            <div><span className="text-slate-400 dark:text-slate-500">首要薄弱点：</span>{item.leadWeakPoint || EMPTY_VALUE}</div>
-          </div>
-          <div className="mt-2 text-sm leading-6 text-slate-500 dark:text-slate-400">{item.summary || '该版本暂无摘要'}</div>
-        </div>
-      ))}
-    </div>
-  );
-}
-
-export function ChatPanel({ messages }: { messages: ChatMessage[] }) {
-  const containerRef = useRef<HTMLDivElement | null>(null);
-  const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null);
-  const [autoFollow, setAutoFollow] = useState(true);
-  const [previewImage, setPreviewImage] = useState<string | null>(null);
-
-  const isStreaming = messages.length > 0 && messages[messages.length - 1]?.role === 'assistant' && !messages[messages.length - 1]?.content;
-
-  // Scroll to bottom on mount
-  useEffect(() => {
-    const container = containerRef.current;
-    if (!container) return;
-    requestAnimationFrame(() => {
-      container.scrollTop = container.scrollHeight;
-    });
-  }, []);
-
-  // Scroll to bottom when messages change (new message / streaming)
-  useEffect(() => {
-    const container = containerRef.current;
-    if (!container || !autoFollow) return;
-    requestAnimationFrame(() => {
-      container.scrollTop = container.scrollHeight;
-    });
-  }, [autoFollow, messages]);
-
-  const handleScroll = () => {
-    const container = containerRef.current;
-    if (!container) {
-      return;
-    }
-    const distanceToBottom = container.scrollHeight - container.scrollTop - container.clientHeight;
-    setAutoFollow(distanceToBottom < 64);
-  };
-
-  const handleCopy = async (message: ChatMessage) => {
-    try {
-      await navigator.clipboard.writeText(normalizeCopyText(message.content));
-      setCopiedMessageId(message.id);
-      window.setTimeout(() => {
-        setCopiedMessageId((prev) => (prev === message.id ? null : prev));
-      }, 1200);
-    } catch {
-      // ignore clipboard errors
-    }
-  };
-
-  return (
-    <div className="relative flex-1">
-      <div ref={containerRef} onScroll={handleScroll} className="h-full space-y-6 overflow-y-auto px-2 py-4 scrollbar-thin md:space-y-8 md:px-8">
-      <AnimatePresence>
-        {messages.map((msg) => (
-          <motion.div
-            key={msg.id}
-            initial={{ opacity: 0, y: 12 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.25 }}
-            className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
-          >
-            <div className={`max-w-[90%] md:max-w-[82%] ${msg.role === 'user' ? '' : 'w-full md:w-auto'}`}>
-              {msg.role === 'user' ? (
-                <div className="rounded-2xl rounded-br-md bg-primary-600 px-4 py-2.5 text-[15px] leading-7 text-white shadow-sm">
-                  {msg.imageUrls?.length ? (
-                    <div className="mb-3 grid grid-cols-2 gap-2 sm:grid-cols-3">
-                      {msg.imageUrls.map((imageUrl, index) => (
-                        <button
-                          key={`${msg.id}-image-${index}`}
-                          type="button"
-                          className="overflow-hidden rounded-xl border border-white/20 bg-white/10"
-                          onClick={() => setPreviewImage(imageUrl)}
-                        >
-                          <img src={imageUrl} alt={`上传图片 ${index + 1}`} className="h-24 w-full object-cover" />
-                        </button>
-                      ))}
-                    </div>
-                  ) : null}
-                  {msg.content ? <div>{msg.content}</div> : <div className="text-white/80">[图片提问]</div>}
-                </div>
-              ) : (
-                <div className="rounded-2xl rounded-bl-md border border-slate-200 bg-white px-4 py-3 text-slate-700 shadow-sm dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300">
-                  {msg.content ? (
-                    <DeferredMarkdownRenderer
-                      content={msg.content}
-                      isStreaming={msg.id === messages[messages.length - 1]?.id && isStreaming}
-                    />
-                  ) : (
-                    <DeferredMarkdownRenderer content="" isStreaming={true} />
-                  )}
-                </div>
-              )}
-              {msg.content ? (
-                <div className={`mt-1.5 flex items-center gap-2 text-xs ${msg.role === 'user' ? 'justify-end' : ''}`}>
-                  {msg.role === 'assistant' ? (
-                    <span className="text-slate-400 dark:text-slate-500">
-                      <Sparkles className="inline h-3 w-3" /> 智学引擎
-                    </span>
-                  ) : null}
-                  <button
-                    type="button"
-                    onClick={() => handleCopy(msg)}
-                    className="rounded-md px-1.5 py-0.5 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-600 dark:text-slate-500 dark:hover:bg-slate-800 dark:hover:text-slate-300"
-                  >
-                    {copiedMessageId === msg.id ? '已复制' : '复制'}
-                  </button>
-                </div>
-              ) : null}
-            </div>
-          </motion.div>
-        ))}
-      </AnimatePresence>
-      </div>
-      {!autoFollow ? (
-        <motion.button
-          initial={{ opacity: 0, y: 10 }}
-          animate={{ opacity: 1, y: 0 }}
-          exit={{ opacity: 0, y: 10 }}
-          type="button"
-          onClick={() => {
-            const container = containerRef.current;
-            if (!container) {
-              return;
-            }
-            container.scrollTop = container.scrollHeight;
-            setAutoFollow(true);
-          }}
-          className="absolute bottom-4 left-1/2 -translate-x-1/2 rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-medium text-slate-600 shadow-lg transition-all hover:shadow-md dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300"
-        >
-          <ArrowDown className="mr-1.5 inline h-3.5 w-3.5" />
-          回到底部
-        </motion.button>
-      ) : null}
-      {previewImage ? (
-        <button
-          type="button"
-          onClick={() => setPreviewImage(null)}
-          className="absolute inset-0 z-20 flex items-center justify-center bg-slate-950/80 p-4"
-        >
-          <img src={previewImage} alt="图片预览" className="max-h-[90%] max-w-[90%] rounded-2xl object-contain shadow-2xl" />
-        </button>
-      ) : null}
-    </div>
-  );
-}
-
-export function InputPanel(props: {
-  value: string;
-  busy: boolean;
-  placeholder: string;
-  pendingImages: PendingChatImage[];
-  errorMessage?: string;
-  onChange: (value: string) => void;
-  onSend: () => void;
-  onPickImages: (files: File[]) => void;
-  onRemoveImage: (id: string) => void;
-  variant?: 'landing' | 'chat';
-}) {
-  const isLanding = props.variant === 'landing';
-  const fileInputId = useId();
-  const [isDragActive, setIsDragActive] = useState(false);
-
-  const pickFiles = (files: FileList | null) => {
-    if (!files || files.length === 0) {
-      return;
-    }
-    props.onPickImages(Array.from(files));
-  };
-
-  const handleDrop = (event: DragEvent<HTMLDivElement>) => {
-    event.preventDefault();
-    setIsDragActive(false);
-    pickFiles(event.dataTransfer.files);
-  };
-
-  const handlePaste = (event: ClipboardEvent<HTMLTextAreaElement>) => {
-    const imageFiles = Array.from(event.clipboardData.files).filter((file) => file.type.startsWith('image/'));
-    if (!imageFiles.length) {
-      return;
-    }
-    event.preventDefault();
-    props.onPickImages(imageFiles);
-  };
-
-  return (
-    <div className="shrink-0 px-2 pb-4 md:px-0">
-      <div className={`mx-auto transition-all duration-300 ${
-        isLanding
-          ? 'rounded-3xl border border-slate-200 bg-white shadow-sm dark:border-slate-700 dark:bg-slate-900'
-          : 'rounded-3xl border border-slate-200 bg-white shadow-sm focus-within:shadow-md focus-within:ring-2 focus-within:ring-primary-500/20 dark:border-slate-700 dark:bg-slate-900 dark:focus-within:ring-primary-500/10'
-      }`}>
-        <div
-          className={`${isDragActive ? 'bg-primary-50/80 dark:bg-primary-500/10' : ''} rounded-3xl transition-colors`}
-          onDragOver={(event) => {
-            event.preventDefault();
-            setIsDragActive(true);
-          }}
-          onDragLeave={() => setIsDragActive(false)}
-          onDrop={handleDrop}
-        >
-        {props.pendingImages.length ? (
-          <div className="px-4 pt-4 md:px-5 md:pt-5">
-            <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-              {props.pendingImages.map((image) => (
-                <div key={image.id} className="relative overflow-hidden rounded-2xl border border-slate-200 bg-slate-50 dark:border-slate-700 dark:bg-slate-800">
-                  <img src={image.previewUrl} alt={image.file.name} className="h-24 w-full object-cover" />
-                  <button
-                    type="button"
-                    onClick={() => props.onRemoveImage(image.id)}
-                    className="absolute right-2 top-2 rounded-full bg-slate-950/70 p-1 text-white"
-                  >
-                    <X className="h-3.5 w-3.5" />
-                  </button>
-                  <div className="px-2 py-1.5 text-[11px] text-slate-500 dark:text-slate-400">
-                    <div className="truncate">{image.file.name}</div>
-                    <div>
-                      {image.uploadStatus === 'failed'
-                        ? image.errorMessage || '上传失败'
-                        : image.uploadStatus === 'uploaded'
-                          ? '上传完成'
-                          : `上传中 ${image.uploadProgress}%`}
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        ) : null}
-        <div className="px-4 pt-4 md:px-5 md:pt-5">
-          <textarea
-            value={props.value}
-            onChange={(e) => props.onChange(e.target.value)}
-            onPaste={handlePaste}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' && !e.shiftKey) {
-                e.preventDefault();
-                props.onSend();
-              }
-            }}
-            rows={isLanding ? 3 : 2}
-            placeholder={props.placeholder}
-            className="w-full resize-none border-none bg-transparent text-[15px] leading-7 text-slate-800 outline-none placeholder:text-slate-400 dark:text-slate-200 dark:placeholder:text-slate-500"
-          />
-        </div>
-        {props.errorMessage ? (
-          <div className="px-4 pb-1 text-xs text-rose-500 md:px-5">{props.errorMessage}</div>
-        ) : null}
-        <div className="flex items-center justify-between px-4 pb-3 md:px-5 md:pb-4">
-          <div className="flex items-center gap-3 text-xs text-slate-400 dark:text-slate-500">
-            <input
-              id={fileInputId}
-              type="file"
-              accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp"
-              multiple
-              className="hidden"
-              onChange={(event) => {
-                pickFiles(event.target.files);
-                event.currentTarget.value = '';
-              }}
-            />
-            <label
-              htmlFor={fileInputId}
-              className="inline-flex cursor-pointer items-center gap-1 rounded-full border border-slate-200 px-3 py-1.5 text-slate-500 transition-colors hover:border-primary-200 hover:text-primary-600 dark:border-slate-700 dark:text-slate-400"
-            >
-              <Paperclip className="h-3.5 w-3.5" />
-              <span>上传图片</span>
-            </label>
-            <span className="hidden sm:inline">支持选择、拖拽、粘贴，jpg/png/webp，最大 10MB</span>
-            <span className="sm:hidden"><FileImage className="inline h-3.5 w-3.5" /> 可上传图片</span>
-          </div>
-          <button
-            type="button"
-            onClick={props.onSend}
-            disabled={props.busy || (!props.value.trim() && !props.pendingImages.length) || props.pendingImages.some((item) => item.uploadStatus === 'uploading')}
-            className="inline-flex h-10 w-10 items-center justify-center rounded-full bg-primary-600 text-white shadow-lg shadow-primary-500/25 transition-all hover:shadow-md hover:bg-primary-700 disabled:cursor-not-allowed disabled:opacity-40 disabled:shadow-none active:scale-95"
-          >
-            {props.busy ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <SendHorizontal className="h-4 w-4" />}
-          </button>
-        </div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function ProfileCell({ label, value }: { label: string; value: ReactNode }) {
-  return (
-    <div className="rounded-xl border border-slate-100 bg-slate-50/50 px-3.5 py-2.5 dark:border-slate-800 dark:bg-slate-900/50">
-      <div className="text-[11px] font-medium uppercase tracking-wider text-slate-400 dark:text-slate-500">{label}</div>
-      <div className="mt-1 text-[13px] leading-relaxed text-slate-700 dark:text-slate-300">{value}</div>
-    </div>
-  );
 }

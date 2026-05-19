@@ -16,7 +16,6 @@ export type EngineState =
   | 'ENGINE_RUNNING'
   | 'ENGINE_COMPLETED'
   | 'ENGINE_FAILED';
-export type ProfileUpdateSource = 'BACKEND' | 'TASK_REFRESH';
 
 export interface ChatMessage {
   id: string;
@@ -325,7 +324,7 @@ export const serviceTypeMap: Record<EngineService, SmartEngineServiceType> = {
 
 export const defaultResourceForm: ResourceForm = {
   resourceType: 'EXPLANATION',
-  course: 'Java 程序设计',
+  course: '',
   difficulty: 'intermediate',
-  keyPoints: '并发编程',
+  keyPoints: '',
 };
