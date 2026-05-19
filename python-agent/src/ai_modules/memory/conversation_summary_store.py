@@ -18,17 +18,20 @@ class ConversationSummaryDocument(BaseModel):
     user_id: str | None = Field(default=None, alias="userId")
     task_id: str | None = Field(default=None, alias="taskId")
     topic_focus: list[str] = Field(default_factory=list, alias="topicFocus")
+    canonical_topic_keys: list[str] = Field(default_factory=list, alias="canonicalTopicKeys")
+    topic_aliases: dict[str, list[str]] = Field(default_factory=dict, alias="aliases")
     learner_goal: str | None = Field(default=None, alias="learnerGoal")
     known_gaps: list[str] = Field(default_factory=list, alias="knownGaps")
     unresolved_questions: list[str] = Field(default_factory=list, alias="unresolvedQuestions")
     preferred_help_style: str | None = Field(default=None, alias="preferredHelpStyle")
     last_user_message: str | None = Field(default=None, alias="lastUserMessage")
     recent_progress: list[str] = Field(default_factory=list, alias="recentProgress")
+    confidence: float = 0.55
     summary_text: str = Field(alias="summaryText")
     source: str = "COMPACTION"
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc), alias="createdAt")
 
-    model_config = ConfigDict(populate_by_name=True)
+    model_config = ConfigDict(populate_by_name=True, extra="ignore")
 
 
 class ConversationSummaryStore(Protocol):
@@ -105,7 +108,11 @@ class MongoConversationSummaryStore:
         if self._collection is None:
             from pymongo import MongoClient
 
-            client = MongoClient(self.mongo_uri)
+            client = MongoClient(
+                self.mongo_uri,
+                serverSelectionTimeoutMS=1000,
+                connectTimeoutMS=1000,
+            )
             self._collection = client[self.database_name][self.collection_name]
         return self._collection
 

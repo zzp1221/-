@@ -126,6 +126,13 @@ class Settings(BaseSettings):
         alias="RETRIEVAL_RESULT_CACHE_TTL_SECONDS",
     )
     runtime_cache_max_entries: int = Field(default=256, alias="RUNTIME_CACHE_MAX_ENTRIES")
+    cache_adaptive_enabled: bool = Field(default=True, alias="CACHE_ADAPTIVE_ENABLED")
+    cache_adaptive_window_size: int = Field(default=100, alias="CACHE_ADAPTIVE_WINDOW_SIZE")
+    cache_adaptive_min_samples: int = Field(default=50, alias="CACHE_ADAPTIVE_MIN_SAMPLES")
+    cache_adaptive_min_hit_rate: float = Field(default=0.10, alias="CACHE_ADAPTIVE_MIN_HIT_RATE")
+    cache_adaptive_bypass_seconds: int = Field(default=60, alias="CACHE_ADAPTIVE_BYPASS_SECONDS")
+    cache_adaptive_probe_interval: int = Field(default=20, alias="CACHE_ADAPTIVE_PROBE_INTERVAL")
+    cache_max_value_bytes: int = Field(default=262144, alias="CACHE_MAX_VALUE_BYTES")
     query_rewrite_llm: LLMComponentOverride = Field(
         default_factory=LLMComponentOverride,
         alias="QUERY_REWRITE_LLM",
@@ -153,6 +160,10 @@ class Settings(BaseSettings):
     tutor_llm: LLMComponentOverride = Field(
         default_factory=LLMComponentOverride,
         alias="TUTOR_LLM",
+    )
+    conversation_summary_llm: LLMComponentOverride = Field(
+        default_factory=LLMComponentOverride,
+        alias="CONVERSATION_SUMMARY_LLM",
     )
     planning_llm: LLMComponentOverride = Field(
         default_factory=LLMComponentOverride,

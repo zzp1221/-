@@ -14,6 +14,7 @@ from typing import Any, Protocol
 from src.ai_modules.config import get_settings
 from src.ai_modules.models import LearnerProfileDimensions, LearnerProfileSnapshot
 from src.ai_modules.models.profile import ErrorPattern, WeakPointDetail
+from src.ai_modules.runtime.topic_canonicalizer import canonicalize_topic
 
 
 class ProfileStore(Protocol):
@@ -140,7 +141,9 @@ class PostgresProfileStore:
                 user_id UUID NOT NULL REFERENCES app.users(id) ON DELETE CASCADE,
                 dimension TEXT NOT NULL,
                 feature_key TEXT NOT NULL,
+                canonical_key TEXT,
                 feature_value JSONB NOT NULL DEFAULT '{}'::jsonb,
+                aliases JSONB NOT NULL DEFAULT '[]'::jsonb,
                 confidence REAL NOT NULL DEFAULT 0.5 CHECK (confidence >= 0 AND confidence <= 1),
                 source_type TEXT NOT NULL DEFAULT 'CONVERSATION',
                 source_ref JSONB,
@@ -151,6 +154,11 @@ class PostgresProfileStore:
                 stability_period_days INT NOT NULL DEFAULT 30,
                 decay_rate REAL NOT NULL DEFAULT 0.05,
                 is_active BOOLEAN NOT NULL DEFAULT TRUE,
+                status TEXT NOT NULL DEFAULT 'ACTIVE' CHECK (status IN ('ACTIVE', 'RESOLVED', 'REGRESSED', 'ARCHIVED')),
+                resolved_at TIMESTAMPTZ,
+                resolved_reason TEXT NOT NULL DEFAULT '',
+                resolved_by JSONB NOT NULL DEFAULT '{}'::jsonb,
+                last_observed_at TIMESTAMPTZ NOT NULL DEFAULT now(),
                 inferred BOOLEAN NOT NULL DEFAULT FALSE,
                 created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
                 updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
@@ -170,15 +178,124 @@ class PostgresProfileStore:
             ON app.learner_feature(user_id, confidence DESC, updated_at DESC)
             """
         )
+        cur.execute(
+            """
+            ALTER TABLE app.learner_feature
+            ADD COLUMN IF NOT EXISTS canonical_key TEXT
+            """
+        )
+        cur.execute(
+            """
+            ALTER TABLE app.learner_feature
+            ADD COLUMN IF NOT EXISTS aliases JSONB NOT NULL DEFAULT '[]'::jsonb
+            """
+        )
+        cur.execute(
+            """
+            ALTER TABLE app.learner_feature
+            ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'ACTIVE'
+            """
+        )
+        cur.execute(
+            """
+            ALTER TABLE app.learner_feature
+            ADD COLUMN IF NOT EXISTS resolved_at TIMESTAMPTZ
+            """
+        )
+        cur.execute(
+            """
+            ALTER TABLE app.learner_feature
+            ADD COLUMN IF NOT EXISTS resolved_reason TEXT NOT NULL DEFAULT ''
+            """
+        )
+        cur.execute(
+            """
+            ALTER TABLE app.learner_feature
+            ADD COLUMN IF NOT EXISTS resolved_by JSONB NOT NULL DEFAULT '{}'::jsonb
+            """
+        )
+        cur.execute(
+            """
+            ALTER TABLE app.learner_feature
+            ADD COLUMN IF NOT EXISTS last_observed_at TIMESTAMPTZ NOT NULL DEFAULT now()
+            """
+        )
+        cur.execute(
+            """
+            UPDATE app.learner_feature
+            SET canonical_key = feature_key
+            WHERE canonical_key IS NULL OR btrim(canonical_key) = ''
+            """
+        )
+        cur.execute(
+            """
+            UPDATE app.learner_feature
+            SET canonical_key = CASE
+                WHEN feature_key IN (U&'\\6B7B\\9501', 'deadlock', 'dead lock')
+                    OR feature_key ILIKE '%' || U&'\\4E24\\4E2A\\9501\\4E92\\76F8\\7B49' || '%'
+                    OR feature_key ILIKE '%' || U&'\\4E24\\628A\\9501\\4E92\\76F8\\7B49' || '%'
+                    THEN 'deadlock'
+                WHEN feature_key IN (U&'\\5FAA\\73AF\\7B49\\5F85', U&'\\73AF\\8DEF\\7B49\\5F85')
+                    THEN 'deadlock.circular_wait'
+                WHEN feature_key IN (U&'\\4E92\\65A5\\6761\\4EF6', U&'\\4E92\\65A5')
+                    THEN 'deadlock.mutual_exclusion'
+                WHEN feature_key IN (U&'\\5360\\6709\\5E76\\7B49\\5F85', U&'\\6301\\6709\\5E76\\7B49\\5F85')
+                    THEN 'deadlock.hold_and_wait'
+                WHEN feature_key IN (U&'\\4E0D\\53EF\\62A2\\5360', U&'\\4E0D\\80FD\\62A2\\5360')
+                    THEN 'deadlock.no_preemption'
+                ELSE canonical_key
+            END
+            WHERE dimension IN ('weak_points', 'skill_mastery', 'error_patterns')
+              AND feature_key IS NOT NULL
+            """
+        )
+        cur.execute(
+            """
+            UPDATE app.learner_feature
+            SET aliases = to_jsonb(ARRAY[feature_key])
+            WHERE aliases = '[]'::jsonb AND feature_key IS NOT NULL AND btrim(feature_key) <> ''
+            """
+        )
+        cur.execute(
+            """
+            DO $$
+            BEGIN
+                IF NOT EXISTS (
+                    SELECT 1
+                    FROM pg_constraint
+                    WHERE conname = 'learner_feature_status_check'
+                      AND conrelid = 'app.learner_feature'::regclass
+                ) THEN
+                    ALTER TABLE app.learner_feature
+                        ADD CONSTRAINT learner_feature_status_check
+                        CHECK (status IN ('ACTIVE', 'RESOLVED', 'REGRESSED', 'ARCHIVED'));
+                END IF;
+            END $$;
+            """
+        )
+        cur.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_learner_feature_canonical_status
+            ON app.learner_feature(user_id, dimension, canonical_key, status, is_active, updated_at DESC)
+            """
+        )
+        cur.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_learner_feature_resolved
+            ON app.learner_feature(user_id, status, resolved_at DESC)
+            """
+        )
 
     def _fetch_active_features(self, cur: Any, user_id: str) -> list[dict[str, Any]]:
         cur.execute(
             """
-            SELECT id, dimension, feature_key, feature_value, confidence, source_type, source_ref,
-                   reasoning, evidence, verification_count, decay_enabled, stability_period_days,
-                   decay_rate, is_active, inferred, created_at, updated_at
+            SELECT id, dimension, feature_key, canonical_key, feature_value, aliases, confidence,
+                   source_type, source_ref, reasoning, evidence, verification_count, decay_enabled,
+                   stability_period_days, decay_rate, is_active, status, resolved_at,
+                   resolved_reason, resolved_by, last_observed_at, inferred, created_at, updated_at
             FROM app.learner_feature
             WHERE user_id = %s::uuid AND is_active = TRUE
+              AND status IN ('ACTIVE', 'REGRESSED')
             ORDER BY confidence DESC, updated_at DESC
             """,
             (user_id,),
@@ -215,10 +332,11 @@ class PostgresProfileStore:
                 """
                 UPDATE app.learner_feature
                 SET confidence = %s,
-                    is_active = %s
+                    is_active = %s,
+                    status = CASE WHEN %s THEN status ELSE 'ARCHIVED' END
                 WHERE id = %s
                 """,
-                (decayed, is_active, feature["id"]),
+                (decayed, is_active, is_active, feature["id"]),
             )
 
     def _singleton_dimensions(self) -> set[str]:
@@ -233,6 +351,9 @@ class PostgresProfileStore:
             "learning_habits",
             "explanation_preference",
         }
+
+    def _canonical_match_dimensions(self) -> set[str]:
+        return {"weak_points", "skill_mastery", "error_patterns"}
 
     def _extract_features(self, dimensions: LearnerProfileDimensions) -> list[dict[str, Any]]:
         base_confidence = max(0.35, min(0.95, float(dimensions.confidence_score or 0.65)))
@@ -437,10 +558,13 @@ class PostgresProfileStore:
         decay_rate: float = 0.05,
         inferred: bool = False,
     ) -> dict[str, Any]:
+        canonical_topic = canonicalize_topic(feature_key)
         return {
             "dimension": dimension,
             "feature_key": feature_key,
+            "canonical_key": canonical_topic.canonical_key or feature_key,
             "feature_value": feature_value,
+            "aliases": canonical_topic.aliases or [feature_key],
             "confidence": max(0.0, min(1.0, round(float(confidence), 4))),
             "source_type": source_type,
             "source_ref": {},
@@ -451,6 +575,11 @@ class PostgresProfileStore:
             "stability_period_days": stability_period_days,
             "decay_rate": decay_rate,
             "is_active": True,
+            "status": "ACTIVE",
+            "resolved_at": None,
+            "resolved_reason": "",
+            "resolved_by": {},
+            "last_observed_at": datetime.now(timezone.utc),
             "inferred": inferred,
         }
 
@@ -476,13 +605,25 @@ class PostgresProfileStore:
             merged[key] = value
         return merged
 
+    def _merge_aliases(self, existing: Any, incoming: Any, *, feature_key: str) -> list[str]:
+        aliases: list[str] = []
+        for value in [existing, incoming]:
+            if isinstance(value, list):
+                aliases.extend(str(item).strip() for item in value if str(item).strip())
+            elif isinstance(value, str) and value.strip():
+                aliases.append(value.strip())
+        if feature_key.strip():
+            aliases.append(feature_key.strip())
+        return list(dict.fromkeys(aliases))
+
     def _deactivate_conflicts(self, cur: Any, *, user_id: str, dimension: str, feature_key: str) -> None:
         if dimension not in self._singleton_dimensions():
             return
         cur.execute(
             """
             UPDATE app.learner_feature
-            SET is_active = FALSE
+            SET is_active = FALSE,
+                status = 'ARCHIVED'
             WHERE user_id = %s::uuid
               AND dimension = %s
               AND feature_key <> %s
@@ -508,31 +649,52 @@ class PostgresProfileStore:
                 dimension=feature["dimension"],
                 feature_key=feature["feature_key"],
             )
+            match_by_canonical = (
+                feature["dimension"] in self._canonical_match_dimensions()
+                and bool(str(feature.get("canonical_key") or "").strip())
+            )
             cur.execute(
                 """
-                SELECT id, feature_value, confidence, verification_count, evidence
+                SELECT id, feature_value, confidence, verification_count, evidence, aliases, status
                 FROM app.learner_feature
-                WHERE user_id = %s::uuid AND dimension = %s AND feature_key = %s
+                WHERE user_id = %s::uuid
+                  AND dimension = %s
+                  AND (
+                    feature_key = %s
+                    OR (%s AND canonical_key = %s)
+                  )
+                ORDER BY CASE WHEN feature_key = %s THEN 0 ELSE 1 END
                 LIMIT 1
                 """,
-                (user_id, feature["dimension"], feature["feature_key"]),
+                (
+                    user_id,
+                    feature["dimension"],
+                    feature["feature_key"],
+                    match_by_canonical,
+                    feature["canonical_key"],
+                    feature["feature_key"],
+                ),
             )
             existing = cur.fetchone()
             if existing is None:
                 cur.execute(
                     """
                     INSERT INTO app.learner_feature(
-                        user_id, dimension, feature_key, feature_value, confidence, source_type,
-                        source_ref, reasoning, evidence, verification_count, decay_enabled,
-                        stability_period_days, decay_rate, is_active, inferred
+                        user_id, dimension, feature_key, canonical_key, feature_value, aliases,
+                        confidence, source_type, source_ref, reasoning, evidence,
+                        verification_count, decay_enabled, stability_period_days, decay_rate,
+                        is_active, status, resolved_at, resolved_reason, resolved_by,
+                        last_observed_at, inferred
                     )
-                    VALUES (%s::uuid, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, TRUE, %s)
+                    VALUES (%s::uuid, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, TRUE, %s, %s, %s, %s, %s, %s)
                     """,
                     (
                         user_id,
                         feature["dimension"],
                         feature["feature_key"],
+                        feature["canonical_key"],
                         _adapt_json_payload(feature["feature_value"]),
+                        _adapt_json_payload(feature["aliases"]),
                         feature["confidence"],
                         feature["source_type"],
                         _adapt_json_payload(feature["source_ref"]),
@@ -542,16 +704,26 @@ class PostgresProfileStore:
                         feature["decay_enabled"],
                         feature["stability_period_days"],
                         feature["decay_rate"],
+                        feature["status"],
+                        feature["resolved_at"],
+                        feature["resolved_reason"],
+                        _adapt_json_payload(feature["resolved_by"]),
+                        feature["last_observed_at"],
                         feature["inferred"],
                     ),
                 )
                 continue
 
-            existing_id, existing_value, existing_confidence, verification_count, existing_evidence = existing
+            existing_id, existing_value, existing_confidence, verification_count, existing_evidence, existing_aliases, existing_status = existing
             merged_value = self._merge_feature_value(existing_value or {}, feature["feature_value"])
             merged_evidence = list(
                 dict.fromkeys([*(existing_evidence or []), *feature["evidence"]])
             )[:8]
+            merged_aliases = self._merge_aliases(
+                existing_aliases,
+                feature["aliases"],
+                feature_key=feature["feature_key"],
+            )
             next_verification_count = int(verification_count or 1) + 1
             merged_confidence = min(
                 0.98,
@@ -562,10 +734,15 @@ class PostgresProfileStore:
                     4,
                 ),
             )
+            next_status = feature["status"]
+            if str(existing_status or "").upper() == "RESOLVED" and feature["dimension"] == "weak_points":
+                next_status = "REGRESSED"
             cur.execute(
                 """
                 UPDATE app.learner_feature
                 SET feature_value = %s,
+                    canonical_key = %s,
+                    aliases = %s,
                     confidence = %s,
                     source_type = %s,
                     source_ref = %s,
@@ -575,12 +752,19 @@ class PostgresProfileStore:
                     stability_period_days = %s,
                     decay_rate = %s,
                     is_active = TRUE,
+                    status = %s,
+                    resolved_at = %s,
+                    resolved_reason = %s,
+                    resolved_by = %s,
+                    last_observed_at = now(),
                     inferred = %s,
                     updated_at = now()
                 WHERE id = %s
                 """,
                 (
                     _adapt_json_payload(merged_value),
+                    feature["canonical_key"],
+                    _adapt_json_payload(merged_aliases),
                     merged_confidence,
                     feature["source_type"],
                     _adapt_json_payload(feature["source_ref"]),
@@ -589,8 +773,76 @@ class PostgresProfileStore:
                     feature["decay_enabled"],
                     feature["stability_period_days"],
                     feature["decay_rate"],
+                    next_status,
+                    None if next_status != "RESOLVED" else feature["resolved_at"],
+                    "" if next_status != "RESOLVED" else feature["resolved_reason"],
+                    _adapt_json_payload(feature["resolved_by"]),
                     feature["inferred"],
                     existing_id,
+                ),
+            )
+
+    def _resolve_mastered_weak_points(self, cur: Any, *, user_id: str, threshold: float = 0.85) -> None:
+        cur.execute(
+            """
+            SELECT feature_key, canonical_key, feature_value
+            FROM app.learner_feature
+            WHERE user_id = %s::uuid
+              AND dimension = 'skill_mastery'
+              AND is_active = TRUE
+              AND status IN ('ACTIVE', 'REGRESSED')
+            """,
+            (user_id,),
+        )
+        if not hasattr(cur, "fetchall"):
+            return
+        rows = cur.fetchall() or []
+        for feature_key, canonical_key, feature_value in rows:
+            value = feature_value or {}
+            if isinstance(value, str):
+                try:
+                    value = json.loads(value)
+                except json.JSONDecodeError:
+                    continue
+            if not isinstance(value, dict):
+                continue
+            try:
+                score = float(value.get("score") or 0.0)
+            except (TypeError, ValueError):
+                continue
+            if score < threshold:
+                continue
+            resolved_key = canonical_key or canonicalize_topic(str(feature_key)).canonical_key
+            if not resolved_key:
+                continue
+            cur.execute(
+                """
+                UPDATE app.learner_feature
+                SET status = 'RESOLVED',
+                    is_active = FALSE,
+                    resolved_at = now(),
+                    resolved_reason = %s,
+                    resolved_by = %s,
+                    updated_at = now()
+                WHERE user_id = %s::uuid
+                  AND dimension = 'weak_points'
+                  AND canonical_key = %s
+                  AND is_active = TRUE
+                  AND status IN ('ACTIVE', 'REGRESSED')
+                """,
+                (
+                    f"skill_mastery >= {threshold}",
+                    _adapt_json_payload(
+                        {
+                            "type": "skill_mastery",
+                            "topic": str(feature_key),
+                            "canonicalKey": resolved_key,
+                            "score": round(score, 4),
+                            "threshold": threshold,
+                        }
+                    ),
+                    user_id,
+                    resolved_key,
                 ),
             )
 
@@ -884,6 +1136,7 @@ class PostgresProfileStore:
                     features=self._extract_features(dimensions),
                     source_session_id=normalized_session_id,
                 )
+                self._resolve_mastered_weak_points(cur, user_id=user_id)
                 active_features = self._fetch_active_features(cur, user_id)
                 profile_payload = self._aggregate_profile(active_features, dimensions)
                 summary_text = str(profile_payload.get("summaryText") or raw_payload.get("summaryText") or dimensions.summary_text)

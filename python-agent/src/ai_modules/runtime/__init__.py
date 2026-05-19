@@ -28,6 +28,12 @@ from src.ai_modules.runtime.recovery_engine import (
     RecoveryFailureType,
 )
 from src.ai_modules.runtime.ttl_cache import InMemoryTTLCache, stable_cache_key
+from src.ai_modules.runtime.topic_canonicalizer import (
+    CanonicalTopic,
+    canonicalize_topic,
+    canonicalize_topics,
+    topics_match,
+)
 from src.ai_modules.runtime.tool_registry import ToolDefinition, ToolRegistry
 
 __all__ = [
@@ -56,4 +62,8 @@ __all__ = [
     "ToolRegistry",
     "InMemoryTTLCache",
     "stable_cache_key",
+    "CanonicalTopic",
+    "canonicalize_topic",
+    "canonicalize_topics",
+    "topics_match",
 ]

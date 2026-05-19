@@ -8,7 +8,7 @@ from datetime import datetime
 from typing import Any
 
 from src.ai_modules.agents.base import PlaceholderAgent
-from src.ai_modules.llms import TutorLLMClientFactory
+from src.ai_modules.llms import ConversationSummaryRefinerFactory, TutorLLMClientFactory
 from src.ai_modules.memory import MongoConversationSummaryStore
 from src.ai_modules.models import (
     DialogState,
@@ -41,9 +41,13 @@ class TutorAgent(PlaceholderAgent):
         compactor: ConversationCompactor | None = None,
         summary_store: Any | None = None,
         llm_client: Any | None = None,
+        summary_refiner: Any | None = None,
     ) -> None:
         super().__init__("Tutor Agent", "tutoring")
-        self.compactor = compactor or ConversationCompactor()
+        self.summary_refiner = summary_refiner or ConversationSummaryRefinerFactory.create()
+        self.compactor = compactor or ConversationCompactor(summary_refiner=self.summary_refiner)
+        if compactor is not None and summary_refiner is not None:
+            self.compactor.summary_refiner = summary_refiner
         self.summary_store = summary_store or MongoConversationSummaryStore()
         self.llm_client = llm_client or TutorLLMClientFactory.create()
         self.skill_loader = SkillPromptLoader()
@@ -73,7 +77,7 @@ class TutorAgent(PlaceholderAgent):
             conversation_id=self._conversation_id(params, task_id),
             user_id=params.get("userId"),
         )
-        compaction_result = self.compactor.compact(
+        compaction_result = await self._compact_conversation(
             conversation,
             previous_summary=self._build_previous_summary(persisted_summary),
         )
@@ -89,6 +93,7 @@ class TutorAgent(PlaceholderAgent):
         input_mode = self._classify_input_mode(
             user_query=user_query,
             recent_dialogue=recent_dialogue,
+            params=params,
         )
         recent_dialogue["inputMode"] = input_mode
         params["recentDialogueContext"] = recent_dialogue
@@ -531,6 +536,17 @@ class TutorAgent(PlaceholderAgent):
             return None
         return document.model_dump(by_alias=True)
 
+    async def _compact_conversation(
+        self,
+        conversation: list[dict[str, Any]],
+        *,
+        previous_summary: StructuredConversationSummary | None,
+    ):
+        compact_async = getattr(self.compactor, "compact_async", None)
+        if callable(compact_async):
+            return await compact_async(conversation, previous_summary=previous_summary)
+        return self.compactor.compact(conversation, previous_summary=previous_summary)
+
     def _build_previous_summary(
         self,
         persisted_summary: dict[str, Any] | None,
@@ -556,12 +572,15 @@ class TutorAgent(PlaceholderAgent):
             userId=params.get("userId"),
             taskId=task_id,
             topicFocus=structured_summary.get("topicFocus", []),
+            canonicalTopicKeys=structured_summary.get("canonicalTopicKeys", []),
+            aliases=structured_summary.get("aliases", {}),
             learnerGoal=structured_summary.get("learnerGoal"),
             knownGaps=structured_summary.get("knownGaps", []),
             unresolvedQuestions=structured_summary.get("unresolvedQuestions", []),
             preferredHelpStyle=structured_summary.get("preferredHelpStyle"),
             lastUserMessage=structured_summary.get("lastUserMessage"),
             recentProgress=structured_summary.get("recentProgress", []),
+            confidence=float(structured_summary.get("confidence", 0.55) or 0.55),
             summaryText=structured_summary.get("summaryText", ""),
         )
         try:
@@ -691,11 +710,17 @@ class TutorAgent(PlaceholderAgent):
         *,
         user_query: str,
         recent_dialogue: dict[str, Any],
+        params: dict[str, Any],
     ) -> str:
+        query_type = str(params.get("queryType") or "").strip().upper()
+        if query_type == "SMALL_TALK":
+            return "small_talk"
+        if query_type == "ANSWER_PREVIOUS":
+            return "answer_previous_question"
+        if query_type == "FOLLOW_UP":
+            return "ambiguous_topic"
         normalized = "".join(str(user_query).lower().split())
         if not normalized:
-            return "small_talk"
-        if self._is_small_talk_message(normalized):
             return "small_talk"
         teaching_state = recent_dialogue.get("teachingState", {})
         if teaching_state.get("awaitingUserAnswer"):
@@ -810,18 +835,9 @@ class TutorAgent(PlaceholderAgent):
     ) -> str:
         if input_mode != "small_talk":
             return ""
-        normalized = "".join(str(user_query).lower().split())
-        if any(keyword in normalized for keyword in ("谢谢", "感谢")):
-            return "不客气。如果你想继续学 Java、并发，或者别的知识点，直接发我就行。"
-        if any(keyword in normalized for keyword in ("再见", "拜拜")):
-            return "好，先这样。有需要随时来找我。"
-        if any(keyword in normalized for keyword in ("你是谁", "你能做什么")):
-            return "我是智学引擎，可以陪你答疑、讲概念、拆例子，也能帮你做学习资源和路径规划。"
-        if any(keyword in normalized for keyword in ("在吗",)):
-            return "在的。你可以直接发问题、概念或题目，我来帮你一起拆解。"
         if recent_dialogue.get("recentMessages"):
-            return "我在，继续说就行。你也可以直接接着上一轮的问题回答。"
-        return "你好，很高兴见到你。你可以直接告诉我想学什么，或者把具体问题发过来。"
+            return "我在，继续说就行。也可以直接接着上一轮的问题回答。"
+        return "我在。你可以直接发问题、概念或题目，我来一起拆解。"
 
     def _resolve_next_action(self, input_mode: str) -> str:
         if input_mode == "small_talk":
@@ -838,28 +854,6 @@ class TutorAgent(PlaceholderAgent):
             return True
         question_markers = ("什么", "怎么", "如何", "为什么", "哪些", "哪个", "能否", "可否", "吗")
         return any(marker in normalized for marker in question_markers)
-
-    def _is_small_talk_message(self, normalized: str) -> bool:
-        keywords = (
-            "你好",
-            "您好",
-            "hi",
-            "hello",
-            "哈喽",
-            "在吗",
-            "早上好",
-            "中午好",
-            "晚上好",
-            "谢谢",
-            "感谢",
-            "再见",
-            "拜拜",
-            "你是谁",
-            "你能做什么",
-        )
-        if normalized in keywords:
-            return True
-        return len(normalized) <= 12 and any(keyword in normalized for keyword in keywords)
 
     def _truncate_dialogue_text(self, text: str, max_length: int = 220) -> str:
         normalized = " ".join(str(text).split())

@@ -54,7 +54,7 @@ class DeepReasoningAgent(TutorAgent):
             conversation_id=self._conversation_id(params, task_id),
             user_id=params.get("userId"),
         )
-        compaction_result = self.compactor.compact(
+        compaction_result = await self._compact_conversation(
             conversation,
             previous_summary=self._build_previous_summary(persisted_summary),
         )

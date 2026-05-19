@@ -32,12 +32,32 @@ from src.ai_modules.runtime.ttl_cache import InMemoryTTLCache, stable_cache_key
 _LLM_RESULT_CACHE = InMemoryTTLCache()
 
 
-def _cache_ttl_seconds() -> int:
+def _configure_llm_result_cache():
     settings = get_settings()
+    _LLM_RESULT_CACHE.max_entries = max(1, settings.runtime_cache_max_entries)
+    _LLM_RESULT_CACHE.configure(
+        adaptive_enabled=settings.cache_adaptive_enabled,
+        adaptive_window_size=settings.cache_adaptive_window_size,
+        adaptive_min_samples=settings.cache_adaptive_min_samples,
+        adaptive_min_hit_rate=settings.cache_adaptive_min_hit_rate,
+        adaptive_bypass_seconds=settings.cache_adaptive_bypass_seconds,
+        adaptive_probe_interval=settings.cache_adaptive_probe_interval,
+        max_value_bytes=settings.cache_max_value_bytes,
+    )
+    return settings
+
+
+def _cache_ttl_seconds() -> int:
+    settings = _configure_llm_result_cache()
     if not settings.enable_llm_result_cache:
         return 0
-    _LLM_RESULT_CACHE.max_entries = max(1, settings.runtime_cache_max_entries)
     return max(0, settings.llm_result_cache_ttl_seconds)
+
+
+def _should_use_llm_cache(namespace: str) -> bool:
+    if _cache_ttl_seconds() <= 0:
+        return False
+    return _LLM_RESULT_CACHE.should_read(namespace)
 
 
 def _provider_name() -> str:
@@ -131,14 +151,19 @@ class OpenAICompatibleJSONGenerator:
         model_name: str | None = None,
         max_tokens: int | None = None,
     ) -> dict[str, Any]:
-        cache_key = self._build_cache_key(
-            system_prompt=system_prompt,
-            user_prompt=user_prompt,
-            model_name=model_name,
-            max_tokens=max_tokens,
-        )
+        cache_key = ""
+        if self.cache_namespace and _should_use_llm_cache(self.cache_namespace):
+            cache_key = self._build_cache_key(
+                system_prompt=system_prompt,
+                user_prompt=user_prompt,
+                model_name=model_name,
+                max_tokens=max_tokens,
+            )
         if cache_key:
-            cached_payload = _LLM_RESULT_CACHE.get(cache_key)
+            cached_payload = _LLM_RESULT_CACHE.get(
+                cache_key,
+                namespace=self.cache_namespace,
+            )
             if isinstance(cached_payload, dict):
                 return cached_payload
 
@@ -162,6 +187,7 @@ class OpenAICompatibleJSONGenerator:
                 cache_key,
                 payload,
                 ttl_seconds=_cache_ttl_seconds(),
+                namespace=self.cache_namespace,
             )
         return payload
 
@@ -174,8 +200,6 @@ class OpenAICompatibleJSONGenerator:
         max_tokens: int | None,
     ) -> str:
         if not self.cache_namespace:
-            return ""
-        if _cache_ttl_seconds() <= 0:
             return ""
         return stable_cache_key(
             f"llm-json:{self.cache_namespace}",
@@ -237,12 +261,18 @@ class OpenAICompatibleRetrievalSummaryGenerator:
         system_prompt: str,
         retrieval_response: RetrievalResponse,
     ) -> str:
-        cache_key = self._build_cache_key(
-            system_prompt=system_prompt,
-            retrieval_response=retrieval_response,
-        )
+        cache_namespace = "retrieval_summary"
+        cache_key = ""
+        if _should_use_llm_cache(cache_namespace):
+            cache_key = self._build_cache_key(
+                system_prompt=system_prompt,
+                retrieval_response=retrieval_response,
+            )
         if cache_key:
-            cached_summary = _LLM_RESULT_CACHE.get(cache_key)
+            cached_summary = _LLM_RESULT_CACHE.get(
+                cache_key,
+                namespace=cache_namespace,
+            )
             if isinstance(cached_summary, str):
                 return cached_summary
 
@@ -269,6 +299,7 @@ class OpenAICompatibleRetrievalSummaryGenerator:
                 cache_key,
                 summary,
                 ttl_seconds=_cache_ttl_seconds(),
+                namespace=cache_namespace,
             )
         return summary
 
@@ -278,8 +309,6 @@ class OpenAICompatibleRetrievalSummaryGenerator:
         system_prompt: str,
         retrieval_response: RetrievalResponse,
     ) -> str:
-        if _cache_ttl_seconds() <= 0:
-            return ""
         return stable_cache_key(
             "llm-summary:retrieval",
             {
@@ -291,6 +320,54 @@ class OpenAICompatibleRetrievalSummaryGenerator:
                 "retrievalResponse": retrieval_response,
             },
         )
+
+
+class OpenAICompatibleConversationSummaryRefiner:
+    """LLM-assisted structured extraction for long or ambiguous dialogue memory."""
+
+    def __init__(self) -> None:
+        provider_name, model_name = _resolve_component_binding(
+            "conversation_summary_llm",
+            default_logical_model="fast_model",
+        )
+        self.generator = OpenAICompatibleJSONGenerator(
+            model_name=model_name,
+            provider_name=provider_name,
+            temperature=0.1,
+            cache_namespace="conversation_summary_refiner",
+        )
+
+    async def refine(
+        self,
+        *,
+        messages: list[dict[str, Any]],
+        rule_summary: dict[str, Any],
+    ) -> dict[str, Any]:
+        user_messages = [
+            str(message.get("content", "")).strip()
+            for message in messages
+            if str(message.get("role", "")).lower() == "user"
+        ][-12:]
+        payload = await self.generator.generate(
+            system_prompt=(
+                "你是学习对话记忆压缩器。请从学生原话中提取结构化学习记忆，"
+                "尤其识别非标准表达和指代，不要编造未出现的薄弱点。"
+                "只返回 JSON，字段为 "
+                '{"topicFocus":["..."],"canonicalTopicKeys":["..."],"aliases":{"canonical.key":["原始表达"]},'
+                '"learnerGoal":"...","knownGaps":["..."],"unresolvedQuestions":["..."],'
+                '"preferredHelpStyle":"step_by_step|example_first|concept_then_question|visual_first",'
+                '"confidence":0.0,"summaryText":"..."}。'
+            ),
+            user_prompt=json.dumps(
+                {
+                    "ruleSummary": rule_summary,
+                    "recentUserMessages": user_messages,
+                },
+                ensure_ascii=False,
+            ),
+            max_tokens=700,
+        )
+        return payload
 
 
 class OpenAICompatibleEvaluationGenerator:
@@ -729,6 +806,7 @@ def _split_text_list(value: str) -> list[str]:
 StructuredJSONGenerator = OpenAICompatibleJSONGenerator
 QueryRewriteGenerator = OpenAICompatibleQueryRewriteGenerator
 RetrievalSummaryGenerator = OpenAICompatibleRetrievalSummaryGenerator
+ConversationSummaryRefiner = OpenAICompatibleConversationSummaryRefiner
 EvaluationGenerator = OpenAICompatibleEvaluationGenerator
 LearningPathGenerator = OpenAICompatibleLearningPathGenerator
 PracticeQuestionGenerator = OpenAICompatiblePracticeQuestionGenerator
@@ -740,6 +818,7 @@ ResourcePushReranker = OpenAICompatibleResourcePushReranker
 BailianJSONGenerator = OpenAICompatibleJSONGenerator
 BailianQueryRewriteGenerator = OpenAICompatibleQueryRewriteGenerator
 BailianRetrievalSummaryGenerator = OpenAICompatibleRetrievalSummaryGenerator
+BailianConversationSummaryRefiner = OpenAICompatibleConversationSummaryRefiner
 BailianEvaluationGenerator = OpenAICompatibleEvaluationGenerator
 BailianLearningPathGenerator = OpenAICompatibleLearningPathGenerator
 BailianPracticeQuestionGenerator = OpenAICompatiblePracticeQuestionGenerator
@@ -791,3 +870,13 @@ class TutorToolLLMClientFactory:
             provider_name, model_name = _resolve_component_binding("tutor_llm", default_logical_model="main_chat_model")
             return create_tool_calling_llm(model_name=model_name, provider_name=provider_name)
         return RuleBasedTutorLLM()
+
+
+class ConversationSummaryRefinerFactory:
+    """Create an optional LLM refiner for structured conversation memory."""
+
+    @staticmethod
+    def create() -> Any | None:
+        if _component_provider_ready("conversation_summary_llm"):
+            return OpenAICompatibleConversationSummaryRefiner()
+        return None

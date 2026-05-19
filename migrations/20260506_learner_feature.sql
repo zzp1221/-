@@ -8,7 +8,9 @@ CREATE TABLE IF NOT EXISTS app.learner_feature (
     user_id               UUID NOT NULL REFERENCES app.users(id) ON DELETE CASCADE,
     dimension             TEXT NOT NULL,
     feature_key           TEXT NOT NULL,
+    canonical_key         TEXT,
     feature_value         JSONB NOT NULL DEFAULT '{}'::jsonb,
+    aliases               JSONB NOT NULL DEFAULT '[]'::jsonb,
     confidence            REAL NOT NULL DEFAULT 0.5 CHECK (confidence >= 0 AND confidence <= 1),
     source_type           TEXT NOT NULL DEFAULT 'CONVERSATION'
                               CHECK (source_type IN ('CONVERSATION', 'EVALUATION', 'PRACTICE', 'INFERRED', 'EXPLICIT')),
@@ -20,6 +22,12 @@ CREATE TABLE IF NOT EXISTS app.learner_feature (
     stability_period_days INT NOT NULL DEFAULT 30,
     decay_rate            REAL NOT NULL DEFAULT 0.05,
     is_active             BOOLEAN NOT NULL DEFAULT TRUE,
+    status                TEXT NOT NULL DEFAULT 'ACTIVE'
+                          CHECK (status IN ('ACTIVE', 'RESOLVED', 'REGRESSED', 'ARCHIVED')),
+    resolved_at           TIMESTAMPTZ,
+    resolved_reason       TEXT NOT NULL DEFAULT '',
+    resolved_by           JSONB NOT NULL DEFAULT '{}'::jsonb,
+    last_observed_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
     inferred              BOOLEAN NOT NULL DEFAULT FALSE,
     created_at            TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at            TIMESTAMPTZ NOT NULL DEFAULT now(),
@@ -31,6 +39,12 @@ CREATE INDEX IF NOT EXISTS idx_learner_feature_user_dim
 
 CREATE INDEX IF NOT EXISTS idx_learner_feature_confidence
     ON app.learner_feature(user_id, confidence DESC, updated_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_learner_feature_canonical_status
+    ON app.learner_feature(user_id, dimension, canonical_key, status, is_active, updated_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_learner_feature_resolved
+    ON app.learner_feature(user_id, status, resolved_at DESC);
 
 ALTER TABLE app.learner_feature ENABLE ROW LEVEL SECURITY;
 

@@ -10,7 +10,12 @@ from typing import Any
 from src.ai_modules.agents.base import PlaceholderAgent
 from src.ai_modules.async_utils import cancel_and_await
 from src.ai_modules.llms import ProfileAnalyzer, ProfileLLMClientFactory
-from src.ai_modules.memory import InMemoryProfileStore, PostgresProfileStore, ProfileStore
+from src.ai_modules.memory import (
+    InMemoryProfileStore,
+    MongoConversationSummaryStore,
+    PostgresProfileStore,
+    ProfileStore,
+)
 from src.ai_modules.models import (
     LearnerProfileSnapshot,
     ProgressPayload,
@@ -43,12 +48,14 @@ class ProfileAgent(PlaceholderAgent):
     def __init__(
         self,
         profile_store: ProfileStore | None = None,
+        summary_store: Any | None = None,
         llm_client: Any | None = None,
         profile_analyzer: Any | None = None,
         heartbeat_interval_seconds: float = 15.0,
     ) -> None:
         super().__init__("Profile Agent", "profiling")
         self.profile_store = profile_store or PostgresProfileStore()
+        self.summary_store = summary_store or MongoConversationSummaryStore()
         self.fallback_profile_store = InMemoryProfileStore()
         self.llm_client = llm_client or ProfileLLMClientFactory.create()
         self.profile_analyzer = profile_analyzer or ProfileAnalyzer()
@@ -176,6 +183,14 @@ class ProfileAgent(PlaceholderAgent):
         del tool_input
         messages = params.get("messages") or params.get("conversation") or []
         structured_summary = params.get("structuredConversationSummary", {})
+        persisted_summary = await self._safe_read_conversation_summary(
+            conversation_id=str(params.get("conversationId") or ""),
+            user_id=str(params.get("userId")) if params.get("userId") else None,
+        )
+        if persisted_summary:
+            params["persistedConversationSummary"] = persisted_summary
+            structured_summary = self._merge_summary_context(structured_summary, persisted_summary)
+            params["structuredConversationSummary"] = structured_summary
         profile_context = params.get("profile", {})
         judge_result = params.get("judgeResult", {})
         evaluation_result = params.get("evaluationResult", {})
@@ -194,6 +209,7 @@ class ProfileAgent(PlaceholderAgent):
         context_payload = {
             "messages": messages,
             "structuredConversationSummary": structured_summary,
+            "persistedConversationSummary": persisted_summary or {},
             "profile": profile_context,
             "judgeResult": judge_result,
             "evaluationResult": evaluation_result,
@@ -271,6 +287,84 @@ class ProfileAgent(PlaceholderAgent):
 
     def _latest_analyzed_dimensions(self, params: dict[str, Any]) -> dict[str, Any] | None:
         return params.get("analyzedProfileDimensions")
+
+    async def _safe_read_conversation_summary(
+        self,
+        *,
+        conversation_id: str,
+        user_id: str | None,
+    ) -> dict[str, Any] | None:
+        if not conversation_id:
+            return None
+        try:
+            document = await self.summary_store.get_latest_summary(
+                conversation_id=conversation_id,
+                user_id=user_id,
+            )
+            if document is None and user_id is not None:
+                document = await self.summary_store.get_latest_summary(
+                    conversation_id=conversation_id,
+                    user_id=None,
+                )
+        except Exception:
+            return None
+        if document is None:
+            return None
+        return document.model_dump(by_alias=True)
+
+    def _merge_summary_context(
+        self,
+        current_summary: dict[str, Any],
+        persisted_summary: dict[str, Any],
+    ) -> dict[str, Any]:
+        current = current_summary if isinstance(current_summary, dict) else {}
+        persisted = persisted_summary if isinstance(persisted_summary, dict) else {}
+        merged = {**persisted, **current}
+        for key in ("topicFocus", "canonicalTopicKeys", "knownGaps", "unresolvedQuestions", "recentProgress"):
+            merged[key] = self._merge_unique_strings(
+                list(persisted.get(key, []) or []),
+                list(current.get(key, []) or []),
+                limit=8,
+            )
+        merged["aliases"] = self._merge_aliases(
+            persisted.get("aliases", {}),
+            current.get("aliases", {}),
+        )
+        merged["learnerGoal"] = current.get("learnerGoal") or persisted.get("learnerGoal")
+        merged["preferredHelpStyle"] = current.get("preferredHelpStyle") or persisted.get("preferredHelpStyle")
+        merged["lastUserMessage"] = current.get("lastUserMessage") or persisted.get("lastUserMessage")
+        merged["summaryText"] = current.get("summaryText") or persisted.get("summaryText") or ""
+        return merged
+
+    def _merge_unique_strings(self, older: list[Any], newer: list[Any], *, limit: int) -> list[str]:
+        merged: list[str] = []
+        for item in [*older, *newer]:
+            normalized = str(item).strip()
+            if normalized and normalized not in merged:
+                merged.append(normalized)
+            if len(merged) >= limit:
+                break
+        return merged
+
+    def _merge_aliases(self, older: Any, newer: Any) -> dict[str, list[str]]:
+        merged: dict[str, list[str]] = {}
+        for source in (older, newer):
+            if not isinstance(source, dict):
+                continue
+            for key, values in source.items():
+                normalized_key = str(key).strip()
+                if not normalized_key:
+                    continue
+                if isinstance(values, list):
+                    aliases = values
+                else:
+                    aliases = [values]
+                merged[normalized_key] = self._merge_unique_strings(
+                    merged.get(normalized_key, []),
+                    aliases,
+                    limit=8,
+                )
+        return merged
 
     def _build_practice_context_text(
         self,

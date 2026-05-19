@@ -12,6 +12,7 @@ from src.ai_modules.runtime import (
     StructuredConversationSummary,
     SystemSnapshot,
 )
+from src.ai_modules.runtime.skill_loader import SkillPromptLoader
 
 
 def _build_snapshot() -> SystemSnapshot:
@@ -31,6 +32,82 @@ def _build_snapshot() -> SystemSnapshot:
         last_index_update="2026-05-02",
         recent_activities=["完成索引练习"],
     )
+
+
+def test_tutor_agent_system_prompt_loads_skill_and_context() -> None:
+    tutor = TutorAgent(
+        summary_store=InMemoryConversationSummaryStore(),
+        llm_client=RuleBasedTutorLLM(),
+    )
+
+    prompt = tutor.system_prompt(_build_snapshot())
+
+    assert "# 辅导智能体" in prompt
+    assert "回复原则" in prompt
+    assert "read_retrieval_evidence" in prompt
+    assert "## 当前上下文" in prompt
+    assert f"课程: {_build_snapshot().current_course}" in prompt
+
+
+def test_tutor_skill_prompt_falls_back_when_skill_is_missing(tmp_path) -> None:
+    loader = SkillPromptLoader(skills_root=tmp_path)
+
+    prompt = loader.build_system_prompt(
+        skill_name="tutor",
+        snapshot=_build_snapshot(),
+        fallback_prompt="辅导提示词兜底内容",
+    )
+
+    assert prompt == "辅导提示词兜底内容"
+
+
+@pytest.mark.asyncio
+async def test_tutor_agent_golden_eval_preserves_guidance_contract() -> None:
+    tutor = TutorAgent(
+        compactor=ConversationCompactor(token_budget=1000, keep_recent_turns=4),
+        summary_store=InMemoryConversationSummaryStore(),
+        llm_client=RuleBasedTutorLLM(),
+    )
+    params = {
+        "conversationId": "conv-golden-tutor",
+        "messages": [
+            {"role": "user", "content": "老师，我总是分不清联合索引什么时候会失效"},
+            {"role": "assistant", "content": "我们先看查询条件是否符合最左匹配。"},
+        ],
+        "query": "联合索引为什么会失效?",
+        "rewrittenQuery": "数据库原理 联合索引 失效 最左匹配",
+        "retrievalResult": {
+            "documents": [
+                {
+                    "title": "联合索引失效场景",
+                    "channel": "hybrid",
+                    "evidence": "联合索引需要按索引字段顺序匹配查询条件，跳过最左字段会削弱索引效果。",
+                }
+            ],
+            "sourcesSummary": "命中联合索引失效场景。",
+        },
+    }
+
+    events = [
+        event
+        async for event in tutor.run(
+            task_id="task-golden-tutor",
+            trace_id="trace-golden-tutor",
+            seq=1,
+            service_type="TUTORING",
+            params=params,
+            snapshot=_build_snapshot(),
+            system_prompt=tutor.system_prompt(_build_snapshot()),
+        )
+    ]
+
+    assert [event.event for event in events] == ["progress", "result_chunk"]
+    assert params["inputMode"] == "clear_question"
+    assert events[0].dialog_state is not None
+    assert events[0].dialog_state.pedagogy_strategy == "retrieval_grounded_scaffold"
+    assert events[0].dialog_state.next_action == "ask_follow_up"
+    assert "联合索引" in events[1].payload.text
+    assert "最左字段" in events[1].payload.text
 
 
 @pytest.mark.asyncio
@@ -185,6 +262,43 @@ def test_conversation_compactor_merges_previous_summary_across_compactions() -> 
     assert result.structured_summary.learner_goal == "掌握 Java 并发基础"
     assert "什么时候更适合用 volatile？" in result.structured_summary.unresolved_questions
     assert len(result.structured_summary.summary_text) <= 500
+
+
+@pytest.mark.asyncio
+async def test_conversation_compactor_llm_refiner_recovers_nonstandard_deadlock_topic() -> None:
+    class FakeSummaryRefiner:
+        async def refine(self, *, messages, rule_summary):
+            assert any("两把锁互相等" in str(message.get("content", "")) for message in messages)
+            assert rule_summary["summaryText"]
+            return {
+                "topicFocus": ["死锁"],
+                "canonicalTopicKeys": ["deadlock"],
+                "aliases": {"deadlock": ["两把锁互相等的东西"]},
+                "knownGaps": ["死锁"],
+                "unresolvedQuestions": ["我搞不太明白那个两把锁互相等的东西"],
+                "confidence": 0.88,
+                "summaryText": "主题: 死锁 ; 薄弱点: 死锁 ; 未解决问题: 两把锁互相等的东西",
+            }
+
+    compactor = ConversationCompactor(
+        token_budget=12,
+        keep_recent_turns=1,
+        summary_refiner=FakeSummaryRefiner(),
+    )
+
+    result = await compactor.compact_async(
+        [
+            {"role": "user", "content": "我搞不太明白那个两把锁互相等的东西"},
+            {"role": "assistant", "content": "我们可以从等待关系讲起。"},
+            {"role": "user", "content": "它为什么会卡住"},
+        ]
+    )
+
+    assert result.was_compacted is True
+    assert "死锁" in result.structured_summary.topic_focus
+    assert "deadlock" in result.structured_summary.canonical_topic_keys
+    assert result.structured_summary.topic_aliases["deadlock"] == ["两把锁互相等的东西"]
+    assert result.structured_summary.confidence >= 0.88
 
 
 def test_conversation_compactor_extracts_chinese_topic_focus_terms() -> None:

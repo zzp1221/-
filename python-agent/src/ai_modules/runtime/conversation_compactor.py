@@ -8,20 +8,25 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from src.ai_modules.runtime.topic_canonicalizer import canonicalize_topics
+
 
 class StructuredConversationSummary(BaseModel):
     """从历史对话中提取的结构化信息。"""
 
     topic_focus: list[str] = Field(default_factory=list, alias="topicFocus")
+    canonical_topic_keys: list[str] = Field(default_factory=list, alias="canonicalTopicKeys")
+    topic_aliases: dict[str, list[str]] = Field(default_factory=dict, alias="aliases")
     learner_goal: str | None = Field(default=None, alias="learnerGoal")
     known_gaps: list[str] = Field(default_factory=list, alias="knownGaps")
     unresolved_questions: list[str] = Field(default_factory=list, alias="unresolvedQuestions")
     preferred_help_style: str | None = Field(default=None, alias="preferredHelpStyle")
     last_user_message: str | None = Field(default=None, alias="lastUserMessage")
     recent_progress: list[str] = Field(default_factory=list, alias="recentProgress")
+    confidence: float = 0.55
     summary_text: str = Field(default="", alias="summaryText")
 
-    model_config = ConfigDict(populate_by_name=True)
+    model_config = ConfigDict(populate_by_name=True, extra="ignore")
 
 
 @dataclass(slots=True)
@@ -54,10 +59,12 @@ class ConversationCompactor:
         token_budget: int = 1200,
         keep_recent_turns: int = 4,
         summary_max_chars: int = 500,
+        summary_refiner: Any | None = None,
     ) -> None:
         self.token_budget = token_budget
         self.keep_recent_turns = keep_recent_turns
         self.summary_max_chars = summary_max_chars
+        self.summary_refiner = summary_refiner
 
     def estimate_tokens(self, messages: list[dict[str, Any]]) -> int:
         """基于字符数的粗略 token 估算。"""
@@ -118,6 +125,42 @@ class ConversationCompactor:
             estimated_tokens_after=estimated_after,
         )
 
+    async def compact_async(
+        self,
+        messages: list[dict[str, Any]],
+        previous_summary: StructuredConversationSummary | None = None,
+    ) -> CompactionResult:
+        """Compact and optionally refine the structured summary with an LLM."""
+
+        result = self.compact(messages, previous_summary=previous_summary)
+        if not self._should_refine_with_llm(messages=messages, result=result):
+            return result
+
+        try:
+            payload = await self.summary_refiner.refine(
+                messages=messages,
+                rule_summary=result.structured_summary.model_dump(by_alias=True),
+            )
+            refined_summary = self._merge_refined_summary(result.structured_summary, payload)
+        except Exception:
+            return result
+
+        compacted_messages = [dict(message) for message in result.compacted_messages]
+        if result.was_compacted and compacted_messages:
+            compacted_messages[0] = {
+                **compacted_messages[0],
+                "content": f"鍘嗗彶瀵硅瘽鎽樿: {refined_summary.summary_text}",
+            }
+        estimated_after = self.estimate_tokens(compacted_messages)
+        return CompactionResult(
+            compacted_messages=compacted_messages,
+            summary=refined_summary.summary_text,
+            structured_summary=refined_summary,
+            was_compacted=result.was_compacted,
+            estimated_tokens_before=result.estimated_tokens_before,
+            estimated_tokens_after=estimated_after,
+        )
+
     def _extract_structured_summary(
         self,
         messages: list[dict[str, Any]],
@@ -136,6 +179,15 @@ class ConversationCompactor:
         ]
 
         topic_focus = self._extract_topic_focus(user_messages)
+        canonical_topics = canonicalize_topics(topic_focus)
+        if canonical_topics:
+            topic_focus = [topic.display_name for topic in canonical_topics]
+        canonical_topic_keys = [topic.canonical_key for topic in canonical_topics]
+        topic_aliases = {
+            topic.canonical_key: topic.aliases
+            for topic in canonical_topics
+            if topic.canonical_key and topic.aliases
+        }
         learner_goal = next(
             (
                 message
@@ -170,12 +222,19 @@ class ConversationCompactor:
         )
         return StructuredConversationSummary(
             topicFocus=topic_focus,
+            canonicalTopicKeys=canonical_topic_keys,
+            aliases=topic_aliases,
             learnerGoal=learner_goal,
             knownGaps=known_gaps,
             unresolvedQuestions=unresolved_questions,
             preferredHelpStyle=preferred_help_style,
             lastUserMessage=last_user_message,
             recentProgress=recent_progress,
+            confidence=self._summary_confidence(
+                topic_focus=topic_focus,
+                known_gaps=known_gaps,
+                unresolved_questions=unresolved_questions,
+            ),
             summaryText=summary_text,
         )
 
@@ -260,6 +319,15 @@ class ConversationCompactor:
             new_summary.recent_progress,
             limit=4,
         )
+        canonical_topic_keys = self._merge_unique(
+            previous_summary.canonical_topic_keys,
+            new_summary.canonical_topic_keys,
+            limit=6,
+        )
+        topic_aliases = self._merge_alias_maps(
+            previous_summary.topic_aliases,
+            new_summary.topic_aliases,
+        )
         learner_goal = new_summary.learner_goal or previous_summary.learner_goal
         preferred_help_style = (
             new_summary.preferred_help_style or previous_summary.preferred_help_style
@@ -267,12 +335,15 @@ class ConversationCompactor:
         last_user_message = new_summary.last_user_message or previous_summary.last_user_message
         return StructuredConversationSummary(
             topicFocus=topic_focus,
+            canonicalTopicKeys=canonical_topic_keys,
+            aliases=topic_aliases,
             learnerGoal=learner_goal,
             knownGaps=known_gaps,
             unresolvedQuestions=unresolved_questions,
             preferredHelpStyle=preferred_help_style,
             lastUserMessage=last_user_message,
             recentProgress=recent_progress,
+            confidence=max(previous_summary.confidence, new_summary.confidence),
             summaryText=self._build_summary_text(
                 topic_focus=topic_focus,
                 learner_goal=learner_goal,
@@ -291,6 +362,133 @@ class ConversationCompactor:
             if len(merged) >= limit:
                 break
         return merged
+
+    def _merge_alias_maps(
+        self,
+        older: dict[str, list[str]],
+        newer: dict[str, list[str]],
+    ) -> dict[str, list[str]]:
+        merged: dict[str, list[str]] = {}
+        for source in (older or {}, newer or {}):
+            if not isinstance(source, dict):
+                continue
+            for key, aliases in source.items():
+                normalized_key = str(key).strip()
+                if not normalized_key:
+                    continue
+                merged.setdefault(normalized_key, [])
+                if isinstance(aliases, list):
+                    merged[normalized_key] = self._merge_unique(
+                        merged[normalized_key],
+                        [str(alias) for alias in aliases],
+                        limit=8,
+                    )
+        return merged
+
+    def _summary_confidence(
+        self,
+        *,
+        topic_focus: list[str],
+        known_gaps: list[str],
+        unresolved_questions: list[str],
+    ) -> float:
+        score = 0.45
+        if topic_focus:
+            score += 0.18
+        if known_gaps:
+            score += 0.12
+        if unresolved_questions:
+            score += 0.08
+        return max(0.2, min(0.9, round(score, 2)))
+
+    def _should_refine_with_llm(
+        self,
+        *,
+        messages: list[dict[str, Any]],
+        result: CompactionResult,
+    ) -> bool:
+        if self.summary_refiner is None or not hasattr(self.summary_refiner, "refine"):
+            return False
+        user_messages = [
+            str(message.get("content", "")).strip()
+            for message in messages
+            if str(message.get("role", "")).lower() == "user"
+        ]
+        if result.was_compacted:
+            return True
+        if len(user_messages) >= 3 and result.structured_summary.confidence < 0.55:
+            return True
+        ambiguous_markers = ("那个", "这个", "东西", "玩意", "互相等", "互相等待")
+        return any(marker in message for marker in ambiguous_markers for message in user_messages[-4:])
+
+    def _merge_refined_summary(
+        self,
+        rule_summary: StructuredConversationSummary,
+        payload: Any,
+    ) -> StructuredConversationSummary:
+        if not isinstance(payload, dict):
+            return rule_summary
+        normalized_payload = dict(payload.get("summary") if isinstance(payload.get("summary"), dict) else payload)
+        aliases = normalized_payload.get("aliases", {})
+        if not isinstance(aliases, dict):
+            normalized_payload["aliases"] = {}
+        try:
+            refined = StructuredConversationSummary.model_validate(normalized_payload)
+        except Exception:
+            return rule_summary
+
+        if refined.topic_focus and not refined.canonical_topic_keys:
+            canonical_topics = canonicalize_topics(refined.topic_focus)
+            refined = refined.model_copy(
+                update={
+                    "topic_focus": [topic.display_name for topic in canonical_topics],
+                    "canonical_topic_keys": [topic.canonical_key for topic in canonical_topics],
+                    "topic_aliases": {
+                        topic.canonical_key: topic.aliases
+                        for topic in canonical_topics
+                        if topic.canonical_key and topic.aliases
+                    },
+                }
+            )
+
+        topic_focus = self._merge_unique(refined.topic_focus, rule_summary.topic_focus, limit=6)
+        known_gaps = self._merge_unique(refined.known_gaps, rule_summary.known_gaps, limit=5)
+        unresolved_questions = self._merge_unique(
+            refined.unresolved_questions,
+            rule_summary.unresolved_questions,
+            limit=5,
+        )
+        recent_progress = self._merge_unique(
+            rule_summary.recent_progress,
+            refined.recent_progress,
+            limit=4,
+        )
+        learner_goal = refined.learner_goal or rule_summary.learner_goal
+        preferred_help_style = refined.preferred_help_style or rule_summary.preferred_help_style
+        last_user_message = rule_summary.last_user_message or refined.last_user_message
+        summary_text = refined.summary_text or self._build_summary_text(
+            topic_focus=topic_focus,
+            learner_goal=learner_goal,
+            unresolved_questions=unresolved_questions,
+            known_gaps=known_gaps,
+        )
+        return StructuredConversationSummary(
+            topicFocus=topic_focus,
+            canonicalTopicKeys=self._merge_unique(
+                refined.canonical_topic_keys,
+                rule_summary.canonical_topic_keys,
+                limit=6,
+            ),
+            aliases=self._merge_alias_maps(refined.topic_aliases, rule_summary.topic_aliases),
+            learnerGoal=learner_goal,
+            knownGaps=known_gaps,
+            unresolvedQuestions=unresolved_questions,
+            preferredHelpStyle=preferred_help_style,
+            lastUserMessage=last_user_message,
+            recentProgress=recent_progress,
+            confidence=max(rule_summary.confidence, refined.confidence),
+            summaryText=summary_text[: self.summary_max_chars],
+        )
 
     def _extract_topic_candidates(self, message: str) -> list[tuple[str, str]]:
         candidates: list[tuple[str, str]] = []
