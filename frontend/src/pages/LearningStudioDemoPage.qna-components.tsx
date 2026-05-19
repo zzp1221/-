@@ -1,4 +1,4 @@
-import { memo, useEffect, useId, useRef, useState, type ClipboardEvent, type DragEvent } from 'react';
+import { memo, useCallback, useEffect, useId, useRef, useState, type ClipboardEvent, type DragEvent } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { ArrowDown, BrainCircuit, FileImage, Globe2, LoaderCircle, Paperclip, SendHorizontal, Sparkles, X, XCircle } from 'lucide-react';
 import MarkdownRenderer from '../components/MarkdownRenderer';
@@ -90,22 +90,31 @@ export const ChatPanel = memo(function ChatPanel({ messages }: { messages: ChatM
 
   const lastMessage = messages[messages.length - 1];
   const isStreaming = Boolean(lastMessage && lastMessage.role === 'assistant' && !lastMessage.content);
-
-  useEffect(() => {
+  const messageListKey = messages.map((message) => message.id).join('\u0001');
+  const scrollToBottom = useCallback(() => {
     const container = containerRef.current;
     if (!container) return;
     requestAnimationFrame(() => {
       container.scrollTop = container.scrollHeight;
+      requestAnimationFrame(() => {
+        container.scrollTop = container.scrollHeight;
+      });
     });
   }, []);
 
   useEffect(() => {
-    const container = containerRef.current;
-    if (!container || !autoFollow) return;
-    requestAnimationFrame(() => {
-      container.scrollTop = container.scrollHeight;
-    });
-  }, [autoFollow, messages]);
+    scrollToBottom();
+  }, [scrollToBottom]);
+
+  useEffect(() => {
+    setAutoFollow(true);
+    scrollToBottom();
+  }, [messageListKey, scrollToBottom]);
+
+  useEffect(() => {
+    if (!autoFollow) return;
+    scrollToBottom();
+  }, [autoFollow, messages, scrollToBottom]);
 
   const handleScroll = () => {
     const container = containerRef.current;

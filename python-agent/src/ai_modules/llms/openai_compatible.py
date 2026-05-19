@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import logging
 import re
+from collections.abc import AsyncIterator
 from typing import Any, ClassVar
 
 import httpx
@@ -167,6 +168,49 @@ class OpenAICompatibleClient:
             raise RuntimeError("missing choices from openai-compatible response")
         return data
 
+    async def chat_completion_stream(
+        self,
+        *,
+        messages: list[dict[str, Any]],
+        model_name: str | None = None,
+        temperature: float = 0.2,
+        response_format: dict[str, Any] | None = None,
+        max_tokens: int | None = None,
+    ) -> AsyncIterator[str]:
+        if not self.api_key:
+            raise RuntimeError("missing openai-compatible api key")
+
+        payload: dict[str, Any] = {
+            "model": model_name or self.model_name,
+            "messages": messages,
+            "temperature": temperature,
+            "stream": True,
+            "thinking": {"type": "disabled"},
+        }
+        if response_format:
+            payload["response_format"] = response_format
+        if max_tokens is not None:
+            payload["max_tokens"] = max_tokens
+
+        headers = {
+            "Authorization": f"Bearer {self.api_key}",
+            "Content-Type": "application/json",
+            "Accept": "text/event-stream",
+        }
+        with TRACER.start_as_current_span("openai_compatible.chat_completion_stream"):
+            client = await self._get_client()
+            async with client.stream(
+                "POST",
+                f"{self.base_url}/chat/completions",
+                headers=headers,
+                json=payload,
+            ) as response:
+                response.raise_for_status()
+                async for line in response.aiter_lines():
+                    content = self._extract_stream_line_content(line)
+                    if content:
+                        yield content
+
     def extract_message(self, response_json: dict[str, Any]) -> dict[str, Any]:
         choices = response_json.get("choices", [])
         if not choices:
@@ -211,6 +255,51 @@ class OpenAICompatibleClient:
 
     def parse_json_text(self, content: str) -> dict[str, Any]:
         return extract_json_object_from_text(content)
+
+    def _extract_stream_line_content(self, line: str) -> str:
+        stripped = line.strip()
+        if not stripped or stripped.startswith(":") or stripped.startswith("event:"):
+            return ""
+        if stripped.startswith("data:"):
+            stripped = stripped[5:].strip()
+        if not stripped or stripped == "[DONE]":
+            return ""
+        try:
+            data = json.loads(stripped)
+        except json.JSONDecodeError:
+            LOGGER.debug("Skipping malformed stream line from %s: %s", self.provider_name, line)
+            return ""
+        if isinstance(data.get("usage"), dict):
+            self._record_usage(data)
+        choices = data.get("choices", [])
+        if not isinstance(choices, list):
+            return ""
+        pieces: list[str] = []
+        for choice in choices:
+            if not isinstance(choice, dict):
+                continue
+            delta = choice.get("delta")
+            if isinstance(delta, dict):
+                pieces.append(self._stringify_stream_content(delta.get("content")))
+                continue
+            message = choice.get("message")
+            if isinstance(message, dict):
+                pieces.append(self.extract_content(message))
+                continue
+            pieces.append(self._stringify_stream_content(choice.get("text")))
+        return "".join(piece for piece in pieces if piece)
+
+    def _stringify_stream_content(self, content: Any) -> str:
+        if content is None:
+            return ""
+        if isinstance(content, str):
+            return content
+        if isinstance(content, list):
+            return "".join(
+                item.get("text", "") if isinstance(item, dict) else str(item)
+                for item in content
+            )
+        return str(content)
 
 
 class OpenAICompatibleToolCallingLLM:

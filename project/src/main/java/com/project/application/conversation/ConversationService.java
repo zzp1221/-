@@ -268,13 +268,10 @@ public class ConversationService {
 
     private void collectAssistantReply(StringBuilder assistantReply, PythonStreamEvent event) {
         String chunk = extractVisibleAssistantChunk(event);
-        if (chunk == null || chunk.isBlank()) {
+        if (chunk == null || chunk.isEmpty()) {
             return;
         }
-        if (!assistantReply.isEmpty()) {
-            assistantReply.append('\n');
-        }
-        assistantReply.append(chunk.trim());
+        assistantReply.append(chunk);
     }
 
     private String extractVisibleAssistantChunk(PythonStreamEvent event) {
@@ -305,19 +302,11 @@ public class ConversationService {
     }
 
     private String sanitizeVisibleAssistantChunk(String text) {
-        String normalized = text == null ? "" : text.replace("\r\n", "\n").trim();
-        if (normalized.isBlank() || looksLikeInternalChain(normalized)) {
+        String normalized = text == null ? "" : text.replace("\r\n", "\n");
+        if (normalized.isEmpty() || looksLikeInternalChain(normalized)) {
             return "";
         }
-        return normalized
-            .replaceAll("(?m)^\\s{0,3}#{1,6}\\s*", "")
-            .replaceAll("(?m)^\\s*>\\s?", "")
-            .replaceAll("\\*\\*(.*?)\\*\\*", "$1")
-            .replaceAll("__(.*?)__", "$1")
-            .replaceAll("`([^`]+)`", "$1")
-            .replaceAll("(?m)^\\s*---\\s*$", "")
-            .replaceAll("\\n{3,}", "\n\n")
-            .trim();
+        return normalized;
     }
 
     private void appendConversationMessage(

@@ -60,6 +60,11 @@ export function sanitizeConversationMessageContent(input: string): string {
     .trim();
 }
 
+function sanitizeConversationLiveChunk(input: string): string {
+  const normalized = input.replace(/\r\n/g, '\n');
+  return looksLikeTutorChain(normalized) ? '' : normalized;
+}
+
 export async function runByApiTask({
   service,
   currentTaskId,
@@ -517,8 +522,12 @@ export function readConversationChunk(data: ConversationStreamEventPayload, even
   if (eventName === 'done') {
     return '';
   }
-  if (eventName === 'result_chunk' && stage && stage !== 'tutoring') {
-    return '';
+  if (eventName === 'result_chunk') {
+    if (stage && stage !== 'tutoring') {
+      return '';
+    }
+    const chunkText = readString(payload.text);
+    return chunkText ? sanitizeConversationLiveChunk(chunkText) : '';
   }
 
   const text = readString(payload.text) || readString(payload.message) || readString(payload.summaryText);
