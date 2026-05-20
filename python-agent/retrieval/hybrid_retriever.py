@@ -138,9 +138,61 @@ class HybridRetriever:
             "top": fused[:5],
         }
 
+    def retrieve_grep_first(self, cur, query: str, web_search_enabled: bool = False) -> dict:
+        """Run grep first and skip vector/graph when phrase confidence is strong."""
+        try:
+            self._init(cur)
+        except Exception as exc:
+            LOGGER.warning("Grep-first init failed for query %r: %s", query, exc)
+            return self.retrieve(cur, query, web_search_enabled=web_search_enabled)
+
+        try:
+            grep_results = self._grep.search(cur, query, self.domain)
+        except Exception as exc:
+            LOGGER.warning("Grep-first grep retrieval failed for query %r: %s", query, exc)
+            grep_results = {"priority": [], "normal": []}
+
+        if not self._has_strong_grep_hit(grep_results):
+            raw_result = self.retrieve(cur, query, web_search_enabled=web_search_enabled)
+            raw_result["retrievalStrategy"] = "LOCAL_GREP_FIRST"
+            raw_result["grepFirstPromoted"] = True
+            return raw_result
+
+        web_results = self._web.search(self._web_query(query), top_k=5) if web_search_enabled else []
+        fused = self._rrf.fuse(grep_results, [], [], web_results)
+        return {
+            "query": query,
+            "retrievalStrategy": "LOCAL_GREP_FIRST",
+            "grepFirstPromoted": False,
+            "webSearchEnabled": web_search_enabled,
+            "channels": {
+                "grep": {
+                    "priority": grep_results.get("priority", []),
+                    "normal_count": len(grep_results.get("normal", [])),
+                },
+                "vector": [],
+                "graph": [],
+                "web": web_results,
+            },
+            "fused": fused,
+            "top": fused[:5],
+        }
+
     def retrieve_flat(self, cur, query: str) -> list[tuple]:
         """Simple flat list of top fused results."""
         return self.retrieve(cur, query)["top"]
+
+    def _has_strong_grep_hit(self, grep_results: dict) -> bool:
+        priority = grep_results.get("priority", []) if isinstance(grep_results, dict) else []
+        if not priority:
+            return False
+        top_hit = priority[0]
+        if not isinstance(top_hit, (list, tuple)) or len(top_hit) < 3:
+            return False
+        try:
+            return float(top_hit[2]) >= 0.9
+        except (TypeError, ValueError):
+            return False
 
     def _web_query(self, query: str) -> str:
         lowered = query.lower()

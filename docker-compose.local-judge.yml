@@ -1,0 +1,19 @@
+# Optional overlay for running the subjective judge with a local GGUF model.
+# Usage:
+#   docker compose -f docker-compose.yml -f docker-compose.local-judge.yml up -d --build python-agent app
+#
+# Put the model file at:
+#   ${LOCAL_JUDGE_MODEL_DIR:-./models}/judge_model.gguf
+
+services:
+  python-agent:
+    build:
+      args:
+        INSTALL_LOCAL_JUDGE: ${INSTALL_LOCAL_JUDGE:-true}
+    image: ${PY_AGENT_LOCAL_JUDGE_IMAGE:-zhixue-python-agent:local-judge}
+    environment:
+      ENABLE_LOCAL_JUDGE: "true"
+      LOCAL_JUDGE_MODEL_PATH: ${LOCAL_JUDGE_MODEL_PATH:-/app/models/judge_model.gguf}
+      UVICORN_WORKERS: ${LOCAL_JUDGE_WORKERS:-1}
+    volumes:
+      - ${LOCAL_JUDGE_MODEL_DIR:-./models}:/app/models:ro

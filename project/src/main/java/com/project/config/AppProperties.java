@@ -24,6 +24,7 @@ public class AppProperties {
     private final RateLimit rateLimit = new RateLimit();
     private final Download download = new Download();
     private final Upload upload = new Upload();
+    private final SmartEngineQueue smartEngineQueue = new SmartEngineQueue();
 
     public PythonAgent getPythonAgent() {
         return pythonAgent;
@@ -51,6 +52,10 @@ public class AppProperties {
 
     public Upload getUpload() {
         return upload;
+    }
+
+    public SmartEngineQueue getSmartEngineQueue() {
+        return smartEngineQueue;
     }
 
     public static class PythonAgent {
@@ -255,6 +260,54 @@ public class AppProperties {
 
         public void setImageStorageDir(String imageStorageDir) {
             this.imageStorageDir = imageStorageDir;
+        }
+    }
+
+    public static class SmartEngineQueue {
+        private String streamKey = "zhixue:smart-engine:tasks";
+        private String dlqKey = "zhixue:smart-engine:tasks:dlq";
+        private String consumerGroup = "smart-engine-python";
+        private String cancelKeyPrefix = "zhixue:smart-engine:cancel:";
+        private Duration cancelTtl = Duration.ofHours(24);
+
+        public String getStreamKey() {
+            return streamKey;
+        }
+
+        public void setStreamKey(String streamKey) {
+            this.streamKey = streamKey;
+        }
+
+        public String getDlqKey() {
+            return dlqKey;
+        }
+
+        public void setDlqKey(String dlqKey) {
+            this.dlqKey = dlqKey;
+        }
+
+        public String getConsumerGroup() {
+            return consumerGroup;
+        }
+
+        public void setConsumerGroup(String consumerGroup) {
+            this.consumerGroup = consumerGroup;
+        }
+
+        public String getCancelKeyPrefix() {
+            return cancelKeyPrefix;
+        }
+
+        public void setCancelKeyPrefix(String cancelKeyPrefix) {
+            this.cancelKeyPrefix = cancelKeyPrefix;
+        }
+
+        public Duration getCancelTtl() {
+            return cancelTtl;
+        }
+
+        public void setCancelTtl(Duration cancelTtl) {
+            this.cancelTtl = cancelTtl;
         }
     }
 }

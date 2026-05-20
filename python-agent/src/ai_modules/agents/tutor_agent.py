@@ -41,6 +41,7 @@ class TutorAgent(PlaceholderAgent):
         compactor: ConversationCompactor | None = None,
         summary_store: Any | None = None,
         llm_client: Any | None = None,
+        llm_fallback_clients: list[Any] | None = None,
         summary_refiner: Any | None = None,
     ) -> None:
         super().__init__("Tutor Agent", "tutoring")
@@ -49,7 +50,14 @@ class TutorAgent(PlaceholderAgent):
         if compactor is not None and summary_refiner is not None:
             self.compactor.summary_refiner = summary_refiner
         self.summary_store = summary_store or MongoConversationSummaryStore()
-        self.llm_client = llm_client or TutorLLMClientFactory.create()
+        self.llm_clients = (
+            [llm_client]
+            if llm_client is not None
+            else TutorLLMClientFactory.create_llm_candidates()
+        )
+        if llm_fallback_clients:
+            self.llm_clients.extend(llm_fallback_clients)
+        self.llm_client = self.llm_clients[0] if self.llm_clients else None
         self.skill_loader = SkillPromptLoader()
 
     def system_prompt(self, snapshot: SystemSnapshot) -> str:
@@ -131,55 +139,101 @@ class TutorAgent(PlaceholderAgent):
         )
 
         current_seq = seq + 1
-        quick_reply = self._build_short_circuit_reply(
-            user_query=user_query,
-            input_mode=input_mode,
-            recent_dialogue=recent_dialogue,
-        )
-        if quick_reply:
-            yield ResultChunkSSEEvent(
-                taskId=task_id,
-                traceId=trace_id,
-                seq=current_seq,
-                payload=ResultChunkPayload(text=quick_reply, stage="tutoring"),
-                dialogState=dialog_state,
-            )
-            return
+        if not self.llm_clients:
+            raise RuntimeError("tutor_llm provider is not ready")
 
-        streamed = False
-        try:
-            async for token in self._try_direct_chat_stream(
-                system_prompt=system_prompt,
-                params=params,
-                persisted_summary=persisted_summary,
-            ):
-                streamed = True
+        last_error: Exception | None = None
+        for llm_client in self.llm_clients:
+            streamed = False
+            try:
+                async for token in self._try_direct_chat_stream(
+                    llm_client=llm_client,
+                    system_prompt=system_prompt,
+                    params=params,
+                    persisted_summary=persisted_summary,
+                ):
+                    streamed = True
+                    yield ResultChunkSSEEvent(
+                        taskId=task_id,
+                        traceId=trace_id,
+                        seq=current_seq,
+                        payload=ResultChunkPayload(text=token, stage="tutoring"),
+                        dialogState=dialog_state,
+                    )
+                    current_seq += 1
+                if streamed:
+                    self._log_llm_success("direct_stream", llm_client)
+                    return
+                details = self._describe_llm_client(llm_client)
+                LOGGER.warning(
+                    "Direct tutor stream produced no tokens; trying non-stream LLM "
+                    "provider=%s model=%s baseUrl=%s",
+                    details["provider"],
+                    details["model"],
+                    details["baseUrl"],
+                )
+            except Exception as exc:
+                last_error = exc
+                self._log_llm_failure("direct_stream", exc, llm_client)
+                if streamed:
+                    raise
+
+            try:
+                response_text = await self._run_agent_core_loop(
+                    llm_client=llm_client,
+                    system_prompt=system_prompt,
+                    params=params,
+                    snapshot=snapshot,
+                    persisted_summary=persisted_summary,
+                )
                 yield ResultChunkSSEEvent(
                     taskId=task_id,
                     traceId=trace_id,
                     seq=current_seq,
-                    payload=ResultChunkPayload(text=token, stage="tutoring"),
+                    payload=ResultChunkPayload(text=response_text, stage="tutoring"),
                     dialogState=dialog_state,
                 )
-                current_seq += 1
-        except Exception:
-            LOGGER.debug("Direct tutor stream failed; falling back to agent core loop", exc_info=True)
+                self._log_llm_success("agent_core_loop", llm_client)
+                return
+            except Exception as exc:
+                last_error = exc
+                self._log_llm_failure("agent_core_loop", exc, llm_client)
 
-        if not streamed:
-            response_text = await self._run_agent_core_loop(
-                system_prompt=system_prompt,
-                params=params,
-                snapshot=snapshot,
-                persisted_summary=persisted_summary,
-            )
-            yield ResultChunkSSEEvent(
-                taskId=task_id,
-                traceId=trace_id,
-                seq=current_seq,
-                payload=ResultChunkPayload(text=response_text, stage="tutoring"),
-                dialogState=dialog_state,
-            )
-            current_seq += 1
+        if last_error is not None:
+            raise last_error
+        raise RuntimeError("tutor_llm provider is not ready")
+
+    def _describe_llm_client(self, llm_client: Any) -> dict[str, str]:
+        client = getattr(llm_client, "client", llm_client)
+        return {
+            "provider": str(getattr(client, "provider_name", type(llm_client).__name__)),
+            "model": str(getattr(client, "model_name", "")),
+            "baseUrl": str(getattr(client, "base_url", "")),
+        }
+
+    def _log_llm_failure(self, stage: str, exc: Exception, llm_client: Any) -> None:
+        details = self._describe_llm_client(llm_client)
+        LOGGER.warning(
+            "Tutor LLM attempt failed stage=%s provider=%s model=%s baseUrl=%s errorType=%s",
+            stage,
+            details["provider"],
+            details["model"],
+            details["baseUrl"],
+            type(exc).__name__,
+            exc_info=True,
+        )
+
+    def _log_llm_success(self, stage: str, llm_client: Any) -> None:
+        if llm_client is self.llm_client:
+            return
+        details = self._describe_llm_client(llm_client)
+        LOGGER.info(
+            "Tutor LLM fallback succeeded stage=%s provider=%s model=%s baseUrl=%s",
+            stage,
+            details["provider"],
+            details["model"],
+            details["baseUrl"],
+        )
 
     def _extract_conversation(self, params: dict[str, Any]) -> list[dict[str, Any]]:
         candidates = params.get("messages") or params.get("conversation") or []
@@ -217,6 +271,7 @@ class TutorAgent(PlaceholderAgent):
     async def _run_agent_core_loop(
         self,
         *,
+        llm_client: Any,
         system_prompt: str,
         params: dict[str, Any],
         snapshot: SystemSnapshot,
@@ -226,14 +281,16 @@ class TutorAgent(PlaceholderAgent):
         user_query = self._resolve_user_query(params)
         try:
             return await self._try_direct_chat(
+                llm_client=llm_client,
                 system_prompt=system_prompt,
                 user_query=user_query,
                 params=params,
                 persisted_summary=persisted_summary,
             )
-        except Exception:
-            LOGGER.debug("Direct tutor response failed; falling back to agent core loop", exc_info=True)
+        except Exception as exc:
+            self._log_llm_failure("direct_chat", exc, llm_client)
         return await self._run_with_agent_core_loop(
+            llm_client=llm_client,
             system_prompt=system_prompt,
             user_query=user_query,
             params=params,
@@ -243,12 +300,13 @@ class TutorAgent(PlaceholderAgent):
     async def _try_direct_chat(
         self,
         *,
+        llm_client: Any,
         system_prompt: str,
         user_query: str,
         params: dict[str, Any],
         persisted_summary: dict[str, Any] | None,
     ) -> str:
-        client = self.llm_client.client
+        client = llm_client.client
         memory_data = self._tool_load_conversation_memory(
             tool_input={}, persisted_summary=persisted_summary,
         )
@@ -285,12 +343,13 @@ class TutorAgent(PlaceholderAgent):
     async def _try_direct_chat_stream(
         self,
         *,
+        llm_client: Any,
         system_prompt: str,
         params: dict[str, Any],
         persisted_summary: dict[str, Any] | None,
     ):
         """从 LLM 流式输出 token 以实现实时辅导展示。"""
-        client = self.llm_client.client
+        client = llm_client.client
         user_query = self._resolve_user_query(params)
         memory_data = self._tool_load_conversation_memory(
             tool_input={}, persisted_summary=persisted_summary,
@@ -441,6 +500,7 @@ class TutorAgent(PlaceholderAgent):
     async def _run_with_agent_core_loop(
         self,
         *,
+        llm_client: Any,
         system_prompt: str,
         user_query: str,
         params: dict[str, Any],
@@ -498,7 +558,7 @@ class TutorAgent(PlaceholderAgent):
             parameters={"type": "object", "properties": {}, "additionalProperties": False},
         )
         core_loop = AgentCoreLoop(
-            llm_client=self.llm_client,
+            llm_client=llm_client,
             tool_registry=tool_registry,
             recovery_engine=RecoveryEngine(),
             max_iterations=4,

@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
-from typing import Any, ClassVar, Protocol
+from typing import Any, ClassVar, Protocol, TypeVar
 
 import httpx
 from opentelemetry import trace
@@ -31,6 +31,11 @@ from src.ai_modules.llms.openai_compatible import extract_json_object_from_text
 
 LOGGER = logging.getLogger(__name__)
 TRACER = trace.get_tracer(__name__)
+StructuredModelT = TypeVar("StructuredModelT", bound=BaseModel)
+
+
+class GenerationOutputInvalidError(RuntimeError):
+    """Raised when LLM structured output cannot satisfy the required schema."""
 
 
 class GeneratedSection(BaseModel):
@@ -330,19 +335,19 @@ class OpenAICompatibleStructuredGenerator:
         section_plans: list[dict[str, Any]],
         sources: list[dict[str, Any]],
     ) -> GeneratedSectionBundle:
-        return GeneratedSectionBundle.model_validate(
-            self._call_and_parse_json(
-                span_name=f"{self.provider_name}.generate_document_sections",
-                system_prompt=build_document_system_prompt(),
-                user_prompt=build_document_user_prompt(
-                    title=title,
-                    topic=topic,
-                    snapshot=snapshot,
-                    section_plans=section_plans,
-                    sources=sources,
-                ),
-                max_tokens=4200,
-            )
+        return self._call_and_validate_json(
+            span_name=f"{self.provider_name}.generate_document_sections",
+            system_prompt=build_document_system_prompt(),
+            user_prompt=build_document_user_prompt(
+                title=title,
+                topic=topic,
+                snapshot=snapshot,
+                section_plans=section_plans,
+                sources=sources,
+            ),
+            max_tokens=4200,
+            model_type=GeneratedSectionBundle,
+            schema_hint='{"sections":[{"title":"...","body":"...","tips":["..."],"citations":["..."]}]}',
         )
 
     def generate_reading_asset(
@@ -353,18 +358,18 @@ class OpenAICompatibleStructuredGenerator:
         snapshot: dict[str, Any],
         sources: list[dict[str, Any]],
     ) -> GeneratedTextAsset:
-        return GeneratedTextAsset.model_validate(
-            self._call_and_parse_json(
-                span_name=f"{self.provider_name}.generate_reading_asset",
-                system_prompt=build_reading_system_prompt(),
-                user_prompt=build_reading_user_prompt(
-                    title=title,
-                    topic=topic,
-                    snapshot=snapshot,
-                    sources=sources,
-                ),
-                max_tokens=1600,
-            )
+        return self._call_and_validate_json(
+            span_name=f"{self.provider_name}.generate_reading_asset",
+            system_prompt=build_reading_system_prompt(),
+            user_prompt=build_reading_user_prompt(
+                title=title,
+                topic=topic,
+                snapshot=snapshot,
+                sources=sources,
+            ),
+            max_tokens=1600,
+            model_type=GeneratedTextAsset,
+            schema_hint='{"title":"...","summary":"...","body":"..."}',
         )
 
     def generate_slides_asset(
@@ -484,6 +489,129 @@ class OpenAICompatibleStructuredGenerator:
             )
         )
 
+    def _call_and_validate_json(
+        self,
+        *,
+        span_name: str,
+        system_prompt: str,
+        user_prompt: str,
+        max_tokens: int | None,
+        model_type: type[StructuredModelT],
+        schema_hint: str,
+    ) -> StructuredModelT:
+        last_output_error: Exception | None = None
+        last_payload: dict[str, Any] | None = None
+        attempt_user_prompt = user_prompt
+        attempts = self.max_retries + 1
+        for attempt in range(attempts):
+            payload: dict[str, Any] | None = None
+            try:
+                with TRACER.start_as_current_span(span_name):
+                    response = self._post_chat_completion(
+                        messages=[
+                            {"role": "system", "content": system_prompt},
+                            {"role": "user", "content": attempt_user_prompt},
+                        ],
+                        temperature=0.0,
+                        max_tokens=max_tokens,
+                        response_format={"type": "json_object"},
+                    )
+            except (RuntimeError, ValueError, httpx.HTTPError) as exc:
+                LOGGER.warning(
+                    "%s structured generation request attempt %s/%s failed: %s",
+                    self.provider_name,
+                    attempt + 1,
+                    attempts,
+                    exc,
+                )
+                if attempt >= self.max_retries:
+                    raise RuntimeError(f"{self.provider_name} structured generation failed: {exc}") from exc
+                time.sleep(self.backoff_seconds * (2**attempt))
+                continue
+
+            try:
+                payload_text = self._extract_message_content(response)
+                payload = self._extract_json(payload_text)
+                return model_type.model_validate(payload)
+            except (RuntimeError, ValueError, KeyError, TypeError, ValidationError) as exc:
+                last_output_error = exc
+                if payload is not None:
+                    last_payload = payload
+                LOGGER.warning(
+                    "%s structured output invalid attempt %s/%s model=%s base_url=%s schema=%s error_type=%s error=%s payload=%s",
+                    self.provider_name,
+                    attempt + 1,
+                    attempts,
+                    self.model_name,
+                    self.base_url,
+                    model_type.__name__,
+                    type(exc).__name__,
+                    exc,
+                    self._compact_payload(last_payload or {}),
+                )
+                if attempt >= self.max_retries:
+                    break
+                attempt_user_prompt = self._build_schema_repair_prompt(
+                    original_user_prompt=user_prompt,
+                    schema_hint=schema_hint,
+                    last_error=exc,
+                    last_payload=last_payload or {},
+                )
+                time.sleep(self.backoff_seconds * (2**attempt))
+
+        raise GenerationOutputInvalidError(
+            f"{self.provider_name} structured generation produced invalid "
+            f"{model_type.__name__} after {attempts} attempts: {last_output_error}"
+        )
+
+    def _call_and_parse_json_once(
+        self,
+        *,
+        span_name: str,
+        system_prompt: str,
+        user_prompt: str,
+        max_tokens: int | None = None,
+    ) -> dict[str, Any]:
+        with TRACER.start_as_current_span(span_name):
+            response = self._post_chat_completion(
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt},
+                ],
+                temperature=0.0,
+                max_tokens=max_tokens,
+                response_format={"type": "json_object"},
+            )
+        payload = self._extract_message_content(response)
+        return self._extract_json(payload)
+
+    def _build_schema_repair_prompt(
+        self,
+        *,
+        original_user_prompt: str,
+        schema_hint: str,
+        last_error: Exception,
+        last_payload: dict[str, Any],
+    ) -> str:
+        return "\n\n".join(
+            [
+                original_user_prompt,
+                "The previous LLM output was invalid and failed schema validation.",
+                f"Required JSON schema: {schema_hint}",
+                f"Validation error: {self._compact_text(type(last_error).__name__ + ': ' + str(last_error))}",
+                f"Previous JSON object: {self._compact_payload(last_payload)}",
+                "Regenerate the complete asset. Return only one valid JSON object with all required fields.",
+            ]
+        )
+
+    def _compact_payload(self, payload: dict[str, Any]) -> str:
+        return self._compact_text(repr(payload))
+
+    def _compact_text(self, value: str, limit: int = 1200) -> str:
+        if len(value) <= limit:
+            return value
+        return value[:limit] + "...<truncated>"
+
     def _call_and_parse_json(
         self,
         *,
@@ -495,18 +623,12 @@ class OpenAICompatibleStructuredGenerator:
         last_error: Exception | None = None
         for attempt in range(self.max_retries + 1):
             try:
-                with TRACER.start_as_current_span(span_name):
-                    response = self._post_chat_completion(
-                        messages=[
-                            {"role": "system", "content": system_prompt},
-                            {"role": "user", "content": user_prompt},
-                        ],
-                        temperature=0.0,
-                        max_tokens=max_tokens,
-                        response_format={"type": "json_object"},
-                    )
-                payload = self._extract_message_content(response)
-                return self._extract_json(payload)
+                return self._call_and_parse_json_once(
+                    span_name=span_name,
+                    system_prompt=system_prompt,
+                    user_prompt=user_prompt,
+                    max_tokens=max_tokens,
+                )
             except (ValidationError, ValueError, RuntimeError, KeyError, TypeError, httpx.HTTPError) as exc:
                 last_error = exc
                 LOGGER.warning(
@@ -725,35 +847,6 @@ class ContentGenerationChain:
                 section_plans=section_plans,
                 sources=sources,
             )
-
-    def _build_fallback_sections(
-        self,
-        *,
-        topic: str,
-        snapshot: dict[str, Any],
-        section_plans: list[dict[str, Any]],
-        fallback_builder: Any,
-    ) -> GeneratedSectionBundle:
-        sections: list[GeneratedSection] = []
-        for index, plan in enumerate(section_plans, start=1):
-            sections.append(
-                GeneratedSection(
-                    title=str(plan.get("title", "")),
-                    body=fallback_builder.render_section_paragraph(
-                        topic=topic,
-                        snapshot=snapshot,
-                        section_index=index,
-                        plan=plan,
-                    ),
-                    tips=fallback_builder.render_section_tips(
-                        snapshot=snapshot,
-                        section_index=index,
-                        plan=plan,
-                    ),
-                    citations=fallback_builder.render_section_citations(plan=plan),
-                )
-            )
-        return GeneratedSectionBundle(sections=sections)
 
     def generate_reading_asset(
         self,

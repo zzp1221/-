@@ -11,6 +11,7 @@
   "dependencies": {
     "@tailwindcss/postcss": "^4.1.18",
     "axios": "^1.7.7",
+    "dompurify": "^3.4.2",
     "framer-motion": "^12.23.26",
     "lucide-react": "^0.468.0",
     "mermaid": "^11.12.0",

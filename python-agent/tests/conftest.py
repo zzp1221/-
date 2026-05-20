@@ -1,5 +1,6 @@
 from fastapi.testclient import TestClient
 
+import server
 from server import app
 
 
@@ -16,6 +17,13 @@ def pytest_configure(config):  # pragma: no cover - pytest hook
 
 
 import pytest
+
+
+@pytest.fixture(autouse=True)
+def internal_token(monkeypatch) -> str:
+    token = "test-internal-token"
+    monkeypatch.setattr(server.SETTINGS, "python_agent_internal_token", token)
+    return token
 
 
 @pytest.fixture

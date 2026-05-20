@@ -915,6 +915,7 @@ class ResourceGenerationService:
         snapshot: dict[str, Any],
         sources: list[dict[str, Any]],
     ) -> GeneratedTextAsset:
+        raise RuntimeError("Local fallback reading asset generation is disabled; use LLM generation only.")
         reading_lines = [
             f"- 第 {index} 篇: {item.get('title', '未知来源')}"
             for index, item in enumerate(sources[:3], start=1)
@@ -943,6 +944,7 @@ class ResourceGenerationService:
         snapshot: dict[str, Any],
         sources: list[dict[str, Any]],
     ) -> GeneratedSlideDeck:
+        raise RuntimeError("Local fallback slides generation is disabled; use LLM generation only.")
         del sources
         return GeneratedSlideDeck(
             title=title,
@@ -974,6 +976,7 @@ class ResourceGenerationService:
         snapshot: dict[str, Any],
         sources: list[dict[str, Any]],
     ) -> GeneratedMindMap:
+        raise RuntimeError("Local fallback mindmap generation is disabled; use LLM generation only.")
         del snapshot, sources
         return GeneratedMindMap(
             title=title,
@@ -994,6 +997,7 @@ class ResourceGenerationService:
         snapshot: dict[str, Any],
         sources: list[dict[str, Any]],
     ) -> GeneratedCodeAsset:
+        raise RuntimeError("Local fallback code generation is disabled; use LLM generation only.")
         del sources
         code = "\n".join(
             [

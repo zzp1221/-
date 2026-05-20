@@ -17,6 +17,8 @@ from src.ai_modules.models.events import (
     ResultChunkSSEEvent,
 )
 
+INTERNAL_HEADERS = {"X-Zhixue-Internal-Token": "test-internal-token"}
+
 
 def test_health_endpoint(client) -> None:
     response = client.get("/health")
@@ -25,6 +27,36 @@ def test_health_endpoint(client) -> None:
     assert response.json()["status"] == "ok"
     assert response.json()["provider"] == "openai_compatible"
     assert response.json()["runtimeProvider"] == "openai_compatible"
+
+
+def test_internal_stream_endpoint_requires_internal_token(client) -> None:
+    payload = {
+        "serviceType": "RESOURCE_GENERATION",
+        "params": {"resourceType": "DOCUMENT"},
+        "taskId": "task-auth",
+        "traceId": "trace-auth",
+    }
+
+    assert client.post("/internal/smart-engine/stream", json=payload).status_code == 401
+    assert client.post(
+        "/internal/smart-engine/stream",
+        json=payload,
+        headers={"X-Zhixue-Internal-Token": "wrong-token"},
+    ).status_code == 401
+
+
+def test_internal_stream_endpoint_rejects_when_token_not_configured(client, monkeypatch) -> None:
+    monkeypatch.setattr(server.SETTINGS, "python_agent_internal_token", "")
+    payload = {
+        "serviceType": "RESOURCE_GENERATION",
+        "params": {"resourceType": "DOCUMENT"},
+        "taskId": "task-auth",
+        "traceId": "trace-auth",
+    }
+
+    response = client.post("/internal/smart-engine/stream", json=payload, headers=INTERNAL_HEADERS)
+
+    assert response.status_code == 503
 
 
 def test_sse_event_serialization() -> None:
@@ -115,6 +147,7 @@ def test_stream_endpoint_returns_expected_event_order(client, monkeypatch) -> No
         "POST",
         "/internal/smart-engine/stream",
         json=payload,
+        headers=INTERNAL_HEADERS,
     ) as response:
         assert response.status_code == 200
         assert response.headers["content-type"].startswith("text/event-stream")
@@ -157,6 +190,7 @@ def test_stream_endpoint_supports_video_generation_events(client) -> None:
         "POST",
         "/internal/smart-engine/stream",
         json=payload,
+        headers=INTERNAL_HEADERS,
     ) as response:
         assert response.status_code == 200
         lines = [line for line in response.iter_lines() if line]
@@ -183,7 +217,7 @@ def test_stream_endpoint_rejects_unknown_service_type(client) -> None:
         "traceId": "trace-unknown",
     }
 
-    response = client.post("/internal/smart-engine/stream", json=payload)
+    response = client.post("/internal/smart-engine/stream", json=payload, headers=INTERNAL_HEADERS)
 
     assert response.status_code == 400
 
@@ -234,6 +268,7 @@ def test_stream_endpoint_accepts_legacy_java_wrapped_payload(client) -> None:
         "POST",
         "/internal/smart-engine/stream",
         json=payload,
+        headers=INTERNAL_HEADERS,
     ) as response:
         assert response.status_code == 200
         lines = [line for line in response.iter_lines() if line]
@@ -266,6 +301,7 @@ def test_stream_endpoint_emits_error_and_failed_done_when_supervisor_raises(clie
         "POST",
         "/internal/smart-engine/stream",
         json=payload,
+        headers=INTERNAL_HEADERS,
     ) as response:
         assert response.status_code == 200
         lines = [line for line in response.iter_lines() if line]

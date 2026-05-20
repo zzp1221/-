@@ -78,8 +78,35 @@ def test_supervisor_routes_tutoring_through_profile_update() -> None:
         "query_rewrite",
         "retrieval",
         "tutor",
-        "profile",
     ]
+    assert route.retrieval_strategy == "LOCAL_HYBRID"
+
+
+def test_supervisor_routes_small_talk_to_tutor_only() -> None:
+    supervisor = PythonAgentSupervisor()
+
+    route = supervisor.resolve_route("TUTORING", {"query": "你好"})
+
+    assert route.agent_names == ["tutor"]
+    assert route.query_type == "SMALL_TALK"
+    assert route.retrieval_strategy == "NONE"
+
+
+def test_supervisor_routes_deep_reasoning_to_deep_agent() -> None:
+    supervisor = PythonAgentSupervisor()
+
+    route = supervisor.resolve_route(
+        "TUTORING",
+        {"query": "完整分析联合索引失效的所有边界", "reasoningMode": "DEEP"},
+    )
+
+    assert route.agent_names == [
+        "query_rewrite",
+        "retrieval",
+        "image_analysis",
+        "deep_reasoning",
+    ]
+    assert route.retrieval_strategy == "DEEP_EVIDENCE"
 
 
 class _RecordingRewriteAgent(PlaceholderAgent):
@@ -714,8 +741,14 @@ async def test_supervisor_runs_tutoring_profile_in_background() -> None:
     request = EngineStreamRequest(
         serviceType="TUTORING",
         params={
-            "query": "联合索引",
-            "messages": [{"role": "user", "content": "老师，我不太懂联合索引"}],
+            "query": "好",
+            "messages": [
+                {"role": "user", "content": "老师，我不太懂联合索引"},
+                {"role": "assistant", "content": "我们先从定义开始"},
+                {"role": "user", "content": "我还是容易做错"},
+                {"role": "assistant", "content": "那我们结合题目来分析"},
+                {"role": "user", "content": "好"},
+            ],
             "learningContext": {"course": "数据库原理", "chapter": "索引"},
             "profile": {"studentLevel": "BASIC"},
             "conversationId": "conv-tutor-background-profile",
@@ -733,6 +766,38 @@ async def test_supervisor_runs_tutoring_profile_in_background() -> None:
         event.event == "progress" and getattr(event.payload, "stage", "") == "profiling"
         for event in events
     )
+
+
+@pytest.mark.asyncio
+async def test_supervisor_skips_tutoring_profile_before_third_turn() -> None:
+    supervisor = PythonAgentSupervisor()
+    profile_agent = _FailingBackgroundProfileAgent()
+    supervisor.agent_registry["query_rewrite"] = _StubRewriteAgent()
+    supervisor.agent_registry["retrieval"] = _StubRetrievalAgent()
+    supervisor.agent_registry["tutor"] = _StubTutorAgent()
+    supervisor.agent_registry["profile"] = profile_agent
+    request = EngineStreamRequest(
+        serviceType="TUTORING",
+        params={
+            "query": "我还是容易做错",
+            "messages": [
+                {"role": "user", "content": "老师，我不太懂联合索引"},
+                {"role": "assistant", "content": "我们先从定义开始"},
+                {"role": "user", "content": "我还是容易做错"},
+            ],
+            "learningContext": {"course": "数据库原理", "chapter": "索引"},
+            "profile": {"studentLevel": "BASIC"},
+            "conversationId": "conv-tutor-background-profile-skip",
+        },
+        taskId="task-tutor-background-profile-skip",
+        traceId="trace-tutor-background-profile-skip",
+    )
+
+    events = [event async for event in supervisor.stream(request)]
+
+    assert events[-1].event == "done"
+    with pytest.raises(asyncio.TimeoutError):
+        await asyncio.wait_for(profile_agent.started.wait(), timeout=0.2)
 
 
 @pytest.mark.asyncio

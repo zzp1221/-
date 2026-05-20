@@ -6,6 +6,7 @@ from src.ai_modules.config import get_settings
 from src.ai_modules.generation import (
     ContentGenerationChain,
     GeneratedCodeAsset,
+    GenerationOutputInvalidError,
     GeneratedMindMap,
     GeneratedSection,
     GeneratedSectionBundle,
@@ -518,6 +519,9 @@ def test_structured_generator_uses_spark_openai_compatible_config(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setenv("MODEL_PROVIDER", "spark")
+    monkeypatch.setenv("ACTIVE_PROVIDER", "spark")
+    monkeypatch.setenv("GENERATION_LLM__PROVIDER", "spark")
+    monkeypatch.setenv("GENERATION_LLM__MODEL", "")
     monkeypatch.setenv("SPARK_API_KEY", "spark-test-key")
     monkeypatch.setenv("SPARK_BASE_URL", "https://spark-api-open.xf-yun.com/v1")
     monkeypatch.setenv("SPARK_MODEL_NAME", "generalv3.5")
@@ -578,3 +582,117 @@ def test_structured_generator_uses_spark_openai_compatible_config(
     assert isinstance(captured["messages"], list)
 
     get_settings.cache_clear()
+
+
+def test_reading_generation_retries_invalid_schema_with_llm(monkeypatch) -> None:
+    calls: list[list[dict[str, str]]] = []
+
+    def fake_post_chat_completion(
+        self,
+        *,
+        messages,
+        temperature=0.3,
+        max_tokens=None,
+        response_format=None,
+    ):
+        del self, temperature, max_tokens, response_format
+        calls.append(messages)
+        content = "{}"
+        if len(calls) == 2:
+            content = '{"title":"LLM fixed reading","summary":"LLM summary","body":"LLM body"}'
+        return {"choices": [{"message": {"content": content}}], "usage": {}}
+
+    monkeypatch.setattr(
+        OpenAICompatibleStructuredGenerator,
+        "_post_chat_completion",
+        fake_post_chat_completion,
+    )
+
+    generator = OpenAICompatibleStructuredGenerator(api_key="test-key", max_retries=1, backoff_seconds=0)
+    asset = generator.generate_reading_asset(
+        title="reading",
+        topic="Java",
+        snapshot={"current_course": "Java"},
+        sources=[{"title": "Java source"}],
+    )
+
+    assert asset.title == "LLM fixed reading"
+    assert asset.summary == "LLM summary"
+    assert asset.body == "LLM body"
+    assert len(calls) == 2
+    assert "previous LLM output was invalid".lower() in calls[1][1]["content"].lower()
+
+
+def test_reading_generation_raises_when_llm_schema_remains_invalid(monkeypatch) -> None:
+    calls: list[list[dict[str, str]]] = []
+
+    def fake_post_chat_completion(
+        self,
+        *,
+        messages,
+        temperature=0.3,
+        max_tokens=None,
+        response_format=None,
+    ):
+        del self, temperature, max_tokens, response_format
+        calls.append(messages)
+        return {"choices": [{"message": {"content": "{}"}}], "usage": {}}
+
+    monkeypatch.setattr(
+        OpenAICompatibleStructuredGenerator,
+        "_post_chat_completion",
+        fake_post_chat_completion,
+    )
+
+    generator = OpenAICompatibleStructuredGenerator(api_key="test-key", max_retries=1, backoff_seconds=0)
+
+    with pytest.raises(GenerationOutputInvalidError):
+        generator.generate_reading_asset(
+            title="reading",
+            topic="Java",
+            snapshot={"current_course": "Java"},
+            sources=[{"title": "Java source"}],
+        )
+
+    assert len(calls) == 2
+
+
+def test_document_generation_retries_invalid_sections_with_llm(monkeypatch) -> None:
+    calls: list[list[dict[str, str]]] = []
+
+    def fake_post_chat_completion(
+        self,
+        *,
+        messages,
+        temperature=0.3,
+        max_tokens=None,
+        response_format=None,
+    ):
+        del self, temperature, max_tokens, response_format
+        calls.append(messages)
+        content = "{}"
+        if len(calls) == 2:
+            content = (
+                '{"sections":[{"title":"LLM section","body":"LLM body",'
+                '"tips":["LLM tip"],"citations":["LLM citation"]}]}'
+            )
+        return {"choices": [{"message": {"content": content}}], "usage": {}}
+
+    monkeypatch.setattr(
+        OpenAICompatibleStructuredGenerator,
+        "_post_chat_completion",
+        fake_post_chat_completion,
+    )
+
+    generator = OpenAICompatibleStructuredGenerator(api_key="test-key", max_retries=1, backoff_seconds=0)
+    bundle = generator.generate_document_sections(
+        title="document",
+        topic="Java",
+        snapshot={"current_course": "Java"},
+        section_plans=[{"title": "section", "objective": "learn", "sourceTitles": ["Java source"]}],
+        sources=[{"title": "Java source"}],
+    )
+
+    assert len(calls) == 2
+    assert bundle.sections[0].title == "LLM section"
+    assert bundle.sections[0].body == "LLM body"

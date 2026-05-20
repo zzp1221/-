@@ -70,6 +70,7 @@ export interface BrowserVideoRenderTaskState {
 let rendererIframePromise: Promise<HTMLIFrameElement> | null = null;
 let rendererReadyResolver: (() => void) | null = null;
 let rendererReadyPromise: Promise<void> | null = null;
+let rendererContentWindow: Window | null = null;
 let activeJob: PendingRenderJob | null = null;
 let rendererMessageBound = false;
 const renderTaskStates = new Map<string, BrowserVideoRenderTaskState>();
@@ -188,6 +189,9 @@ function ensureMessageListener(): void {
 }
 
 function handleRendererMessage(event: MessageEvent<RendererMessage>): void {
+  if (event.origin !== window.location.origin || event.source !== rendererContentWindow) {
+    return;
+  }
   if (!event.data || typeof event.data !== 'object') {
     return;
   }
@@ -272,6 +276,7 @@ async function ensureRendererIframe(): Promise<HTMLIFrameElement> {
       iframe.style.border = '0';
       iframe.style.left = '-9999px';
       iframe.style.top = '-9999px';
+      rendererContentWindow = iframe.contentWindow;
       document.body.appendChild(iframe);
       return iframe;
     });

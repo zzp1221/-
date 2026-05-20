@@ -91,32 +91,6 @@ class RuleBasedQueryRewriteLLM(_BaseSequenceLLM):
         return {}
 
 
-class RuleBasedRetrievalLLM(_BaseSequenceLLM):
-    tool_sequence = (
-        "grep_search",
-        "vector_search",
-        "graph_expand",
-        "rrf_merge",
-        "summarize_sources",
-    )
-
-    def _build_tool_input(
-        self,
-        *,
-        tool_name: str,
-        messages: list[dict[str, Any]],
-    ) -> dict[str, Any]:
-        if tool_name == "rrf_merge":
-            return {
-                "grep": self._tool_output(messages, "grep_search"),
-                "vector": self._tool_output(messages, "vector_search"),
-                "graph": self._tool_output(messages, "graph_expand"),
-            }
-        if tool_name == "summarize_sources":
-            return self._tool_output(messages, "rrf_merge")
-        return {}
-
-
 class RuleBasedGenerationLLM(_BaseSequenceLLM):
     tool_sequence = (
         "generate_outline",
@@ -149,21 +123,6 @@ class QueryRewriteToolLLMClientFactory:
             )
             return create_tool_calling_llm(model_name=model_name, provider_name=provider_name)
         return RuleBasedQueryRewriteLLM()
-
-
-class RetrievalToolLLMClientFactory:
-    @staticmethod
-    def create() -> Any:
-        settings = get_settings()
-        provider_name = settings.resolve_component_provider("retrieval_llm")
-        if settings.provider_ready(provider_name):
-            model_name = settings.resolve_component_model(
-                "retrieval_llm",
-                default_logical_model="fast_model",
-                provider_name=provider_name,
-            )
-            return create_tool_calling_llm(model_name=model_name, provider_name=provider_name)
-        return RuleBasedRetrievalLLM()
 
 
 class GenerationToolLLMClientFactory:

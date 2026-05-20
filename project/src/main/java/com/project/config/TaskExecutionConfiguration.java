@@ -18,11 +18,6 @@ import org.springframework.scheduling.annotation.EnableScheduling;
 public class TaskExecutionConfiguration {
 
     @Bean
-    public TaskExecutor smartEngineTaskExecutor() {
-        return buildExecutor("smart-engine-", 16);
-    }
-
-    @Bean
     public TaskExecutor conversationTaskExecutor() {
         // 为辅导流预留独立容量，避免排在耗时较长的智学引擎任务之后。
         return buildExecutor("conversation-", 8);

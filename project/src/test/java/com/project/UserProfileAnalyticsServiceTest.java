@@ -1,6 +1,7 @@
 package com.project;
 
 import com.project.api.profile.dto.ProfileBehaviorTrendPoint;
+import com.project.api.profile.dto.ProfileResourcePreferenceResponse;
 import com.project.api.profile.dto.UserProfileAnalyticsResponse;
 import com.project.application.profile.UserProfileAnalyticsService;
 import com.project.domain.profile.UserProfileCurrent;
@@ -41,7 +42,7 @@ class UserProfileAnalyticsServiceTest {
 
     @Test
     void returnsEmptyTrendWhenNoDataExists() {
-        stubQueries(List.of(), List.of(), List.of(), List.of(), List.of());
+        stubQueries(List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of());
         when(profileRepository.findById(userId)).thenReturn(Optional.empty());
 
         UserProfileAnalyticsResponse response = service.getAnalytics(currentUser, userId, 30);
@@ -57,11 +58,15 @@ class UserProfileAnalyticsServiceTest {
         });
         assertThat(response.systemAnalysis().dataAvailable()).isFalse();
         assertThat(response.systemAnalysis().strongestSkill()).isNull();
+        assertThat(response.preferenceAnalytics().resourcePreferences()).hasSize(6);
+        assertThat(response.preferenceAnalytics().resourcePreferences())
+            .allSatisfy(item -> assertThat(item.identified()).isFalse());
+        assertThat(response.preferenceAnalytics().explanationPreference().identified()).isFalse();
     }
 
     @Test
     void derivesSystemAnalysisFromProfileOnly() {
-        stubQueries(List.of(), List.of(), List.of(), List.of(), List.of());
+        stubQueries(List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of());
         when(profileRepository.findById(userId)).thenReturn(Optional.of(profile(Map.of(
             "skillMastery", Map.of("数据库索引", 0.88, "事务隔离", 0.54),
             "weakPointDetails", List.of(Map.of("topic", "事务隔离"))
@@ -86,6 +91,8 @@ class UserProfileAnalyticsServiceTest {
             List.of(),
             List.of(Map.of("day", today, "submission_count", 4, "correct_count", 3)),
             List.of(),
+            List.of(),
+            List.of(),
             List.of()
         );
         when(profileRepository.findById(userId)).thenReturn(Optional.empty());
@@ -107,7 +114,9 @@ class UserProfileAnalyticsServiceTest {
             List.of(),
             List.of(),
             List.of(Map.of("day", today, "value", 2)),
-            List.of(Map.of("day", today, "value", 5))
+            List.of(Map.of("day", today, "value", 5)),
+            List.of(),
+            List.of()
         );
         when(profileRepository.findById(userId)).thenReturn(Optional.empty());
 
@@ -120,10 +129,114 @@ class UserProfileAnalyticsServiceTest {
         assertThat(response.systemAnalysis().coverage().reviewCount()).isEqualTo(5);
     }
 
+    @Test
+    void derivesPreferenceEvidenceFromProfileOnly() {
+        stubQueries(List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of());
+        when(profileRepository.findById(userId)).thenReturn(Optional.of(profile(Map.of(
+            "preferredResourceTypes", List.of("EXPLANATION", "VIDEO"),
+            "explanationPreference", "循序渐进"
+        ))));
+
+        UserProfileAnalyticsResponse response = service.getAnalytics(currentUser, userId, 30);
+
+        ProfileResourcePreferenceResponse explanation = resourcePreference(response, "EXPLANATION");
+        assertThat(explanation.identified()).isTrue();
+        assertThat(explanation.profileMentioned()).isTrue();
+        assertThat(explanation.requestCount()).isZero();
+        assertThat(explanation.evidenceLabel()).isEqualTo("画像已识别，暂无近期行为证据");
+        assertThat(resourcePreference(response, "VIDEO").profileMentioned()).isTrue();
+        assertThat(response.preferenceAnalytics().explanationPreference().identified()).isTrue();
+        assertThat(response.preferenceAnalytics().explanationPreference().value()).isEqualTo("循序渐进");
+        assertThat(response.preferenceAnalytics().explanationPreference().source()).isEqualTo("profile_json.explanationPreference");
+    }
+
+    @Test
+    void aggregatesPreferenceRequestEvidence() {
+        OffsetDateTime now = OffsetDateTime.now();
+        stubQueries(
+            List.of(),
+            List.of(),
+            List.of(),
+            List.of(),
+            List.of(),
+            List.of(
+                Map.of("resource_type", "CODE_CASE", "request_count", 2, "last_used_at", now),
+                Map.of("resource_type", "VIDEO", "request_count", 1, "last_used_at", now.minusHours(1))
+            ),
+            List.of()
+        );
+        when(profileRepository.findById(userId)).thenReturn(Optional.empty());
+
+        UserProfileAnalyticsResponse response = service.getAnalytics(currentUser, userId, 30);
+
+        ProfileResourcePreferenceResponse codeCase = resourcePreference(response, "CODE_CASE");
+        assertThat(codeCase.identified()).isTrue();
+        assertThat(codeCase.profileMentioned()).isFalse();
+        assertThat(codeCase.requestCount()).isEqualTo(2);
+        assertThat(codeCase.generatedCount()).isZero();
+        assertThat(codeCase.downloadCount()).isZero();
+        assertThat(codeCase.lastUsedAt()).isEqualTo(now);
+        assertThat(codeCase.evidenceLabel()).isEqualTo("已识别 · 近30天请求 2 次 / 生成 0 次 / 下载 0 次");
+        assertThat(resourcePreference(response, "VIDEO").requestCount()).isEqualTo(1);
+    }
+
+    @Test
+    void aggregatesPreferenceArtifactAndDownloadEvidence() {
+        OffsetDateTime now = OffsetDateTime.now();
+        stubQueries(
+            List.of(),
+            List.of(),
+            List.of(),
+            List.of(),
+            List.of(),
+            List.of(),
+            List.of(Map.of(
+                "resource_type", "MINDMAP",
+                "generated_count", 2,
+                "download_count", 3,
+                "last_used_at", now
+            ))
+        );
+        when(profileRepository.findById(userId)).thenReturn(Optional.empty());
+
+        UserProfileAnalyticsResponse response = service.getAnalytics(currentUser, userId, 30);
+
+        ProfileResourcePreferenceResponse mindmap = resourcePreference(response, "MINDMAP");
+        assertThat(mindmap.identified()).isTrue();
+        assertThat(mindmap.generatedCount()).isEqualTo(2);
+        assertThat(mindmap.downloadCount()).isEqualTo(3);
+        assertThat(mindmap.lastUsedAt()).isEqualTo(now);
+        assertThat(mindmap.evidenceLabel()).isEqualTo("已识别 · 近30天请求 0 次 / 生成 2 次 / 下载 3 次");
+    }
+
     @SafeVarargs
     private void stubQueries(List<Map<String, Object>>... queryResults) {
         when(jdbcTemplate.queryForList(anyString(), any(SqlParameterSource.class)))
-            .thenReturn(queryResults[0], queryResults[1], queryResults[2], queryResults[3], queryResults[4]);
+            .thenAnswer(invocation -> {
+                String sql = invocation.getArgument(0);
+                if (sql.contains("FROM app.qna_session")) {
+                    return queryResults[0];
+                }
+                if (sql.contains("FROM app.smart_engine_task") && !sql.contains("preference_source")) {
+                    return queryResults[1];
+                }
+                if (sql.contains("FROM app.practice_submission")) {
+                    return queryResults[2];
+                }
+                if (sql.contains("FROM app.mistake_record")) {
+                    return queryResults[3];
+                }
+                if (sql.contains("FROM app.mistake_review_result")) {
+                    return queryResults[4];
+                }
+                if (sql.contains("preference_source")) {
+                    return queryResults[5];
+                }
+                if (sql.contains("FROM app.generated_artifact")) {
+                    return queryResults[6];
+                }
+                return List.of();
+            });
     }
 
     private UserProfileCurrent profile(Map<String, Object> profileJson) {
@@ -139,6 +252,15 @@ class UserProfileAnalyticsServiceTest {
         return response.behaviorTrend()
             .stream()
             .filter(point -> point.date().equals(day))
+            .findFirst()
+            .orElseThrow();
+    }
+
+    private ProfileResourcePreferenceResponse resourcePreference(UserProfileAnalyticsResponse response, String type) {
+        return response.preferenceAnalytics()
+            .resourcePreferences()
+            .stream()
+            .filter(item -> item.type().equals(type))
             .findFirst()
             .orElseThrow();
     }

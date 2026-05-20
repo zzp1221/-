@@ -14,7 +14,9 @@
 
 **学习路径规划** — 基于评估结果自动生成个性化学习计划
 
-**练习与评测** — 自动出题、评分、反馈，客观题字符串比对 + 主观题本地 GGUF 模型评分
+**练习与评测** — 自动出题、评分、反馈，客观题字符串比对 + 主观题可选本地 GGUF 模型评分
+
+**错题本** — SM-2 间隔重复算法驱动的错题管理与复习调度，数据库触发器自动收录错题
 
 ## 技术架构
 
@@ -62,6 +64,7 @@
 - **KnowledgeGuardHook**: 知识库守卫钩子，拦截所有 `generate_*` 工具调用，自动检索知识依据；无证据则拒绝生成，从源头防止 LLM 幻觉
 - **Supervisor 路由编排**: 根据 `serviceType` + `resourceType` 动态解析 Agent 链，支持 `{generation_agent}` 动态槽位
 - **工具输出智能压缩**: 字符串/列表/字典三级截断，防止工具返回内容撑爆上下文窗口
+- **Skill 系统** (参考 [sanyuan-skills](https://github.com/sanyuan0704/sanyuan-skills)): Agent prompt 通过 `skills/{agent}/SKILL.md` 文件管理 (YAML frontmatter + Markdown body)，运行时注入 `{{snapshot_context}}` 学生画像上下文，prompt 迭代独立于代码变更
 
 > 详细设计见 [系统架构文档](docs/architecture.md) 第七章。
 
@@ -72,13 +75,14 @@
 | 路由 | Agent 链 | 说明 |
 |---|---|---|
 | 智能辅导 | query_rewrite → retrieval → image_analysis → tutor → profile | 多轮对话辅导，自动更新画像 |
-| 资源生成 | query_rewrite → retrieval → {生成 Agent} | 根据资源类型动态选择生成器 |
-| 视频生成 | query_rewrite → retrieval → video_generator | 脚本生成 → TTS → 浏览器端 DH Live 渲染 |
-| 练习评判 | practice → judge → profile | 自动出题、评分、反馈 |
-| 路径规划 | path_planning | 基于评估生成学习计划 |
-| 学习评估 | evaluation | 综合评估 |
-| 画像构建 | tutor → profile | 对话中构建用户画像 |
-| 资源推送 | resource_push | 匹配现成学习资源 |
+| 深度推理 | query_rewrite → retrieval → image_analysis → deep_reasoning → profile | 四步推理：分析→推理→自审→最终回答 |
+| 资源生成 | query_rewrite → retrieval → {生成 Agent} → critic → safety | 根据资源类型动态选择生成器 + 质量/安全审查 |
+| 视频生成 | query_rewrite → retrieval → video_generator → critic → safety | 脚本生成 → TTS → 浏览器端 DH Live 渲染 |
+| 练习评判 | practice → judge → profile | 自动出题、评分、反馈，错题自动收录错题本 |
+| 路径规划 | path_planning | 基于画像生成个性化学习计划 |
+| 学习评测 | query_rewrite → retrieval → evaluation | 4 维度交互式评估 |
+| 画像构建 | profile | 从对话/练习/评测信号构建多维度画像 |
+| 资源推送 | resource_push | 匹配现成学习资源 (Tavily 搜索) |
 
 支持 3 家 LLM 提供商，**可按 Agent 组件独立配置模型**：
 
@@ -121,7 +125,7 @@ wiki/*.md ──①──▶ rag.wiki_page ──②──▶ rag.knowledge_docu
 
 ### 检索架构
 
-三通道混合检索 + RRF 融合排序：
+三通道混合检索 + RRF 融合排序（参考 [Karpathy LLM Wiki 方法论与三通道混合检索实践](https://www.cnblogs.com/jtuki/p/19861920)）：
 
 ```
 用户查询
@@ -134,8 +138,12 @@ wiki/*.md ──①──▶ rag.wiki_page ──②──▶ rag.knowledge_docu
   │
   ├─ Channel C: GraphExpander ── 知识图谱扩展（从 A/B 的 top 结果出发，沿 wiki_link 扩展）
   │
-  └─ RRFFusion ─── 加权 RRF 融合，输出最终排序
+  ├─ Channel D: TavilySearcher ─ 联网搜索（可选，补充最新信息）
+  │
+  └─ RRFFusion ─── 加权 RRF 融合 (k=60, grep:vector:graph:web = 3.0:5.0:0.5:1.5)
 ```
+
+> 核心发现：在中文技术术语检索中，字面匹配 (grep) 优于语义相似度 (向量)，因此 grep 权重显著高于纯向量方案。
 
 ## 本地 Judge 模型
 
@@ -150,7 +158,37 @@ Judge Agent 的客观题判分已改为字符串比对（零 LLM 调用），主
 | 模型大小 | 610MB |
 | 推理引擎 | llama-cpp-python |
 | 推理速度 | ~3s/次（CPU） |
-| 启用方式 | `.env` 中 `ENABLE_LOCAL_JUDGE=true` |
+| 默认状态 | 关闭，主观题优先使用配置的 LLM Provider |
+| Docker 启用方式 | 叠加 `docker-compose.local-judge.yml` |
+| 模型放置路径 | `./models/judge_model.gguf` |
+| 容器内路径 | `/app/models/judge_model.gguf` |
+
+本地 Judge 是可选部署，不会影响默认云端/兼容 API 部署路径。启用时将 `judge_model.gguf` 放入项目根目录的 `models/`，再叠加本地 Judge compose 文件：
+
+```bash
+mkdir -p models
+# 将 judge_model.gguf 放到 ./models/judge_model.gguf
+
+docker compose -f docker-compose.yml -f docker-compose.local-judge.yml up -d --build
+```
+
+如果基础服务已经在运行，只切换 Python Agent 和 Java 后端即可：
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.local-judge.yml up -d --build python-agent app
+```
+
+相关环境变量见 `.env.example`：
+
+```env
+INSTALL_LOCAL_JUDGE=true
+LOCAL_JUDGE_MODEL_DIR=./models
+LOCAL_JUDGE_MODEL_PATH=/app/models/judge_model.gguf
+LOCAL_JUDGE_WORKERS=1
+PY_AGENT_LOCAL_JUDGE_IMAGE=zhixue-python-agent:local-judge
+```
+
+> `docker-compose.local-judge.yml` 会强制 `ENABLE_LOCAL_JUDGE=true`，即使 `.env` 中仍保留默认的 `ENABLE_LOCAL_JUDGE=false`。默认单 worker 是为了避免多个 Uvicorn worker 重复加载 GGUF 模型，占用过多内存。
 
 ## 快速开始
 
@@ -159,24 +197,29 @@ Judge Agent 的客观题判分已改为字符串比对（零 LLM 调用），主
 - Docker 24+ & Docker Compose v2.20+
 - 至少一个 LLM API Key（OpenAI 兼容格式）
 
+完整部署步骤见 [部署指南](docs/deployment.md)。Java 后端镜像会在 Docker 构建阶段自动编译，不需要先在宿主机执行 Maven 打包。
+
 ### Docker Compose 一键启动
 
 ```bash
 # 1. 克隆并配置环境变量
 git clone <repo-url> && cd zhixue-engine
 cp .env.example .env
-# 编辑 .env，设置至少一个 LLM API Key
+# 编辑 .env，至少设置 POSTGRES_PASSWORD、APP_JWT_SECRET、PYTHON_AGENT_INTERNAL_TOKEN 和一个 LLM API Key
 
-# 2. 构建 Java 后端
-cd project && mvn package -DskipTests && cd ..
-
-# 3. 启动全部服务
+# 2. 启动全部服务
 docker compose up -d --build
 
-# 4. 等待健康检查通过（约 30-60 秒）
+# 3. 等待健康检查通过（约 30-60 秒）
 curl -s http://localhost:8081/actuator/health   # Java 后端
 curl -s http://localhost:8000/health             # Python Agent
 # 浏览器打开 http://localhost 访问前端
+```
+
+如需启用本地主观题 Judge，将 `judge_model.gguf` 放到 `./models/` 后使用：
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.local-judge.yml up -d --build
 ```
 
 首次启动时，PostgreSQL 容器会自动执行：
@@ -223,11 +266,12 @@ cd frontend && npx tsc --noEmit && npx vite build
 ```
 ├── frontend/                # React 前端
 │   ├── Dockerfile           # 多阶段构建 (node → nginx:1.27-alpine)
-│   ├── nginx.conf           # SPA 路由 + API 代理 + SSE 透传
+│   ├── nginx.conf           # SPA 路由 + API 代理 + SSE 透传 (30min 长连接)
+│   ├── public/dh_live/      # DH Live WASM SDK (浏览器端数字人渲染)
 │   └── src/
 │       ├── api/             # API 调用 & SSE 客户端
 │       ├── components/      # UI 组件 (MarkdownRenderer, MermaidDiagram, RadarChart, VideoCard...)
-│       └── pages/           # 页面 (对话、智能引擎、学习工作室)
+│       └── pages/           # 页面 (Q&A对话、引擎服务、错题本、学习画像)
 │
 ├── project/                 # Java Spring Boot 后端 (Clean Architecture)
 │   └── src/main/java/com/project/
@@ -255,6 +299,7 @@ cd frontend && npx tsc --noEmit && npx vite build
 │   │   ├── memory/          # 对话记忆 & 学习画像
 │   │   ├── generation/      # 内容生成链 (6 种资源格式)
 │   │   └── prompts/         # Agent 提示词模板
+│   ├── skills/              # Agent Skill 定义 (SKILL.md, 参考 sanyuan-skills)
 │   ├── knowledge/           # 知识库导入 & 向量化脚本
 │   ├── retrieval/           # 检索模块 (grep/vector/graph/RRF)
 │   ├── recommendation/      # 学习资源推荐引擎
@@ -263,8 +308,10 @@ cd frontend && npx tsc --noEmit && npx vite build
 ├── wiki/                    # 知识库源文件 (20 门学科 Markdown)
 ├── contracts/               # SSE 事件 JSON Schema 契约
 ├── migrations/              # 数据库迁移脚本
+├── docs/                    # 文档 (架构文档、部署文档、技术报告、实验日志)
 ├── tests/                   # 端到端测试
 ├── docker-compose.yml       # 6 服务编排
+├── docker-compose.local-judge.yml # 可选本地 GGUF Judge overlay
 ├── init.sql                 # PostgreSQL 完整 DDL
 └── vector_data.dump         # 预置向量数据 (pg_dump)
 ```
@@ -281,6 +328,19 @@ cd frontend && npx tsc --noEmit && npx vite build
 - **知识守卫钩子** — 生成前强制检索知识依据，防止幻觉
 
 
+## 参考资料
+
+本项目在设计与实现过程中参考了以下开源项目和技术文章：
+
+| 参考来源 | 本项目对应模块 |
+|----------|----------------|
+| [用 Karpathy LLM Wiki 方法论，为 AI Agent 系统构建结构化知识层](https://www.cnblogs.com/jtuki/p/19861920) | RAG 三通道混合检索架构、RRF 融合权重设计、FMM 分词策略 |
+| [sanyuan-skills (Claude Code 自定义技能)](https://github.com/sanyuan0704/sanyuan-skills) | Agent Skill 系统 (SKILL.md 文件格式、prompt 工程化管理) |
+| [DH_live (浏览器端数字人)](https://github.com/kleinlee/DH_live) | 浏览器端 DH Live WASM 视频渲染、postMessage 通信协议 |
+| Claude Code Agent 运行时架构 | AgentCoreLoop、ToolRegistry、HookChain、PermissionPolicy、RecoveryEngine |
+
+> 详细参考说明见 [项目技术报告](docs/teacher_guide.md) 开头的"参考资料与设计来源"章节。
+
 ## 开源许可
 
-本项目使用了 [DH_live](https://github.com/DeepTechLab/DH_live) 开源项目，该项目基于 [MIT License](https://opensource.org/licenses/MIT) 许可。
+本项目使用了 [DH_live](https://github.com/kleinlee/DH_live) 开源项目，该项目基于 [MIT License](https://opensource.org/licenses/MIT) 许可。

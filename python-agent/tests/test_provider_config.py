@@ -24,10 +24,8 @@ from src.ai_modules.llms.tutor_llm import RuleBasedTutorLLM, TutorLLMClientFacto
 from src.ai_modules.llms.workflow_llm import (
     GenerationToolLLMClientFactory,
     QueryRewriteToolLLMClientFactory,
-    RetrievalToolLLMClientFactory,
     RuleBasedGenerationLLM,
     RuleBasedQueryRewriteLLM,
-    RuleBasedRetrievalLLM,
 )
 
 
@@ -53,6 +51,35 @@ def test_settings_build_default_model_routing_config() -> None:
     assert routing.active_provider == "openai_compatible"
     assert routing.resolve_model("main_chat_model") == "qwen3.6-plus"
     assert routing.resolve_model("fast_model", "spark") == "Spark X2-Flash"
+
+
+def test_settings_accepts_ai_openai_compatible_base_url_alias() -> None:
+    settings = Settings(
+        AI_OPENAI_COMPATIBLE_BASE_URL="https://token-plan-cn.xiaomimimo.com/v1",
+        OPENAI_COMPATIBLE_API_KEY="key",
+    )
+
+    assert settings.openai_compatible_base_url == "https://token-plan-cn.xiaomimimo.com/v1"
+
+
+def test_settings_resolves_explicit_embedding_api_key() -> None:
+    settings = Settings(
+        EMBEDDING_API_KEY="embedding-key",
+        OPENAI_COMPATIBLE_API_KEY="chat-key",
+    )
+
+    assert settings.embedding_api_key == "embedding-key"
+    assert settings.effective_embedding_api_key == "embedding-key"
+
+
+def test_settings_accepts_dashscope_embedding_api_key_alias() -> None:
+    settings = Settings(
+        DASHSCOPE_API_KEY="dashscope-key",
+        OPENAI_COMPATIBLE_API_KEY="chat-key",
+    )
+
+    assert settings.embedding_api_key == "dashscope-key"
+    assert settings.effective_embedding_api_key == "dashscope-key"
 
 
 def test_settings_loads_model_routing_config_from_yaml(tmp_path: Path) -> None:
@@ -143,7 +170,6 @@ def test_tool_orchestration_factories_fallback_to_rule_based_clients_without_pro
     monkeypatch.setattr(agent_models, "get_settings", lambda: Settings(OPENAI_COMPATIBLE_API_KEY=""))
 
     assert isinstance(QueryRewriteToolLLMClientFactory.create(), RuleBasedQueryRewriteLLM)
-    assert isinstance(RetrievalToolLLMClientFactory.create(), RuleBasedRetrievalLLM)
     assert isinstance(GenerationToolLLMClientFactory.create(), RuleBasedGenerationLLM)
     assert isinstance(PracticeLLMClientFactory.create(), RuleBasedPracticeLLM)
     assert isinstance(JudgeLLMClientFactory.create(), RuleBasedJudgeLLM)
@@ -152,6 +178,12 @@ def test_tool_orchestration_factories_fallback_to_rule_based_clients_without_pro
     assert isinstance(TutorLLMClientFactory.create(), RuleBasedTutorLLM)
     assert isinstance(PlanningLLMClientFactory.create(), RuleBasedPlanningLLM)
     assert isinstance(ReviewLLMClientFactory.create(), RuleBasedReviewLLM)
+
+
+def test_tutor_runtime_candidates_exclude_rule_based_without_provider_key(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(tutor_llm, "get_settings", lambda: Settings(OPENAI_COMPATIBLE_API_KEY=""))
+
+    assert TutorLLMClientFactory.create_llm_candidates() == []
 
 
 def test_tool_orchestration_factories_use_provider_aware_clients_when_provider_ready(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -163,7 +195,6 @@ def test_tool_orchestration_factories_use_provider_aware_clients_when_provider_r
     monkeypatch.setattr(agent_models, "get_settings", lambda: ready_settings)
 
     assert isinstance(QueryRewriteToolLLMClientFactory.create(), OpenAICompatibleToolCallingLLM)
-    assert isinstance(RetrievalToolLLMClientFactory.create(), OpenAICompatibleToolCallingLLM)
     assert isinstance(GenerationToolLLMClientFactory.create(), OpenAICompatibleToolCallingLLM)
     assert isinstance(PracticeLLMClientFactory.create(), OpenAICompatibleToolCallingLLM)
     assert isinstance(JudgeLLMClientFactory.create(), OpenAICompatibleToolCallingLLM)

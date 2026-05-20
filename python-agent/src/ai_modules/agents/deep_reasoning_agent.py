@@ -70,6 +70,7 @@ class DeepReasoningAgent(TutorAgent):
         input_mode = self._classify_input_mode(
             user_query=user_query,
             recent_dialogue=recent_dialogue,
+            params=params,
         )
         recent_dialogue["inputMode"] = input_mode
         params["recentDialogueContext"] = recent_dialogue

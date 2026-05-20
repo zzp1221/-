@@ -19,6 +19,7 @@ import { getErrorMessage } from '../api/request';
 import {
   smartEngineApi,
   type ProfileBehaviorTrendPoint,
+  type ProfileResourcePreference,
   type UserProfileAnalyticsResponse,
 } from '../api/smartEngine';
 import type { LayoutOutletContext } from '../components/Layout';
@@ -37,6 +38,15 @@ const navItems = [
   { id: 'behavior', label: '学习行为' },
   { id: 'preference', label: '讲解偏好' },
   { id: 'analysis', label: '系统分析' },
+];
+
+const defaultResourcePreferences: ProfileResourcePreference[] = [
+  { type: 'EXPLANATION', label: '讲解文档', identified: false, profileMentioned: false, requestCount: 0, generatedCount: 0, downloadCount: 0, lastUsedAt: null, evidenceLabel: '暂无真实证据' },
+  { type: 'READING', label: '拓展阅读', identified: false, profileMentioned: false, requestCount: 0, generatedCount: 0, downloadCount: 0, lastUsedAt: null, evidenceLabel: '暂无真实证据' },
+  { type: 'CODE_CASE', label: '代码案例', identified: false, profileMentioned: false, requestCount: 0, generatedCount: 0, downloadCount: 0, lastUsedAt: null, evidenceLabel: '暂无真实证据' },
+  { type: 'MINDMAP', label: '思维导图', identified: false, profileMentioned: false, requestCount: 0, generatedCount: 0, downloadCount: 0, lastUsedAt: null, evidenceLabel: '暂无真实证据' },
+  { type: 'QUIZ', label: '练习题', identified: false, profileMentioned: false, requestCount: 0, generatedCount: 0, downloadCount: 0, lastUsedAt: null, evidenceLabel: '暂无真实证据' },
+  { type: 'VIDEO', label: '数字人视频', identified: false, profileMentioned: false, requestCount: 0, generatedCount: 0, downloadCount: 0, lastUsedAt: null, evidenceLabel: '暂无真实证据' },
 ];
 
 export default function ProfilePage() {
@@ -177,6 +187,19 @@ export default function ProfilePage() {
 
   const visibleWeakPoints = showAllWeakPoints ? profile.weakPointRanks : profile.weakPointRanks.slice(0, 5);
   const recommendations = profile.inferredRecommendations.slice(0, 3);
+  const resourcePreferenceCards = buildResourcePreferenceCards(analytics, analyticsLoading, analyticsError);
+  const explanationPreference = analytics?.preferenceAnalytics?.explanationPreference;
+  const explanationValue = explanationPreference?.value || profile.explanationPreference || EMPTY_VALUE;
+  const explanationIdentified = Boolean(explanationPreference?.identified || profile.explanationPreference);
+  const explanationDetail = analyticsLoading
+    ? '正在读取讲解方式证据'
+    : analyticsError
+      ? '讲解方式证据读取失败'
+      : explanationPreference?.identified
+        ? `来源：${explanationPreference.source}`
+        : profile.explanationPreference
+          ? '来源：当前画像字段'
+          : '暂无真实证据';
 
   return (
     <ProfileShell>
@@ -310,16 +333,25 @@ export default function ProfilePage() {
               </section>
 
               <section id="preference" className="rounded-2xl border border-blue-100/80 bg-white/85 p-5 shadow-sm shadow-blue-100/60 dark:border-slate-800 dark:bg-slate-900/80">
-                <SectionTitle title="讲解偏好详情" subtitle="不展示未接入的偏好百分比" />
+                <SectionTitle title="讲解偏好详情" subtitle="展示真实证据次数，不展示偏好百分比" />
                 <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-                  {profile.preference.length > 0 ? profile.preference.map((item) => (
-                    <PreferenceCard key={item} title={item} detail="已识别资源偏好" />
-                  )) : (
-                    <EmptyInline text="暂无资源类型偏好。" />
-                  )}
-                  {profile.explanationPreference ? (
-                    <PreferenceCard title="讲解方式" detail={profile.explanationPreference} />
-                  ) : null}
+                  {resourcePreferenceCards.map((item) => (
+                    <PreferenceCard
+                      key={item.type}
+                      title={item.label}
+                      detail={item.evidenceLabel}
+                      meta={formatPreferenceEvidenceMeta(item)}
+                      muted={!item.identified || Boolean(analyticsError)}
+                      status={preferenceStatusLabel(item, analyticsLoading, analyticsError)}
+                    />
+                  ))}
+                  <PreferenceCard
+                    title="讲解方式"
+                    value={explanationValue}
+                    detail={explanationDetail}
+                    muted={!explanationIdentified || Boolean(analyticsError)}
+                    status={analyticsLoading ? '读取中' : analyticsError ? '读取失败' : explanationIdentified ? '已识别' : '暂无证据'}
+                  />
                 </div>
               </section>
 
@@ -540,14 +572,35 @@ function InfoCard({ title, value, detail, muted = false }: { title: string; valu
   );
 }
 
-function PreferenceCard({ title, detail }: { title: string; detail: string }) {
+function PreferenceCard(props: {
+  title: string;
+  detail: string;
+  value?: string;
+  meta?: string;
+  muted?: boolean;
+  status: string;
+}) {
+  const iconTone = props.muted
+    ? 'bg-slate-100 text-slate-400 dark:bg-slate-800 dark:text-slate-500'
+    : 'bg-emerald-50 text-emerald-600 dark:bg-emerald-500/10 dark:text-emerald-300';
   return (
-    <article className="rounded-2xl border border-blue-100 bg-white px-4 py-4 dark:border-slate-800 dark:bg-slate-950/40">
-      <div className="mb-3 inline-flex rounded-xl bg-emerald-50 p-2 text-emerald-600 dark:bg-emerald-500/10 dark:text-emerald-300">
+    <article className={`rounded-2xl border px-4 py-4 ${props.muted ? 'border-slate-200 bg-slate-50/70 dark:border-slate-800 dark:bg-slate-800/40' : 'border-blue-100 bg-white dark:border-slate-800 dark:bg-slate-950/40'}`}>
+      <div className={`mb-3 inline-flex rounded-xl p-2 ${iconTone}`}>
         <BookOpen className="h-4 w-4" />
       </div>
-      <div className="text-sm font-semibold text-slate-900 dark:text-white">{title}</div>
-      <div className="mt-2 text-sm leading-6 text-slate-500 dark:text-slate-400">{detail}</div>
+      <div className="flex items-start justify-between gap-3">
+        <div className="text-sm font-semibold text-slate-900 dark:text-white">{props.title}</div>
+        <span className="shrink-0 rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-slate-500 dark:bg-slate-800 dark:text-slate-400">
+          {props.status}
+        </span>
+      </div>
+      {props.value ? (
+        <div className="mt-2 text-base font-semibold text-slate-800 dark:text-slate-100">{props.value}</div>
+      ) : null}
+      <div className="mt-2 text-sm leading-6 text-slate-500 dark:text-slate-400">{props.detail}</div>
+      {props.meta ? (
+        <div className="mt-3 text-xs leading-5 text-slate-400 dark:text-slate-500">{props.meta}</div>
+      ) : null}
     </article>
   );
 }
@@ -791,6 +844,75 @@ function countBehaviorSignals(habits: ProfileLearningHabits): number {
     habits.noteTaking ? 'noteTaking' : '',
     habits.selfTesting ? 'selfTesting' : '',
   ].filter(Boolean).length;
+}
+
+function buildResourcePreferenceCards(
+  analytics: UserProfileAnalyticsResponse | null,
+  loading: boolean,
+  error: string,
+): ProfileResourcePreference[] {
+  const preferences = analytics?.preferenceAnalytics?.resourcePreferences;
+  if (preferences && preferences.length > 0) {
+    return preferences;
+  }
+  const evidenceLabel = loading
+    ? '正在读取偏好证据'
+    : error
+      ? '偏好证据读取失败'
+      : '暂无真实证据';
+  return defaultResourcePreferences.map((item) => ({
+    ...item,
+    evidenceLabel,
+  }));
+}
+
+function preferenceStatusLabel(
+  item: ProfileResourcePreference,
+  loading: boolean,
+  error: string,
+): string {
+  if (loading) {
+    return '读取中';
+  }
+  if (error) {
+    return '读取失败';
+  }
+  return item.identified ? '已识别' : '暂无证据';
+}
+
+function formatPreferenceEvidenceMeta(item: ProfileResourcePreference): string {
+  const sources: string[] = [];
+  if (item.profileMentioned) {
+    sources.push('画像字段');
+  }
+  if (item.requestCount > 0) {
+    sources.push('任务请求');
+  }
+  if (item.generatedCount > 0 || item.downloadCount > 0) {
+    sources.push('生成产物');
+  }
+  const parts = sources.length > 0 ? [`证据来源：${sources.join('、')}`] : [];
+  const lastUsedAt = formatPreferenceDateTime(item.lastUsedAt);
+  if (lastUsedAt) {
+    parts.push(`最近一次：${lastUsedAt}`);
+  }
+  return parts.join(' · ');
+}
+
+function formatPreferenceDateTime(value?: string | null): string {
+  if (!value) {
+    return '';
+  }
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) {
+    return '';
+  }
+  return parsed.toLocaleString('zh-CN', {
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
 }
 
 function sumTrendActivity(point: ProfileBehaviorTrendPoint): number {

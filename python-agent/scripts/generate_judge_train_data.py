@@ -25,9 +25,19 @@ from src.ai_modules.models.practice import PracticeQuestion, SubjectiveJudgeEval
 OUTPUT = os.path.join(os.path.dirname(__file__), "..", "judge_train_data.json")
 SAMPLE_N = 50
 DB = {
-    "host": "localhost", "port": 5432, "dbname": "zhixue",
-    "user": "postgres", "password": "123456",
+    "host": os.getenv("POSTGRES_HOST", "localhost"),
+    "port": int(os.getenv("POSTGRES_PORT", "5432")),
+    "dbname": os.getenv("POSTGRES_DB", "zhixue"),
+    "user": os.getenv("POSTGRES_USER", "postgres"),
+    "password": os.getenv("POSTGRES_PASSWORD", ""),
 }
+
+
+def required_env(name: str) -> str:
+    value = os.getenv(name, "").strip()
+    if not value:
+        raise RuntimeError(f"{name} must be set before generating judge training data")
+    return value
 
 
 # ── Knowledge extraction ──
@@ -357,9 +367,9 @@ async def main():
     evaluator = OpenAICompatibleSubjectiveJudgeEvaluator()
     # Override client with DeepSeek API — does NOT touch runtime settings
     evaluator.client = OpenAICompatibleClient(
-        api_key="sk-b51b4ee0cfe841dc98910a3b9c8bd6f6",
-        base_url="https://api.deepseek.com/v1",
-        model_name="deepseek-chat",
+        api_key=required_env("JUDGE_TRAIN_API_KEY"),
+        base_url=os.getenv("JUDGE_TRAIN_BASE_URL", "https://api.deepseek.com/v1").strip() or "https://api.deepseek.com/v1",
+        model_name=os.getenv("JUDGE_TRAIN_MODEL_NAME", "deepseek-chat").strip() or "deepseek-chat",
     )
     dataset = []
     for i, (pt, variant) in enumerate(all_samples):

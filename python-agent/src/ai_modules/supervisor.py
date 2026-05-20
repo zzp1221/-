@@ -32,6 +32,14 @@ from src.ai_modules.agents import (
     VideoGenerationAgent,
 )
 from src.ai_modules.models import DonePayload, DoneSSEEvent, EngineStreamRequest, ErrorPayload, ErrorSSEEvent, SSEEvent
+from src.ai_modules.retrieval.query_classifier import (
+    QUERY_TYPE_ANSWER_PREVIOUS,
+    QUERY_TYPE_DEEP_REASONING,
+    QUERY_TYPE_FOLLOW_UP,
+    QUERY_TYPE_IMAGE_QUESTION,
+    QUERY_TYPE_SMALL_TALK,
+    QueryClassifier,
+)
 from src.ai_modules.runtime import SnapshotBuilder, SystemSnapshot
 
 LOGGER = logging.getLogger(__name__)
@@ -42,6 +50,10 @@ class RoutePlan(BaseModel):
 
     service_type: str = Field(alias="serviceType")
     agent_names: list[str] = Field(alias="agentNames")
+    query_type: str | None = Field(default=None, alias="queryType")
+    retrieval_strategy: str | None = Field(default=None, alias="retrievalStrategy")
+    classification_confidence: float | None = Field(default=None, alias="classificationConfidence")
+    classification_reason: str | None = Field(default=None, alias="classificationReason")
 
     model_config = ConfigDict(populate_by_name=True)
 
@@ -72,6 +84,7 @@ class PythonAgentSupervisor:
             "resource_push": ResourcePushAgent(),
         }
         self.route_templates = self._load_route_templates()
+        self.query_classifier = QueryClassifier()
 
     def resolve_route(self, service_type: str, params: dict) -> RoutePlan:
         requested_resource_type = self._resolve_resource_type(params)
@@ -88,14 +101,17 @@ class PythonAgentSupervisor:
         route_template = self.route_templates.get(service_type)
         if route_template is None:
             raise ValueError(f"Unsupported serviceType: {service_type}")
-        if service_type == "TUTORING" and self._is_deep_reasoning(params):
-            route_template = [
-                "query_rewrite",
-                "retrieval",
-                "image_analysis",
-                "deep_reasoning",
-                "profile",
-            ]
+        query_type = None
+        retrieval_strategy = None
+        classification_confidence = None
+        classification_reason = None
+        if service_type == "TUTORING":
+            classification = self.query_classifier.classify(params)
+            query_type = classification.query_type
+            retrieval_strategy = classification.retrieval_strategy
+            classification_confidence = classification.confidence
+            classification_reason = classification.reason
+            route_template = self._resolve_tutoring_route(classification)
         resolved_route = [
             generation_agent if agent_name == "{generation_agent}" else agent_name
             for agent_name in route_template
@@ -104,6 +120,10 @@ class PythonAgentSupervisor:
         return RoutePlan(
             serviceType=service_type,
             agentNames=resolved_route,
+            queryType=query_type,
+            retrievalStrategy=retrieval_strategy,
+            classificationConfidence=classification_confidence,
+            classificationReason=classification_reason,
         )
 
     def _load_route_templates(self) -> dict[str, list[str]]:
@@ -138,11 +158,20 @@ class PythonAgentSupervisor:
             "QUIZ": "QUIZ",
         }.get(normalized, normalized)
 
-    def _is_deep_reasoning(self, params: dict) -> bool:
-        reasoning_mode = params.get("reasoningMode")
-        if isinstance(reasoning_mode, str) and reasoning_mode.strip().upper() == "DEEP":
-            return True
-        return bool(params.get("deepReasoning"))
+    def _resolve_tutoring_route(self, classification) -> list[str]:
+        if classification.confidence < self.query_classifier.low_confidence_threshold:
+            return ["query_rewrite", "retrieval", "tutor"]
+        if classification.query_type == QUERY_TYPE_DEEP_REASONING:
+            return ["query_rewrite", "retrieval", "image_analysis", "deep_reasoning"]
+        if classification.query_type in {
+            QUERY_TYPE_SMALL_TALK,
+            QUERY_TYPE_FOLLOW_UP,
+            QUERY_TYPE_ANSWER_PREVIOUS,
+        }:
+            return ["tutor"]
+        if classification.query_type == QUERY_TYPE_IMAGE_QUESTION:
+            return ["image_analysis", "query_rewrite", "retrieval", "tutor"]
+        return ["query_rewrite", "retrieval", "tutor"]
 
     async def build_snapshot(self, request: EngineStreamRequest) -> SystemSnapshot:
         return await self.snapshot_builder.build(
@@ -162,8 +191,9 @@ class PythonAgentSupervisor:
 
     async def stream(self, request: EngineStreamRequest, cancelled: Container[str] | None = None) -> AsyncIterator[SSEEvent]:
         route_plan = self.resolve_route(request.service_type, request.params)
-        snapshot = await self.build_snapshot(request)
         current_params = self._seed_request_params(request)
+        self._seed_query_routing_params(current_params, route_plan)
+        snapshot = await self.build_snapshot(request)
         seq = 1
         agent_names = list(route_plan.agent_names)
         i = 0
@@ -254,22 +284,6 @@ class PythonAgentSupervisor:
                 agent_name=agent_name,
                 snapshot=snapshot,
             )
-            if self._should_run_profile_in_background(
-                service_type=route_plan.service_type,
-                agent_name=agent_name,
-            ):
-                self._schedule_background_agent(
-                    agent=agent,
-                    agent_name=agent_name,
-                    task_id=request.task_id,
-                    trace_id=request.trace_id,
-                    service_type=request.service_type,
-                    params=agent_params,
-                    snapshot=snapshot,
-                    system_prompt=system_prompt,
-                )
-                i += 1
-                continue
             async for event in agent.run(
                 task_id=request.task_id,
                 trace_id=request.trace_id,
@@ -289,6 +303,23 @@ class PythonAgentSupervisor:
                 params=current_params,
             )
             i += 1
+
+        if self._should_schedule_tutoring_profile(
+            service_type=route_plan.service_type,
+            params=current_params,
+        ):
+            profile_agent = self.agent_registry["profile"]
+            profile_prompt = self.build_agent_system_prompt(agent_name="profile", snapshot=snapshot)
+            self._schedule_background_agent(
+                agent=profile_agent,
+                agent_name="profile",
+                task_id=request.task_id,
+                trace_id=request.trace_id,
+                service_type=request.service_type,
+                params=copy.deepcopy(current_params),
+                snapshot=snapshot,
+                system_prompt=profile_prompt,
+            )
 
         yield DoneSSEEvent(
             taskId=request.task_id,
@@ -340,8 +371,54 @@ class PythonAgentSupervisor:
             seeded_params["conversationId"] = request.conversation_id
         return seeded_params
 
-    def _should_run_profile_in_background(self, *, service_type: str, agent_name: str) -> bool:
-        return service_type == "TUTORING" and agent_name == "profile"
+    def _seed_query_routing_params(self, params: dict, route_plan: RoutePlan) -> None:
+        if route_plan.query_type:
+            params["queryType"] = route_plan.query_type
+        if route_plan.retrieval_strategy:
+            params["retrievalStrategy"] = route_plan.retrieval_strategy
+        if route_plan.query_type or route_plan.retrieval_strategy:
+            params["queryClassification"] = {
+                "queryType": route_plan.query_type,
+                "retrievalStrategy": route_plan.retrieval_strategy,
+                "confidence": route_plan.classification_confidence,
+                "reason": route_plan.classification_reason,
+            }
+
+    def _should_schedule_tutoring_profile(self, *, service_type: str, params: dict) -> bool:
+        if service_type != "TUTORING":
+            return False
+        if params.get("forceProfileUpdate") is True:
+            return True
+        user_turn_count = self._count_user_turns(params)
+        return user_turn_count > 0 and user_turn_count % 3 == 0
+
+    def _count_user_turns(self, params: dict) -> int:
+        messages = params.get("messages") or params.get("conversation")
+        if not isinstance(messages, list):
+            return 1 if self._current_user_query(params) else 0
+        count = 0
+        last_user_content = ""
+        for item in messages:
+            if not isinstance(item, dict) or item.get("role") != "user":
+                continue
+            content = str(item.get("content") or "").strip()
+            if content:
+                count += 1
+                last_user_content = content
+        current_query = self._current_user_query(params)
+        if current_query and self._normalize_turn_text(current_query) != self._normalize_turn_text(last_user_content):
+            count += 1
+        return count
+
+    def _current_user_query(self, params: dict) -> str:
+        for key in ("query", "message", "userInput", "question"):
+            value = params.get(key)
+            if isinstance(value, str) and value.strip():
+                return value.strip()
+        return ""
+
+    def _normalize_turn_text(self, text: str) -> str:
+        return "".join(str(text).split())
 
     def _schedule_background_agent(
         self,

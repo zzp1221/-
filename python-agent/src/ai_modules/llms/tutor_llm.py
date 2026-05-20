@@ -205,16 +205,74 @@ class TutorLLMClientFactory:
     """创建 Tutor LLM 客户端，支持 OpenAI 兼容主模型和基于规则的回退。"""
 
     @staticmethod
+    def _create_provider_client(
+        *,
+        provider_name: str,
+        model_name: str,
+    ) -> Any:
+        settings = get_settings()
+        endpoint = settings.provider_endpoint_config(provider_name)
+        if provider_name == "spark" or endpoint.protocol == "spark_compatible":
+            return SparkCompatibleToolCallingLLM(
+                api_key=settings.provider_api_key(provider_name),
+                base_url=endpoint.base_url,
+                model_name=model_name,
+            )
+        return OpenAICompatibleTutorLLM(
+            api_key=settings.provider_api_key(provider_name),
+            base_url=endpoint.base_url,
+            model_name=model_name,
+        )
+
+    @staticmethod
+    def _resolve_model_for_provider(provider_name: str) -> str:
+        settings = get_settings()
+        return settings.resolve_component_model(
+            "tutor_llm",
+            default_logical_model="main_chat_model",
+            provider_name=provider_name,
+        )
+
+    @staticmethod
     def create() -> Any:
         settings = get_settings()
         provider_name = settings.resolve_component_provider("tutor_llm")
         if settings.provider_ready(provider_name):
-            model_name = settings.resolve_component_model(
-                "tutor_llm",
-                default_logical_model="main_chat_model",
+            model_name = TutorLLMClientFactory._resolve_model_for_provider(provider_name)
+            return TutorLLMClientFactory._create_provider_client(
                 provider_name=provider_name,
+                model_name=model_name,
             )
-            if provider_name == "spark":
-                return SparkCompatibleToolCallingLLM(model_name=model_name)
-            return OpenAICompatibleTutorLLM(model_name=model_name)
         return RuleBasedTutorLLM()
+
+    @staticmethod
+    def create_llm_candidates() -> list[Any]:
+        """Create only real LLM clients for Tutor runtime attempts."""
+
+        settings = get_settings()
+        routing = settings.model_routing_config()
+        provider_names: list[str] = []
+
+        def add_provider(provider_name: str | None) -> None:
+            normalized = settings.normalize_provider_name(provider_name)
+            if normalized and normalized not in provider_names:
+                provider_names.append(normalized)
+
+        add_provider(settings.resolve_component_provider("tutor_llm"))
+        add_provider(settings.selected_fallback_provider_name())
+        add_provider(routing.fallback_provider)
+
+        clients: list[Any] = []
+        for provider_name in provider_names:
+            if provider_name not in routing.providers:
+                continue
+            if not settings.provider_ready(provider_name):
+                continue
+            model_name = TutorLLMClientFactory._resolve_model_for_provider(provider_name)
+            clients.append(
+                TutorLLMClientFactory._create_provider_client(
+                    provider_name=provider_name,
+                    model_name=model_name,
+                )
+            )
+        return clients

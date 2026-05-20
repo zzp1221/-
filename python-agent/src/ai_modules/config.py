@@ -39,6 +39,7 @@ class Settings(BaseSettings):
     app_host: str = Field(default="0.0.0.0", alias="APP_HOST")
     app_port: int = Field(default=8000, alias="APP_PORT")
     python_agent_internal_token: str = Field(default="", alias="PYTHON_AGENT_INTERNAL_TOKEN")
+    control_plane_base_url: str = Field(default="http://localhost:8081", alias="CONTROL_PLANE_BASE_URL")
 
     model_provider: str = Field(default="openai_compatible", alias="MODEL_PROVIDER")
     active_provider: str = Field(default="", alias="ACTIVE_PROVIDER")
@@ -63,7 +64,15 @@ class Settings(BaseSettings):
     )
     openai_compatible_base_url: str = Field(
         default="https://dashscope.aliyuncs.com/compatible-mode/v1",
-        validation_alias=AliasChoices("OPENAI_COMPATIBLE_BASE_URL", "BAILIAN_BASE_URL"),
+        validation_alias=AliasChoices(
+            "OPENAI_COMPATIBLE_BASE_URL",
+            "AI_OPENAI_COMPATIBLE_BASE_URL",
+            "BAILIAN_BASE_URL",
+        ),
+    )
+    embedding_api_key: str = Field(
+        default="",
+        validation_alias=AliasChoices("EMBEDDING_API_KEY", "DASHSCOPE_API_KEY"),
     )
     spark_api_key: str = Field(default="", alias="SPARK_API_KEY")
     spark_app_id: str = Field(default="", alias="SPARK_APP_ID")
@@ -196,6 +205,40 @@ class Settings(BaseSettings):
     postgres_password: str = Field(default="", alias="POSTGRES_PASSWORD")
     mongo_uri: str = Field(default="mongodb://localhost:27017/zhixue", alias="MONGO_URI")
     mongo_db: str = Field(default="zhixue", alias="MONGO_DB")
+    redis_host: str = Field(default="redis", alias="REDIS_HOST")
+    redis_port: int = Field(default=6379, alias="REDIS_PORT")
+    redis_password: str = Field(default="", alias="REDIS_PASSWORD")
+    smart_engine_stream_key: str = Field(
+        default="zhixue:smart-engine:tasks",
+        alias="SMART_ENGINE_TASK_STREAM_KEY",
+    )
+    smart_engine_dlq_key: str = Field(
+        default="zhixue:smart-engine:tasks:dlq",
+        alias="SMART_ENGINE_TASK_DLQ_KEY",
+    )
+    smart_engine_consumer_group: str = Field(
+        default="smart-engine-python",
+        alias="SMART_ENGINE_TASK_CONSUMER_GROUP",
+    )
+    smart_engine_consumer_name: str = Field(
+        default="smart-engine-python-1",
+        alias="SMART_ENGINE_TASK_CONSUMER_NAME",
+    )
+    smart_engine_block_ms: int = Field(default=5000, alias="SMART_ENGINE_TASK_BLOCK_MS")
+    smart_engine_max_retries: int = Field(default=3, alias="SMART_ENGINE_TASK_MAX_RETRIES")
+    smart_engine_retry_backoff_seconds: float = Field(
+        default=2.0,
+        alias="SMART_ENGINE_TASK_RETRY_BACKOFF_SECONDS",
+    )
+    smart_engine_cancel_key_prefix: str = Field(
+        default="zhixue:smart-engine:cancel:",
+        alias="SMART_ENGINE_TASK_CANCEL_KEY_PREFIX",
+    )
+    smart_engine_callback_timeout_seconds: float = Field(
+        default=10.0,
+        alias="SMART_ENGINE_CALLBACK_TIMEOUT_SECONDS",
+    )
+    smart_engine_callback_retries: int = Field(default=2, alias="SMART_ENGINE_CALLBACK_RETRIES")
     retrieval_domain: str = Field(
         default="COMPUTER_SCIENCE",
         alias="RETRIEVAL_DOMAIN",
@@ -241,6 +284,10 @@ class Settings(BaseSettings):
     @property
     def bailian_base_url(self) -> str:
         return self.openai_compatible_base_url
+
+    @property
+    def effective_embedding_api_key(self) -> str:
+        return self.embedding_api_key or self.openai_compatible_api_key
 
     def selected_provider_name(self) -> str:
         """返回活跃提供商，兼容回退到 MODEL_PROVIDER。"""

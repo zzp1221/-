@@ -55,6 +55,20 @@ class LegacyHybridRetrieverAdapter:
                     web_search_enabled=web_search_enabled,
                 )
 
+    def retrieve_grep_first(self, query: str, *, web_search_enabled: bool = False) -> dict[str, Any]:
+        import psycopg2
+
+        retrieve_grep_first = getattr(self._retriever, "retrieve_grep_first", None)
+        if not callable(retrieve_grep_first):
+            return self.retrieve(query, web_search_enabled=web_search_enabled)
+        with psycopg2.connect(**self._db_config) as conn:
+            with conn.cursor() as cur:
+                return retrieve_grep_first(
+                    cur,
+                    query,
+                    web_search_enabled=web_search_enabled,
+                )
+
 
 class QueryRewriteService:
     """检索阶段的低成本确定性查询改写。"""
@@ -250,6 +264,31 @@ class HybridRetrievalService:
                 namespace=_RETRIEVAL_RAW_CACHE_NAMESPACE,
             )
         return raw_result
+
+    def retrieve_grep_first(self, rewritten_query: str, *, web_search_enabled: bool = False) -> dict[str, Any]:
+        if self.retriever is not None:
+            retrieve_grep_first = getattr(self.retriever, "retrieve_grep_first", None)
+            if callable(retrieve_grep_first):
+                return retrieve_grep_first(
+                    rewritten_query,
+                    web_search_enabled=web_search_enabled,
+                )
+            return self.retriever.retrieve(rewritten_query)
+
+        try:
+            adapter = LegacyHybridRetrieverAdapter()
+            return adapter.retrieve_grep_first(
+                rewritten_query,
+                web_search_enabled=web_search_enabled,
+            )
+        except Exception as exc:
+            LOGGER.warning("Grep-first retrieval failed for query %r: %s", rewritten_query, exc)
+            return {
+                "query": rewritten_query,
+                "retrievalStrategy": "LOCAL_GREP_FIRST",
+                "channels": {},
+                "top": [],
+            }
 
     def build_response(
         self,

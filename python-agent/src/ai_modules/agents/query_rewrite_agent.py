@@ -24,6 +24,7 @@ from src.ai_modules.retrieval import QueryRewriteService
 from src.ai_modules.runtime import (
     SystemSnapshot,
 )
+from src.ai_modules.runtime.skill_loader import SkillPromptLoader
 
 LOGGER = logging.getLogger(__name__)
 
@@ -41,9 +42,14 @@ class QueryRewriteAgent(PlaceholderAgent):
         self.service = service or QueryRewriteService()
         self.llm_client = llm_client or QueryRewriteToolLLMClientFactory.create()
         self.llm_generator = llm_generator
+        self.skill_loader = SkillPromptLoader()
 
     def system_prompt(self, snapshot: SystemSnapshot) -> str:
-        return build_query_rewrite_prompt(snapshot)
+        return self.skill_loader.build_system_prompt(
+            skill_name="query_rewrite",
+            snapshot=snapshot,
+            fallback_prompt=build_query_rewrite_prompt(snapshot),
+        )
 
     async def run(
         self,

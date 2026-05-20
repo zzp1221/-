@@ -1,5 +1,6 @@
 import pytest
 
+from src.ai_modules.agents.deep_reasoning_agent import DeepReasoningAgent
 from src.ai_modules.agents.tutor_agent import TutorAgent
 from src.ai_modules.llms import RuleBasedTutorLLM
 from src.ai_modules.memory import (
@@ -8,6 +9,7 @@ from src.ai_modules.memory import (
     MongoConversationSummaryStore,
 )
 from src.ai_modules.runtime import (
+    AssistantTurn,
     ConversationCompactor,
     StructuredConversationSummary,
     SystemSnapshot,
@@ -32,6 +34,64 @@ def _build_snapshot() -> SystemSnapshot:
         last_index_update="2026-05-02",
         recent_activities=["完成索引练习"],
     )
+
+
+class _FailingTutorClient:
+    provider_name = "primary"
+    model_name = "primary-model"
+    base_url = "https://primary.invalid/v1"
+
+    async def chat_completion(self, **kwargs):
+        del kwargs
+        raise RuntimeError("primary chat failed")
+
+    async def chat_completion_stream(self, **kwargs):
+        del kwargs
+        raise RuntimeError("primary stream failed")
+        yield ""  # pragma: no cover
+
+
+class _FailingTutorLLM:
+    def __init__(self) -> None:
+        self.client = _FailingTutorClient()
+
+    async def complete(self, **kwargs):
+        del kwargs
+        raise RuntimeError("primary core loop failed")
+
+
+class _StreamingTutorClient:
+    provider_name = "secondary"
+    model_name = "secondary-model"
+    base_url = "https://secondary.invalid/v1"
+
+    def __init__(self) -> None:
+        self.stream_calls = 0
+
+    async def chat_completion(self, **kwargs):
+        del kwargs
+        raise AssertionError("secondary stream should satisfy the tutor response")
+
+    async def chat_completion_stream(self, **kwargs):
+        del kwargs
+        self.stream_calls += 1
+        for token in ["LLM ", "generated ", "answer"]:
+            yield token
+
+
+class _StreamingTutorLLM:
+    def __init__(self) -> None:
+        self.client = _StreamingTutorClient()
+
+
+class _DeepReasoningLLM:
+    def __init__(self) -> None:
+        self.calls = 0
+
+    async def complete(self, **kwargs):
+        del kwargs
+        self.calls += 1
+        return AssistantTurn(content=f"LLM deep step {self.calls}")
 
 
 def test_tutor_agent_system_prompt_loads_skill_and_context() -> None:
@@ -59,6 +119,94 @@ def test_tutor_skill_prompt_falls_back_when_skill_is_missing(tmp_path) -> None:
     )
 
     assert prompt == "辅导提示词兜底内容"
+
+
+@pytest.mark.asyncio
+async def test_tutor_agent_tries_fallback_llm_when_primary_stream_and_core_loop_fail() -> None:
+    secondary_llm = _StreamingTutorLLM()
+    tutor = TutorAgent(
+        compactor=ConversationCompactor(token_budget=1000, keep_recent_turns=4),
+        summary_store=InMemoryConversationSummaryStore(),
+        llm_client=_FailingTutorLLM(),
+        llm_fallback_clients=[secondary_llm],
+    )
+    params = {
+        "conversationId": "conv-llm-fallback",
+        "messages": [{"role": "user", "content": "What is Java?"}],
+        "query": "What is Java?",
+        "rewrittenQuery": "Java programming language",
+        "retrievalResult": {
+            "documents": [
+                {
+                    "title": "Java",
+                    "channel": "hybrid",
+                    "evidence": "Java is a class-based programming language.",
+                }
+            ]
+        },
+    }
+
+    events = [
+        event
+        async for event in tutor.run(
+            task_id="task-llm-fallback",
+            trace_id="trace-llm-fallback",
+            seq=1,
+            service_type="TUTORING",
+            params=params,
+            snapshot=_build_snapshot(),
+            system_prompt="test",
+        )
+    ]
+
+    result_text = "".join(
+        event.payload.text
+        for event in events
+        if event.event == "result_chunk"
+    )
+    assert [event.event for event in events] == ["progress", "result_chunk"]
+    assert result_text == "LLM generated answer"
+    assert secondary_llm.client.stream_calls == 1
+
+
+@pytest.mark.asyncio
+async def test_deep_reasoning_agent_passes_params_to_input_mode_classifier() -> None:
+    llm = _DeepReasoningLLM()
+    agent = DeepReasoningAgent(
+        compactor=ConversationCompactor(token_budget=1000, keep_recent_turns=4),
+        summary_store=InMemoryConversationSummaryStore(),
+        llm_client=llm,
+    )
+    params = {
+        "conversationId": "conv-deep",
+        "messages": [{"role": "user", "content": "Analyze synchronized lock design deeply"}],
+        "query": "Analyze synchronized lock design deeply",
+        "queryType": "DEEP_REASONING",
+        "retrievalResult": {"documents": [{"title": "SSE lock design", "channel": "hybrid"}]},
+    }
+
+    events = [
+        event
+        async for event in agent.run(
+            task_id="task-deep",
+            trace_id="trace-deep",
+            seq=1,
+            service_type="TUTORING",
+            params=params,
+            snapshot=_build_snapshot(),
+            system_prompt="test",
+        )
+    ]
+
+    assert [event.event for event in events] == [
+        "progress",
+        "progress",
+        "progress",
+        "progress",
+        "result_chunk",
+    ]
+    assert params["inputMode"] == "clear_question"
+    assert events[-1].payload.text == "LLM deep step 4"
 
 
 @pytest.mark.asyncio

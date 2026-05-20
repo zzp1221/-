@@ -1,0 +1,103 @@
+{
+  "version": 1,
+  "lowConfidenceThreshold": 0.55,
+  "smallTalkMaxLength": 12,
+  "ambiguousMaxLength": 12,
+  "smallTalkTerms": [
+    "你好",
+    "您好",
+    "在吗",
+    "谢谢",
+    "感谢",
+    "好的",
+    "明白了",
+    "再见",
+    "拜拜",
+    "你是谁",
+    "你能做什么",
+    "hi",
+    "hello"
+  ],
+  "questionTerms": [
+    "什么",
+    "怎么",
+    "如何",
+    "为什么",
+    "哪些",
+    "哪个",
+    "能否",
+    "可否",
+    "区别",
+    "原因"
+  ],
+  "followUpTerms": [
+    "继续",
+    "刚才",
+    "上一个",
+    "前面",
+    "再讲",
+    "这个",
+    "这里",
+    "那它",
+    "换个例子"
+  ],
+  "comparisonTerms": [
+    "区别",
+    "对比",
+    "比较",
+    "哪个更",
+    "优缺点",
+    "vs",
+    "versus"
+  ],
+  "proceduralTerms": [
+    "怎么用",
+    "如何使用",
+    "步骤",
+    "流程",
+    "实现",
+    "写法",
+    "示例",
+    "例子"
+  ],
+  "errorTerms": [
+    "报错",
+    "异常",
+    "失败",
+    "超时",
+    "断流",
+    "崩溃",
+    "nullpointerexception",
+    "indexerror",
+    "assertionerror",
+    "connection refused",
+    "cors",
+    "traceback",
+    "exception",
+    "error"
+  ],
+  "currentInfoTerms": [
+    "今天",
+    "今日",
+    "现在",
+    "当前",
+    "最新",
+    "最近",
+    "版本",
+    "政策",
+    "today",
+    "current",
+    "latest",
+    "now",
+    "recent"
+  ],
+  "deepReasoningTerms": [
+    "深入分析",
+    "完整推理",
+    "系统分析",
+    "所有边界",
+    "权衡",
+    "设计方案",
+    "为什么会这样"
+  ]
+}

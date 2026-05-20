@@ -24,6 +24,7 @@ from src.ai_modules.prompts import build_path_planning_system_prompt
 from src.ai_modules.runtime import (
     SystemSnapshot,
 )
+from src.ai_modules.runtime.skill_loader import SkillPromptLoader
 
 
 class PathPlanningAgent(PlaceholderAgent):
@@ -40,9 +41,14 @@ class PathPlanningAgent(PlaceholderAgent):
         self.learning_plan_store = learning_plan_store or PostgresLearningPlanStore()
         self.fallback_learning_plan_store = InMemoryLearningPlanStore()
         self.generator = generator
+        self.skill_loader = SkillPromptLoader()
 
     def system_prompt(self, snapshot: SystemSnapshot) -> str:
-        return build_path_planning_system_prompt(snapshot)
+        return self.skill_loader.build_system_prompt(
+            skill_name="path_planning",
+            snapshot=snapshot,
+            fallback_prompt=build_path_planning_system_prompt(snapshot),
+        )
 
     async def run(
         self,

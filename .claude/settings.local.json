@@ -191,7 +191,12 @@
       "Bash(rm -rf ~/.gradle/wrapper/dists/* ~/.gradle/caches/*)",
       "Bash(pnpm build *)",
       "Bash(pnpm store *)",
-      "Skill(webapp-testing)"
+      "Skill(webapp-testing)",
+      "WebFetch(domain:blog.langchain.com)",
+      "WebFetch(domain:deepwiki.com)",
+      "WebFetch(domain:skywork.ai)",
+      "WebFetch(domain:cloud.tencent.com)",
+      "WebFetch(domain:mp.weixin.qq.com)"
     ]
   }
 }

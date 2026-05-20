@@ -47,20 +47,20 @@ public class ConversationService {
     private final QnaSessionRepository qnaSessionRepository;
     private final PythonAgentClient pythonAgentClient;
     private final PythonConversationMessageClient pythonConversationMessageClient;
-    private final TaskExecutor smartEngineTaskExecutor;
+    private final TaskExecutor conversationTaskExecutor;
     private final UserProfileCurrentRepository userProfileCurrentRepository;
 
     public ConversationService(
         QnaSessionRepository qnaSessionRepository,
         PythonAgentClient pythonAgentClient,
         PythonConversationMessageClient pythonConversationMessageClient,
-        @Qualifier("conversationTaskExecutor") TaskExecutor smartEngineTaskExecutor,
+        @Qualifier("conversationTaskExecutor") TaskExecutor conversationTaskExecutor,
         UserProfileCurrentRepository userProfileCurrentRepository
     ) {
         this.qnaSessionRepository = qnaSessionRepository;
         this.pythonAgentClient = pythonAgentClient;
         this.pythonConversationMessageClient = pythonConversationMessageClient;
-        this.smartEngineTaskExecutor = smartEngineTaskExecutor;
+        this.conversationTaskExecutor = conversationTaskExecutor;
         this.userProfileCurrentRepository = userProfileCurrentRepository;
     }
 
@@ -149,7 +149,7 @@ public class ConversationService {
         AtomicInteger sequence = new AtomicInteger(0);
         StringBuilder assistantReply = new StringBuilder();
 
-        smartEngineTaskExecutor.execute(() -> {
+        conversationTaskExecutor.execute(() -> {
             try {
                 pythonAgentClient.stream(
                     new SmartEngineInvocation(

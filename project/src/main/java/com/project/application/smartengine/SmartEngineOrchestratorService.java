@@ -4,24 +4,23 @@ import com.project.api.smartengine.dto.SubmitTaskRequest;
 import com.project.api.smartengine.dto.SubmitTaskResponse;
 import com.project.api.smartengine.dto.TaskStatusResponse;
 import com.project.application.audit.AuditService;
+import com.project.application.common.ApplicationException;
 import com.project.application.idempotency.IdempotencyService;
 import com.project.domain.profile.UserProfileCurrentRepository;
 import com.project.domain.task.SmartEngineTask;
 import com.project.security.JwtAuthenticatedUser;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Qualifier;
-import org.springframework.core.task.TaskExecutor;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.UUID;
-import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * 协调任务提交、后台执行、取消及外部 SSE 暴露。
+ * Coordinates SmartEngine task submission, status, cancellation, and SSE replay.
  */
 @Service
 public class SmartEngineOrchestratorService {
@@ -29,27 +28,23 @@ public class SmartEngineOrchestratorService {
     private static final Logger LOGGER = LoggerFactory.getLogger(SmartEngineOrchestratorService.class);
 
     private final TaskStateMachineService taskStateMachineService;
-    private final PythonAgentClient pythonAgentClient;
     private final SseEmitterService sseEmitterService;
-    private final TaskExecutor smartEngineTaskExecutor;
+    private final SmartEngineQueueService smartEngineQueueService;
     private final IdempotencyService idempotencyService;
     private final AuditService auditService;
     private final UserProfileCurrentRepository userProfileCurrentRepository;
-    private final ConcurrentHashMap<UUID, Thread> runningThreads = new ConcurrentHashMap<>();
 
     public SmartEngineOrchestratorService(
         TaskStateMachineService taskStateMachineService,
-        PythonAgentClient pythonAgentClient,
         SseEmitterService sseEmitterService,
-        @Qualifier("smartEngineTaskExecutor") TaskExecutor smartEngineTaskExecutor,
+        SmartEngineQueueService smartEngineQueueService,
         IdempotencyService idempotencyService,
         AuditService auditService,
         UserProfileCurrentRepository userProfileCurrentRepository
     ) {
         this.taskStateMachineService = taskStateMachineService;
-        this.pythonAgentClient = pythonAgentClient;
         this.sseEmitterService = sseEmitterService;
-        this.smartEngineTaskExecutor = smartEngineTaskExecutor;
+        this.smartEngineQueueService = smartEngineQueueService;
         this.idempotencyService = idempotencyService;
         this.auditService = auditService;
         this.userProfileCurrentRepository = userProfileCurrentRepository;
@@ -64,7 +59,7 @@ public class SmartEngineOrchestratorService {
             return idempotencyService.findExisting(currentUser.userId(), "SMART_ENGINE_SUBMIT", idempotencyKey)
                 .map(existingTaskId -> {
                     SmartEngineTask existingTask = taskStateMachineService.getOwnedTask(existingTaskId, currentUser.userId());
-                    auditService.log("TASK", "LOW", "命中幂等重放", currentUser.userId(), existingTaskId, Map.of("serviceType", request.serviceType()));
+                    auditService.log("TASK", "LOW", "Idempotent SmartEngine submit replay", currentUser.userId(), existingTaskId, Map.of("serviceType", request.serviceType()));
                     return new SubmitTaskAcceptance(
                         new SubmitTaskResponse(existingTask.getId(), existingTask.getTraceId(), existingTask.getTaskStatus()),
                         true
@@ -98,7 +93,7 @@ public class SmartEngineOrchestratorService {
                 return idempotencyService.findExisting(currentUser.userId(), "SMART_ENGINE_SUBMIT", idempotencyKey)
                     .map(existingTaskId -> {
                         SmartEngineTask existingTask = taskStateMachineService.getOwnedTask(existingTaskId, currentUser.userId());
-                        auditService.log("TASK", "LOW", "命中幂等重放", currentUser.userId(), existingTaskId, Map.of("serviceType", request.serviceType()));
+                        auditService.log("TASK", "LOW", "Idempotent SmartEngine submit replay", currentUser.userId(), existingTaskId, Map.of("serviceType", request.serviceType()));
                         return new SubmitTaskAcceptance(
                             new SubmitTaskResponse(existingTask.getId(), existingTask.getTraceId(), existingTask.getTaskStatus()),
                             true
@@ -116,7 +111,7 @@ public class SmartEngineOrchestratorService {
             requestPayload
         );
 
-        auditService.log("TASK", "INFO", "创建智能任务", currentUser.userId(), task.getId(), Map.of("serviceType", request.serviceType()));
+        auditService.log("TASK", "INFO", "Created SmartEngine task", currentUser.userId(), task.getId(), Map.of("serviceType", request.serviceType()));
 
         Map<String, Object> invocationParams = new LinkedHashMap<>(request.safeParams());
         userProfileCurrentRepository.findById(currentUser.userId())
@@ -134,15 +129,25 @@ public class SmartEngineOrchestratorService {
             invocationParams
         );
 
-        smartEngineTaskExecutor.execute(() -> {
-            Thread currentThread = Thread.currentThread();
-            runningThreads.put(taskId, currentThread);
-            try {
-                executeTask(taskId, invocation);
-            } finally {
-                runningThreads.remove(taskId);
-            }
-        });
+        try {
+            String recordId = smartEngineQueueService.enqueue(invocation);
+            auditService.log("TASK", "LOW", "Enqueued SmartEngine task", currentUser.userId(), task.getId(), Map.of(
+                "serviceType", request.serviceType(),
+                "streamRecordId", recordId
+            ));
+        } catch (Exception ex) {
+            LOGGER.warn("Failed to enqueue SmartEngine task taskId={} traceId={}", task.getId(), traceId, ex);
+            taskStateMachineService.failTask(
+                task.getId(),
+                "QUEUE_UNAVAILABLE",
+                "SmartEngine task queue is unavailable"
+            );
+            auditService.log("TASK", "HIGH", "Failed to enqueue SmartEngine task", currentUser.userId(), task.getId(), Map.of(
+                "serviceType", request.serviceType(),
+                "message", ex.getMessage() == null ? "" : ex.getMessage()
+            ));
+            throw new ApplicationException("QUEUE_UNAVAILABLE", "SmartEngine task queue is unavailable", HttpStatus.SERVICE_UNAVAILABLE);
+        }
 
         return new SubmitTaskAcceptance(
             new SubmitTaskResponse(task.getId(), traceId, task.getTaskStatus()),
@@ -159,9 +164,6 @@ public class SmartEngineOrchestratorService {
         return sseEmitterService.subscribe(task);
     }
 
-    /**
-     * 取消正在运行的任务。如果任务已处于终态则不执行任何操作。
-     */
     public void cancel(JwtAuthenticatedUser currentUser, UUID taskId) {
         SmartEngineTask task = taskStateMachineService.getOwnedTask(taskId, currentUser.userId());
 
@@ -169,7 +171,7 @@ public class SmartEngineOrchestratorService {
             return;
         }
 
-        auditService.log("TASK", "MEDIUM", "取消任务", currentUser.userId(), taskId, Map.of(
+        auditService.log("TASK", "MEDIUM", "Cancelled SmartEngine task", currentUser.userId(), taskId, Map.of(
             "currentStatus", task.getTaskStatus().name(),
             "currentStage", task.getCurrentStage() == null ? "" : task.getCurrentStage()
         ));
@@ -177,41 +179,32 @@ public class SmartEngineOrchestratorService {
         TaskStreamEventPayload cancelPayload = taskStateMachineService.markCancelled(taskId);
         sseEmitterService.cancelTask(taskId, cancelPayload);
 
-        pythonAgentClient.cancel(taskId.toString());
-
-        // 实际取消必须在 Python 运行时内部完成；interrupt 仅帮助解除本地工作线程在 I/O 或重试等待时的阻塞。
-        Thread thread = runningThreads.get(taskId);
-        if (thread != null) {
-            thread.interrupt();
+        try {
+            smartEngineQueueService.markCancelled(taskId);
+        } catch (Exception ex) {
+            LOGGER.warn("Failed to write SmartEngine cancel key taskId={}: {}", taskId, ex.getMessage());
         }
     }
 
-    private void executeTask(UUID taskId, SmartEngineInvocation invocation) {
-        try {
-            taskStateMachineService.markRunning(taskId);
-            pythonAgentClient.stream(invocation, event -> {
-                TaskStreamEventPayload payload = taskStateMachineService.recordPythonEvent(taskId, event);
-                sseEmitterService.publish(payload, event.resolvedEventType().isTerminal());
-            });
+    public void markWorkerStarted(UUID taskId) {
+        taskStateMachineService.markRunning(taskId);
+    }
 
-            if (!taskStateMachineService.isTerminal(taskId)) {
-                TaskStreamEventPayload autoCompleted = taskStateMachineService.recordPythonEvent(
-                    taskId,
-                    new PythonStreamEvent(StreamEventType.DONE.wireValue(), "completed", Map.of("message", "Task completed"))
-                );
-                sseEmitterService.publish(autoCompleted, true);
-            }
-        } catch (Exception ex) {
-            if (Thread.currentThread().isInterrupted() || taskStateMachineService.isCancelled(taskId)) {
-                LOGGER.info("Task {} was cancelled, not marking as failed", taskId);
-                return;
-            }
-            auditService.log("TASK", "MEDIUM", "任务执行失败", invocation.userId(), taskId, Map.of("message", ex.getMessage() == null ? "" : ex.getMessage()));
-            TaskStreamEventPayload failurePayload = taskStateMachineService.failTask(
-                taskId,
-                "PYTHON_AGENT_ERROR",
-                ex.getMessage() == null ? "Python Agent 调用失败" : ex.getMessage()
-            );
+    public TaskEventRecordResult recordWorkerEvent(UUID taskId, PythonStreamEvent event, int seq) {
+        TaskEventRecordResult result = taskStateMachineService.recordPythonEvent(taskId, event, seq);
+        if (result.created() && result.payload() != null) {
+            sseEmitterService.publish(result.payload(), event.resolvedEventType().isTerminal());
+        }
+        return result;
+    }
+
+    public void markWorkerFailed(UUID taskId, String errorCode, String message) {
+        TaskStreamEventPayload failurePayload = taskStateMachineService.failTaskIfActive(
+            taskId,
+            errorCode == null || errorCode.isBlank() ? "PYTHON_WORKER_ERROR" : errorCode,
+            message == null || message.isBlank() ? "Python worker failed" : message
+        );
+        if (failurePayload != null) {
             sseEmitterService.publish(failurePayload, true);
         }
     }

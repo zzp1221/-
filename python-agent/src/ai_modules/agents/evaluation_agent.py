@@ -25,6 +25,7 @@ from src.ai_modules.prompts import build_evaluation_system_prompt
 from src.ai_modules.runtime import (
     SystemSnapshot,
 )
+from src.ai_modules.runtime.skill_loader import SkillPromptLoader
 
 LOGGER = logging.getLogger(__name__)
 INTERACTIVE_DIMENSIONS = {"案例迁移", "练习掌握", "学习主动性", "复盘闭环"}
@@ -43,9 +44,14 @@ class EvaluationAgent(PlaceholderAgent):
         self.llm_client = llm_client or PlanningLLMClientFactory.create()
         self.generator = generator
         self.question_generator = question_generator or PracticeQuestionGenerator()
+        self.skill_loader = SkillPromptLoader()
 
     def system_prompt(self, snapshot: SystemSnapshot) -> str:
-        return build_evaluation_system_prompt(snapshot)
+        return self.skill_loader.build_system_prompt(
+            skill_name="evaluation",
+            snapshot=snapshot,
+            fallback_prompt=build_evaluation_system_prompt(snapshot),
+        )
 
     async def run(
         self,

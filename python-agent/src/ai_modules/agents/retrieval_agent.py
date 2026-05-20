@@ -8,11 +8,8 @@ import logging
 from typing import Any
 
 from src.ai_modules.agents.base import PlaceholderAgent
-from src.ai_modules.llms import (
-    RetrievalToolLLMClientFactory,
-    RetrievalSummaryGenerator,
-)
-from src.ai_modules.models import ProgressPayload, ProgressSSEEvent, ResultChunkPayload, ResultChunkSSEEvent, SSEEvent
+from src.ai_modules.llms import RetrievalSummaryGenerator
+from src.ai_modules.models import ProgressPayload, ProgressSSEEvent, ResultChunkPayload, ResultChunkSSEEvent, RetrievalResponse, SSEEvent
 from src.ai_modules.prompts import build_retrieval_summary_prompt
 from src.ai_modules.retrieval import HybridRetrievalService
 from src.ai_modules.runtime import (
@@ -30,12 +27,10 @@ class RetrievalAgent(PlaceholderAgent):
     def __init__(
         self,
         service: HybridRetrievalService | None = None,
-        llm_client: Any | None = None,
         summary_generator: Any | None = None,
     ) -> None:
         super().__init__("Hybrid Retrieval Agent", "retrieving")
         self.service = service or HybridRetrievalService()
-        self.llm_client = llm_client or RetrievalToolLLMClientFactory.create()
         self.summary_generator = summary_generator
         self.recovery_engine = RecoveryEngine()
 
@@ -57,13 +52,43 @@ class RetrievalAgent(PlaceholderAgent):
         query = str(params.get("query") or params.get("rewrittenQuery") or "未提供查询")
         rewritten_query = str(params.get("rewrittenQuery") or query)
         keywords = list(params.get("keywords", []))
-        web_search_enabled = self._web_search_enabled(params)
+        retrieval_strategy = self._retrieval_strategy(params)
+        web_search_enabled = retrieval_strategy == "WEB_AUGMENTED" or self._web_search_enabled(params)
+
+        if retrieval_strategy in {"NONE", "CONTEXT_ONLY"}:
+            retrieval_response = self._empty_retrieval_response(
+                query=query,
+                rewritten_query=rewritten_query,
+                keywords=keywords,
+                retrieval_strategy=retrieval_strategy,
+            )
+            summary_text = retrieval_response.sources_summary
+            params["retrievalResult"] = retrieval_response.model_dump(by_alias=True)
+            params["retrievalSummaryText"] = summary_text
+            yield ProgressSSEEvent(
+                taskId=task_id,
+                traceId=trace_id,
+                seq=seq,
+                payload=ProgressPayload(
+                    stage=self.stage_name,
+                    percent=45,
+                    message="Skipped retrieval; using conversation context.",
+                ),
+            )
+            yield ResultChunkSSEEvent(
+                taskId=task_id,
+                traceId=trace_id,
+                seq=seq + 1,
+                payload=ResultChunkPayload(text=f"Retrieval strategy {retrieval_strategy}: {summary_text}"),
+            )
+            return
 
         retrieval_response, summary_text = await self._run_agent_core_loop(
             query=query,
             rewritten_query=rewritten_query,
             keywords=keywords,
             web_search_enabled=web_search_enabled,
+            retrieval_strategy=retrieval_strategy,
             params=params,
             system_prompt=system_prompt,
         )
@@ -98,6 +123,7 @@ class RetrievalAgent(PlaceholderAgent):
         rewritten_query: str,
         keywords: list[str],
         web_search_enabled: bool,
+        retrieval_strategy: str,
         params: dict[str, Any],
         system_prompt: str,
     ):
@@ -107,6 +133,7 @@ class RetrievalAgent(PlaceholderAgent):
                 rewritten_query=rewritten_query,
                 keywords=keywords,
                 web_search_enabled=web_search_enabled,
+                retrieval_strategy=retrieval_strategy,
             )
             params["retrievalRawResult"] = raw_result
 
@@ -142,9 +169,11 @@ class RetrievalAgent(PlaceholderAgent):
             )
             params["mergedRetrievalResult"] = retrieval_response
 
-            # 步骤 4: 摘要来源（1 次 LLM 调用）
+            # 步骤 4: 摘要来源（默认本地，按需 LLM）
             summary_text = await self._safe_summarize(
-                retrieval_response=retrieval_response, system_prompt=system_prompt,
+                retrieval_response=retrieval_response,
+                system_prompt=system_prompt,
+                llm_enabled=self._llm_summary_enabled(params),
             )
             params["retrievalSummaryText"] = summary_text
             return retrieval_response, summary_text
@@ -160,132 +189,11 @@ class RetrievalAgent(PlaceholderAgent):
             web_search_enabled=web_search_enabled,
         )
         summary_text = await self._safe_summarize(
-            retrieval_response=retrieval_response, system_prompt=system_prompt,
-        )
-        return retrieval_response, summary_text
-
-    async def _tool_grep_search(
-        self,
-        *,
-        tool_input: dict[str, Any],
-        rewritten_query: str,
-        keywords: list[str],
-        params: dict[str, Any],
-    ) -> dict[str, Any]:
-        del tool_input
-        raw_result = await self._safe_get_raw_result(
-            rewritten_query=rewritten_query,
-            keywords=keywords,
-        )
-        params["retrievalRawResult"] = raw_result
-        grep_result = self.service.channel_results(raw_result, "grep")
-        payload = {
-            "priority": grep_result.get("priority", []) if isinstance(grep_result, dict) else [],
-            "query": rewritten_query,
-        }
-        params["grepRetrievalResult"] = payload
-        return payload
-
-    async def _tool_vector_search(
-        self,
-        *,
-        tool_input: dict[str, Any],
-        rewritten_query: str,
-        keywords: list[str],
-        params: dict[str, Any],
-    ) -> dict[str, Any]:
-        del tool_input
-        raw_result = params.get("retrievalRawResult") or await self._safe_get_raw_result(
-            rewritten_query=rewritten_query,
-            keywords=keywords,
-        )
-
-        async def operation() -> dict[str, Any]:
-            if params.get("forceVectorTimeout"):
-                raise TimeoutError("vector db timeout")
-            return {
-                "results": list(self.service.channel_results(raw_result, "vector")),
-                "query": rewritten_query,
-            }
-
-        async def fallback_operation() -> dict[str, Any]:
-            payload = {"results": [], "query": rewritten_query, "degraded": True}
-            await self.recovery_engine.recover_vector_db_timeout(query=rewritten_query)
-            return payload
-
-        payload = await self.recovery_engine.call_with_recovery(
-            failure_type=RecoveryFailureType.VECTOR_DB_TIMEOUT,
-            operation=operation,
-            fallback_operation=fallback_operation,
-        )
-        params["vectorRetrievalResult"] = payload
-        return payload
-
-    async def _tool_graph_expand(
-        self,
-        *,
-        tool_input: dict[str, Any],
-        rewritten_query: str,
-        keywords: list[str],
-        params: dict[str, Any],
-    ) -> dict[str, Any]:
-        del tool_input
-        raw_result = params.get("retrievalRawResult") or await self._safe_get_raw_result(
-            rewritten_query=rewritten_query,
-            keywords=keywords,
-        )
-        payload = {
-            "results": list(self.service.channel_results(raw_result, "graph")),
-            "query": rewritten_query,
-        }
-        params["graphRetrievalResult"] = payload
-        return payload
-
-    def _tool_rrf_merge(
-        self,
-        *,
-        tool_input: dict[str, Any],
-        query: str,
-        rewritten_query: str,
-        keywords: list[str],
-        params: dict[str, Any],
-    ) -> dict[str, Any]:
-        del tool_input
-        raw_result = params.get("retrievalRawResult") or self.service.fallback_raw_result(
-            rewritten_query=rewritten_query,
-            keywords=keywords,
-        )
-        retrieval_response = self.service.build_response(
-            query=query,
-            rewritten_query=rewritten_query,
-            keywords=keywords,
-            raw_result=raw_result,
-        )
-        params["mergedRetrievalResult"] = retrieval_response
-        return retrieval_response.model_dump(by_alias=True)
-
-    async def _tool_summarize_sources(
-        self,
-        *,
-        tool_input: dict[str, Any],
-        system_prompt: str,
-        params: dict[str, Any],
-    ) -> dict[str, Any]:
-        from src.ai_modules.models import RetrievalResponse
-
-        retrieval_response = params.get("mergedRetrievalResult") or RetrievalResponse.model_validate(
-            tool_input
-        )
-        summary = await self._safe_summarize(
             retrieval_response=retrieval_response,
             system_prompt=system_prompt,
+            llm_enabled=self._llm_summary_enabled(params),
         )
-        payload = {
-            "summaryText": summary,
-            "retrievalResult": retrieval_response.model_dump(by_alias=True),
-        }
-        params["retrievalSummaryText"] = summary
-        return payload
+        return retrieval_response, summary_text
 
     async def _safe_get_raw_result(
         self,
@@ -293,8 +201,17 @@ class RetrievalAgent(PlaceholderAgent):
         rewritten_query: str,
         keywords: list[str],
         web_search_enabled: bool = False,
+        retrieval_strategy: str = "LOCAL_HYBRID",
     ) -> dict[str, Any]:
         async def operation() -> dict[str, Any]:
+            if retrieval_strategy == "LOCAL_GREP_FIRST":
+                retrieve_grep_first = getattr(self.service, "retrieve_grep_first", None)
+                if callable(retrieve_grep_first):
+                    return await asyncio.to_thread(
+                        retrieve_grep_first,
+                        rewritten_query,
+                        web_search_enabled=web_search_enabled,
+                    )
             return await asyncio.to_thread(
                 self.service.retrieve_raw,
                 rewritten_query,
@@ -330,7 +247,10 @@ class RetrievalAgent(PlaceholderAgent):
         *,
         retrieval_response,
         system_prompt: str,
+        llm_enabled: bool = False,
     ) -> str:
+        if not llm_enabled:
+            return retrieval_response.sources_summary
         try:
             generator = self.summary_generator or RetrievalSummaryGenerator()
             summary = await generator.summarize(
@@ -345,3 +265,34 @@ class RetrievalAgent(PlaceholderAgent):
                 exc_info=True,
             )
         return retrieval_response.sources_summary
+
+    def _retrieval_strategy(self, params: dict[str, Any]) -> str:
+        strategy = str(params.get("retrievalStrategy") or "LOCAL_HYBRID").strip().upper()
+        allowed = {
+            "NONE",
+            "CONTEXT_ONLY",
+            "LOCAL_GREP_FIRST",
+            "LOCAL_HYBRID",
+            "WEB_AUGMENTED",
+            "DEEP_EVIDENCE",
+        }
+        return strategy if strategy in allowed else "LOCAL_HYBRID"
+
+    def _llm_summary_enabled(self, params: dict[str, Any]) -> bool:
+        return params.get("llmRetrievalSummaryEnabled") is True
+
+    def _empty_retrieval_response(
+        self,
+        *,
+        query: str,
+        rewritten_query: str,
+        keywords: list[str],
+        retrieval_strategy: str,
+    ) -> RetrievalResponse:
+        return RetrievalResponse(
+            query=query,
+            rewrittenQuery=rewritten_query,
+            keywords=keywords,
+            documents=[],
+            sourcesSummary=f"{retrieval_strategy} strategy skipped external retrieval",
+        )

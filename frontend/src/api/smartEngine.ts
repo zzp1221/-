@@ -101,6 +101,29 @@ export interface ProfileSystemAnalysis {
   dataAvailable: boolean;
 }
 
+export interface ProfileResourcePreference {
+  type: string;
+  label: string;
+  identified: boolean;
+  profileMentioned: boolean;
+  requestCount: number;
+  generatedCount: number;
+  downloadCount: number;
+  lastUsedAt?: string | null;
+  evidenceLabel: string;
+}
+
+export interface ProfileExplanationPreferenceAnalytics {
+  value: string;
+  source: string;
+  identified: boolean;
+}
+
+export interface ProfilePreferenceAnalytics {
+  resourcePreferences: ProfileResourcePreference[];
+  explanationPreference: ProfileExplanationPreferenceAnalytics;
+}
+
 export interface UserProfileAnalyticsResponse {
   userId: string;
   days: number;
@@ -108,6 +131,7 @@ export interface UserProfileAnalyticsResponse {
   toDate: string;
   behaviorTrend: ProfileBehaviorTrendPoint[];
   systemAnalysis: ProfileSystemAnalysis;
+  preferenceAnalytics?: ProfilePreferenceAnalytics;
 }
 
 export const smartEngineApi = {

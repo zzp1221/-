@@ -1,6 +1,9 @@
 """
 Vector (semantic) search channel using pgvector cosine similarity.
 """
+import os
+
+import dashscope
 from dashscope import MultiModalEmbedding
 
 from src.ai_modules.config import get_settings
@@ -13,8 +16,12 @@ class VectorSearcher:
         settings = get_settings()
         self.dimension = dimension or settings.knowledge_embedding_dimension
         self.model = model or settings.knowledge_embedding_model_name
+        self.api_key = settings.effective_embedding_api_key
 
     def _embed(self, text: str) -> list[float]:
+        if self.api_key:
+            os.environ["DASHSCOPE_API_KEY"] = self.api_key
+            dashscope.api_key = self.api_key
         resp = MultiModalEmbedding.call(
             model=self.model,
             input=[{"text": text}],

@@ -7,12 +7,12 @@ from src.ai_modules.agents.retrieval_agent import RetrievalAgent
 from src.ai_modules.llms import (
     RuleBasedPlanningLLM,
     RuleBasedQueryRewriteLLM,
-    RuleBasedRetrievalLLM,
 )
 from src.ai_modules.memory import InMemoryLearningPlanStore
 from src.ai_modules.models import EvaluationPayload, LearningPlanPayload, QueryRewriteResult
 from src.ai_modules.retrieval import HybridRetrievalService
 from src.ai_modules.runtime import SystemSnapshot
+from src.ai_modules.runtime.skill_loader import SkillPromptLoader
 
 
 def _build_snapshot() -> SystemSnapshot:
@@ -34,11 +34,88 @@ def _build_snapshot() -> SystemSnapshot:
     )
 
 
+def test_evaluation_agent_system_prompt_loads_skill_and_context() -> None:
+    agent = EvaluationAgent(llm_client=RuleBasedPlanningLLM())
+
+    prompt = agent.system_prompt(_build_snapshot())
+
+    assert "# 评估智能体" in prompt
+    assert "输出契约" in prompt
+    assert "EvaluationPayload" in prompt
+    assert "## 当前上下文" in prompt
+    assert f"课程: {_build_snapshot().current_course}" in prompt
+
+
+def test_evaluation_skill_prompt_falls_back_when_skill_is_missing(tmp_path) -> None:
+    loader = SkillPromptLoader(skills_root=tmp_path)
+
+    prompt = loader.build_system_prompt(
+        skill_name="evaluation",
+        snapshot=_build_snapshot(),
+        fallback_prompt="评估提示词兜底内容",
+    )
+
+    assert prompt == "评估提示词兜底内容"
+
+
+def test_path_planning_agent_system_prompt_loads_skill_and_context() -> None:
+    agent = PathPlanningAgent(
+        llm_client=RuleBasedPlanningLLM(),
+        learning_plan_store=InMemoryLearningPlanStore(),
+    )
+
+    prompt = agent.system_prompt(_build_snapshot())
+
+    assert "# 路径规划智能体" in prompt
+    assert "输出契约" in prompt
+    assert "LearningPlanPayload" in prompt
+    assert "## 当前上下文" in prompt
+    assert f"课程: {_build_snapshot().current_course}" in prompt
+
+
+def test_path_planning_skill_prompt_falls_back_when_skill_is_missing(tmp_path) -> None:
+    loader = SkillPromptLoader(skills_root=tmp_path)
+
+    prompt = loader.build_system_prompt(
+        skill_name="path_planning",
+        snapshot=_build_snapshot(),
+        fallback_prompt="路径规划提示词兜底内容",
+    )
+
+    assert prompt == "路径规划提示词兜底内容"
+
+
+def test_query_rewrite_agent_system_prompt_loads_skill_and_context() -> None:
+    agent = QueryRewriteAgent(llm_client=RuleBasedQueryRewriteLLM())
+
+    prompt = agent.system_prompt(_build_snapshot())
+
+    assert "# 查询改写智能体" in prompt
+    assert "输出契约" in prompt
+    assert "QueryRewriteResult" in prompt
+    assert "## 当前上下文" in prompt
+    assert f"课程: {_build_snapshot().current_course}" in prompt
+
+
+def test_query_rewrite_skill_prompt_falls_back_when_skill_is_missing(tmp_path) -> None:
+    loader = SkillPromptLoader(skills_root=tmp_path)
+
+    prompt = loader.build_system_prompt(
+        skill_name="query_rewrite",
+        snapshot=_build_snapshot(),
+        fallback_prompt="查询改写提示词兜底内容",
+    )
+
+    assert prompt == "查询改写提示词兜底内容"
+
+
 @pytest.mark.asyncio
 async def test_query_rewrite_agent_accepts_llm_rewrite_result() -> None:
     class FakeRewriteGenerator:
         async def rewrite(self, *, system_prompt, original_query, learning_context):
-            del system_prompt, original_query, learning_context
+            assert "# 查询改写智能体" in system_prompt
+            assert original_query == "联合索引"
+            assert learning_context["course"] == "数据库原理"
             return QueryRewriteResult(
                 originalQuery="联合索引",
                 rewrittenQuery="数据库原理 联合索引 最左匹配",
@@ -63,13 +140,15 @@ async def test_query_rewrite_agent_accepts_llm_rewrite_result() -> None:
             service_type="RESOURCE_GENERATION",
             params=params,
             snapshot=_build_snapshot(),
-            system_prompt="test",
+            system_prompt=agent.system_prompt(_build_snapshot()),
         )
     ]
 
     assert [event.event for event in events] == ["progress", "result_chunk"]
     assert params["rewrittenQuery"] == "数据库原理 联合索引 最左匹配"
+    assert params["keywords"] == ["数据库原理", "联合索引", "最左匹配"]
     assert params["queryRewriteContext"]["originalQuery"] == "联合索引"
+    assert params["rewrittenQueryPayload"]["rewrittenQuery"] == "数据库原理 联合索引 最左匹配"
 
 
 @pytest.mark.asyncio
@@ -96,13 +175,13 @@ async def test_retrieval_agent_uses_summary_generator_when_available() -> None:
 
     agent = RetrievalAgent(
         service=HybridRetrievalService(retriever=FakeRetriever()),
-        llm_client=RuleBasedRetrievalLLM(),
         summary_generator=FakeSummaryGenerator(),
     )
     params = {
         "query": "联合索引",
         "rewrittenQuery": "数据库原理 联合索引",
         "keywords": ["数据库原理", "联合索引"],
+        "llmRetrievalSummaryEnabled": True,
     }
 
     events = [
@@ -123,6 +202,139 @@ async def test_retrieval_agent_uses_summary_generator_when_available() -> None:
     assert params["grepRetrievalResult"]["priority"][0][0] == "composite-index"
     assert params["vectorRetrievalResult"]["results"][0][0] == "db-index"
     assert params["mergedRetrievalResult"].documents[0].slug in {"db-index", "composite-index"}
+
+
+@pytest.mark.asyncio
+async def test_retrieval_agent_defaults_to_sources_summary_without_llm() -> None:
+    class FailingSummaryGenerator:
+        async def summarize(self, *, system_prompt, retrieval_response):
+            del system_prompt, retrieval_response
+            raise AssertionError("summary LLM should be opt-in")
+
+    class FakeRetriever:
+        def retrieve(self, query: str) -> dict:
+            return {
+                "query": query,
+                "channels": {
+                    "grep": {"priority": [("composite-index", "联合索引", 1.0, ["联合索引"])]},
+                    "vector": [],
+                    "graph": [],
+                },
+                "top": [("composite-index", "联合索引", 1.0)],
+            }
+
+    agent = RetrievalAgent(
+        service=HybridRetrievalService(retriever=FakeRetriever()),
+        summary_generator=FailingSummaryGenerator(),
+    )
+    params = {
+        "query": "联合索引",
+        "rewrittenQuery": "数据库原理 联合索引",
+        "keywords": ["数据库原理", "联合索引"],
+    }
+
+    events = [
+        event
+        async for event in agent.run(
+            task_id="task-retrieval-no-llm-summary",
+            trace_id="trace-retrieval-no-llm-summary",
+            seq=1,
+            service_type="RESOURCE_GENERATION",
+            params=params,
+            snapshot=_build_snapshot(),
+            system_prompt="test",
+        )
+    ]
+
+    assert [event.event for event in events] == ["progress", "result_chunk"]
+    assert params["retrievalSummaryText"] == params["retrievalResult"]["sourcesSummary"]
+
+
+@pytest.mark.asyncio
+async def test_retrieval_agent_skips_external_retrieval_for_none_strategy() -> None:
+    class FailingRetriever:
+        def retrieve(self, query: str) -> dict:
+            raise AssertionError(f"retrieval should be skipped: {query}")
+
+    agent = RetrievalAgent(
+        service=HybridRetrievalService(retriever=FailingRetriever()),
+    )
+    params = {
+        "query": "你好",
+        "retrievalStrategy": "NONE",
+    }
+
+    events = [
+        event
+        async for event in agent.run(
+            task_id="task-retrieval-none",
+            trace_id="trace-retrieval-none",
+            seq=1,
+            service_type="TUTORING",
+            params=params,
+            snapshot=_build_snapshot(),
+            system_prompt="test",
+        )
+    ]
+
+    assert [event.event for event in events] == ["progress", "result_chunk"]
+    assert params["retrievalResult"]["documents"] == []
+
+
+@pytest.mark.asyncio
+async def test_retrieval_agent_uses_grep_first_strategy() -> None:
+    class GrepFirstRetriever:
+        def __init__(self) -> None:
+            self.retrieve_calls = 0
+            self.grep_first_calls = 0
+
+        def retrieve(self, query: str) -> dict:
+            self.retrieve_calls += 1
+            return {"query": query, "channels": {}, "top": []}
+
+        def retrieve_grep_first(self, query: str, *, web_search_enabled: bool = False) -> dict:
+            del web_search_enabled
+            self.grep_first_calls += 1
+            return {
+                "query": query,
+                "retrievalStrategy": "LOCAL_GREP_FIRST",
+                "grepFirstPromoted": False,
+                "channels": {
+                    "grep": {"priority": [("grep-doc", "联合索引", 0.96, ["联合索引"])]},
+                    "vector": [],
+                    "graph": [],
+                    "web": [],
+                },
+                "top": [("grep-doc", "联合索引", 0.96)],
+            }
+
+    retriever = GrepFirstRetriever()
+    agent = RetrievalAgent(
+        service=HybridRetrievalService(retriever=retriever),
+    )
+    params = {
+        "query": "联合索引怎么用",
+        "rewrittenQuery": "数据库原理 联合索引 怎么用",
+        "keywords": ["数据库原理", "联合索引"],
+        "retrievalStrategy": "LOCAL_GREP_FIRST",
+    }
+
+    _ = [
+        event
+        async for event in agent.run(
+            task_id="task-retrieval-grep-first",
+            trace_id="trace-retrieval-grep-first",
+            seq=1,
+            service_type="TUTORING",
+            params=params,
+            snapshot=_build_snapshot(),
+            system_prompt="test",
+        )
+    ]
+
+    assert retriever.grep_first_calls == 1
+    assert retriever.retrieve_calls == 0
+    assert params["vectorRetrievalResult"]["results"] == []
 
 
 @pytest.mark.asyncio
@@ -221,18 +433,94 @@ async def test_evaluation_agent_uses_llm_generated_report_via_agent_core_loop() 
         )
     ]
 
-    assert [event.event for event in events] == ["progress", "result_chunk"]
+    assert [event.event for event in events] == ["progress", "resource_file", "result_chunk"]
     assert params["aggregatedEvaluationContext"]["candidateWeaknesses"][0] == "最左匹配"
     assert params["evaluationResult"]["overallLevel"] == "INTERMEDIATE"
-    assert events[1].payload.text.startswith("LLM 评估：")
+    assert events[1].payload.asset_type == "DOCUMENT"
+    assert events[1].payload.inline_content is not None
+    assert "LLM 评估：" in events[1].payload.inline_content
+    assert "LLM 评估：" in events[2].payload.text
 
 
 @pytest.mark.asyncio
-async def test_path_planning_agent_generates_and_persists_learning_path_via_agent_core_loop() -> None:
+async def test_evaluation_agent_golden_eval_preserves_interactive_question_batch() -> None:
+    class GoldenEvaluationGenerator:
+        async def evaluate(self, *, system_prompt, context_payload):
+            assert "# 评估智能体" in system_prompt
+            assert context_payload["assessmentDimensions"] == ["练习掌握"]
+            return EvaluationPayload.model_validate(
+                {
+                    "overallLevel": "BASIC",
+                    "strengths": ["愿意复盘错题", "能说出部分使用条件"],
+                    "weaknesses": ["最左匹配", "索引条件"],
+                    "nextFocus": ["最左匹配", "条件判断"],
+                    "dimensions": [
+                        {
+                            "name": "practice_mastery",
+                            "level": "BASIC",
+                            "evidence": "正确率 0.5，仍需要围绕最左匹配做专项练习。",
+                            "recommendation": "先判断索引字段顺序，再解释失效条件。",
+                        }
+                    ],
+                    "summaryText": "练习掌握评估：学生能识别联合索引主题，但最左匹配和索引条件仍需巩固。",
+                }
+            )
+
+    class FailingQuestionGenerator:
+        async def generate_batch(self, *, topic, difficulty, count, learning_context):
+            del topic, difficulty, count, learning_context
+            raise RuntimeError("force deterministic assessment questions")
+
+    agent = EvaluationAgent(
+        llm_client=RuleBasedPlanningLLM(),
+        generator=GoldenEvaluationGenerator(),
+        question_generator=FailingQuestionGenerator(),
+    )
+    params = {
+        "dimensions": ["练习掌握"],
+        "profile": {"studentLevel": "BASIC", "knowledgeGaps": ["最左匹配"]},
+        "judgeResult": {"accuracy": 0.5, "weakKnowledgeTags": ["最左匹配", "索引条件"]},
+        "messages": [{"role": "user", "content": "我想测一下联合索引掌握得怎么样。"}],
+        "learningContext": {"course": "数据库原理", "chapter": "联合索引"},
+    }
+
+    events = [
+        event
+        async for event in agent.run(
+            task_id="task-eval-golden",
+            trace_id="trace-eval-golden",
+            seq=1,
+            service_type="EVALUATION",
+            params=params,
+            snapshot=_build_snapshot(),
+            system_prompt=agent.system_prompt(_build_snapshot()),
+        )
+    ]
+
+    result = params["evaluationResult"]
+
+    assert [event.event for event in events] == ["progress", "resource_file", "result_chunk", "question_batch"]
+    assert result["overallLevel"] == "BASIC"
+    assert result["weaknesses"] == ["最左匹配", "索引条件"]
+    assert result["nextFocus"] == ["最左匹配", "条件判断"]
+    assert result["dimensions"][0]["name"] == "practice_mastery"
+    assert events[1].payload.asset_type == "DOCUMENT"
+    assert events[1].payload.inline_content is not None
+    assert "练习掌握评估" in events[1].payload.inline_content
+    assert "练习掌握专项评估已完成" in events[2].payload.text
+    assert events[3].payload.assessment_dimension == "练习掌握"
+    assert len(events[3].payload.questions) == 3
+    assert params["profileSource"] == "EVALUATION"
+    assert params["practiceQuestionBatch"]["assessmentDimension"] == "练习掌握"
+
+
+@pytest.mark.asyncio
+async def test_path_planning_agent_golden_eval_preserves_learning_path_contract() -> None:
     class FakePathGenerator:
         async def plan(self, *, system_prompt, context_payload):
-            del system_prompt
+            assert "# 路径规划智能体" in system_prompt
             assert context_payload["planningContext"]["triggerSource"] == "EVALUATION"
+            assert context_payload["planningContext"]["nextFocus"][:2] == ["最左匹配", "使用条件"]
             return LearningPlanPayload.model_validate(
                 {
                     "goal": "掌握联合索引的最左匹配规则",
@@ -285,14 +573,19 @@ async def test_path_planning_agent_generates_and_persists_learning_path_via_agen
             service_type="PATH_PLANNING",
             params=params,
             snapshot=_build_snapshot(),
-            system_prompt="test",
+            system_prompt=agent.system_prompt(_build_snapshot()),
         )
     ]
 
     stored_record = store.active_plans_by_user["00000000-0000-0000-0000-000000000777"]
+    learning_path = params["learningPath"]
 
     assert [event.event for event in events] == ["progress", "result_chunk"]
-    assert params["learningPath"]["goal"] == "掌握联合索引的最左匹配规则"
+    assert set(learning_path.keys()) >= {"goal", "duration", "milestones", "steps", "summaryText"}
+    assert learning_path["goal"] == "掌握联合索引的最左匹配规则"
+    assert learning_path["duration"] == "4天"
+    assert learning_path["milestones"] == ["理解规则", "判断条件", "解释场景"]
+    assert learning_path["steps"][0]["successCriteria"] == "能说清失效条件"
     assert params["learningPlanPersistence"]["version"] == 1
     assert stored_record["summaryText"].startswith("LLM 路径：")
     assert events[1].payload.text.startswith("LLM 路径：")

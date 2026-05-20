@@ -1,4 +1,5 @@
 import { useEffect, useId, useState } from 'react';
+import DOMPurify from 'dompurify';
 import mermaid from 'mermaid';
 
 interface MermaidDiagramProps {
@@ -13,7 +14,7 @@ function ensureMermaidInitialized(): void {
   }
   mermaid.initialize({
     startOnLoad: false,
-    securityLevel: 'loose',
+    securityLevel: 'strict',
     theme: 'default',
   });
   mermaidInitialized = true;
@@ -54,7 +55,7 @@ export default function MermaidDiagram({ chart }: MermaidDiagramProps) {
       try {
         const result = await mermaid.render(`mermaid-${id}`, normalizedChart);
         if (!cancelled) {
-          setSvg(result.svg);
+          setSvg(DOMPurify.sanitize(result.svg, { USE_PROFILES: { svg: true } }));
           setError('');
         }
       } catch (renderError) {

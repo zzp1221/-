@@ -5,12 +5,14 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import logging
+import os
+import secrets
 import tempfile
 from contextlib import asynccontextmanager, suppress
 from pathlib import Path
 from typing import AsyncIterator
 
-from fastapi import FastAPI, HTTPException, Query, Request
+from fastapi import Depends, FastAPI, Header, HTTPException, Query
 from fastapi.responses import JSONResponse, StreamingResponse
 from opentelemetry import trace
 from pydantic import BaseModel, ConfigDict, Field
@@ -20,6 +22,7 @@ from src.ai_modules.generation.content_chain import OpenAICompatibleStructuredGe
 from src.ai_modules.memory import ConversationMessageDocument, MongoConversationMessageStore
 from src.ai_modules.models import DonePayload, DoneSSEEvent, EngineStreamRequest, ErrorPayload, ErrorSSEEvent
 from src.ai_modules.observability import configure_observability
+from src.ai_modules.runtime.smart_engine_stream_worker import SmartEngineStreamWorker
 from src.ai_modules.supervisor import PythonAgentSupervisor
 
 LOGGER = logging.getLogger(__name__)
@@ -28,6 +31,8 @@ TRACER = trace.get_tracer(__name__)
 SUPERVISOR = PythonAgentSupervisor()
 MESSAGE_STORE = MongoConversationMessageStore()
 ACTIVE_STREAM_TASKS: dict[str, asyncio.Task[None]] = {}
+INTERNAL_TOKEN_HEADER = "X-Zhixue-Internal-Token"
+INTERNAL_TOKEN_FILE = Path("/run/secrets/zhixue-python-agent-internal-token")
 
 
 class FileCancelledTasks:
@@ -72,6 +77,35 @@ class InternalConversationMessageRequest(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
 
+def verify_internal_token(
+    x_zhixue_internal_token: str | None = Header(default=None, alias=INTERNAL_TOKEN_HEADER),
+) -> None:
+    """Validate Java control-plane calls to internal Python Agent endpoints."""
+
+    expected_token = internal_token()
+    if not expected_token:
+        LOGGER.error("PYTHON_AGENT_INTERNAL_TOKEN is not configured; rejecting internal request")
+        raise HTTPException(status_code=503, detail="Internal token is not configured")
+
+    supplied_token = (x_zhixue_internal_token or "").strip()
+    if not supplied_token or not secrets.compare_digest(supplied_token, expected_token):
+        raise HTTPException(status_code=401, detail="Invalid internal token")
+
+
+def internal_token() -> str:
+    configured_token = SETTINGS.python_agent_internal_token.strip()
+    if configured_token:
+        return configured_token
+    env_token = os.getenv("PYTHON_AGENT_INTERNAL_TOKEN", "").strip()
+    if env_token:
+        return env_token
+    try:
+        return INTERNAL_TOKEN_FILE.read_text(encoding="utf-8").strip() if INTERNAL_TOKEN_FILE.exists() else ""
+    except OSError as exc:
+        LOGGER.warning("Failed to read internal token file %s: %s", INTERNAL_TOKEN_FILE, exc)
+        return ""
+
+
 @asynccontextmanager
 async def lifespan(_: FastAPI) -> AsyncIterator[None]:
     """Application lifecycle hooks."""
@@ -88,14 +122,26 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
     )
 
     cleanup_task = asyncio.create_task(_sandbox_cleanup_loop())
+    stream_worker = SmartEngineStreamWorker(SETTINGS, SUPERVISOR, internal_token)
+    stream_worker_task = asyncio.create_task(
+        stream_worker.run_forever(),
+        name="smart-engine-redis-stream-worker",
+    )
 
     yield
 
     cleanup_task.cancel()
+    stream_worker_task.cancel()
     try:
         await cleanup_task
     except asyncio.CancelledError:
         pass
+    try:
+        await stream_worker_task
+    except asyncio.CancelledError:
+        pass
+    except Exception:
+        LOGGER.exception("SmartEngine Redis Streams worker stopped with an error")
     await OpenAICompatibleStructuredGenerator.close_async_clients()
 
 
@@ -262,6 +308,7 @@ async def health() -> JSONResponse:
 @app.post("/internal/smart-engine/stream")
 async def smart_engine_stream(
     engine_request: EngineStreamRequest,
+    _: None = Depends(verify_internal_token),
 ) -> StreamingResponse:
     """Internal streaming endpoint used by the Java BFF."""
 
@@ -288,7 +335,10 @@ async def smart_engine_stream(
 
 
 @app.post("/internal/smart-engine/{task_id}/cancel")
-async def cancel_smart_engine_task(task_id: str) -> JSONResponse:
+async def cancel_smart_engine_task(
+    task_id: str,
+    _: None = Depends(verify_internal_token),
+) -> JSONResponse:
     """Cancel a running smart-engine task by its id."""
     CANCELLED_TASKS.add(task_id)
     stream_task = ACTIVE_STREAM_TASKS.get(task_id)
@@ -302,6 +352,7 @@ async def cancel_smart_engine_task(task_id: str) -> JSONResponse:
 async def append_conversation_message(
     conversation_id: str,
     request: InternalConversationMessageRequest,
+    _: None = Depends(verify_internal_token),
 ) -> JSONResponse:
     """Persist a single conversation transcript message."""
 
@@ -319,6 +370,7 @@ async def append_conversation_message(
 @app.get("/internal/conversations/{conversation_id}/messages")
 async def list_conversation_messages(
     conversation_id: str,
+    _: None = Depends(verify_internal_token),
     user_id: str | None = Query(default=None, alias="userId"),
     page: int | None = Query(default=None, ge=0),
     size: int | None = Query(default=None, ge=1, le=200),

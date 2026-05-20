@@ -2,6 +2,9 @@ package com.project.application.profile;
 
 import com.project.api.profile.dto.ProfileBehaviorTrendPoint;
 import com.project.api.profile.dto.ProfileDataCoverageResponse;
+import com.project.api.profile.dto.ProfileExplanationPreferenceResponse;
+import com.project.api.profile.dto.ProfilePreferenceAnalyticsResponse;
+import com.project.api.profile.dto.ProfileResourcePreferenceResponse;
 import com.project.api.profile.dto.ProfileSystemAnalysisResponse;
 import com.project.api.profile.dto.UserProfileAnalyticsResponse;
 import com.project.application.common.ApplicationException;
@@ -26,6 +29,7 @@ import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
@@ -42,6 +46,15 @@ public class UserProfileAnalyticsService {
     private static final int MIN_DAYS = 7;
     private static final int MAX_DAYS = 90;
     private static final int STRONG_SKILL_THRESHOLD = 70;
+    private static final String EXPLANATION_PREFERENCE_SOURCE = "profile_json.explanationPreference";
+    private static final List<ResourcePreferenceDefinition> RESOURCE_PREFERENCES = List.of(
+        new ResourcePreferenceDefinition("EXPLANATION", "讲解文档"),
+        new ResourcePreferenceDefinition("READING", "拓展阅读"),
+        new ResourcePreferenceDefinition("CODE_CASE", "代码案例"),
+        new ResourcePreferenceDefinition("MINDMAP", "思维导图"),
+        new ResourcePreferenceDefinition("QUIZ", "练习题"),
+        new ResourcePreferenceDefinition("VIDEO", "数字人视频")
+    );
 
     private static final String CONVERSATION_SQL = """
         SELECT CAST(COALESCE(last_message_at, updated_at, created_at) AS date) AS day,
@@ -94,6 +107,44 @@ public class UserProfileAnalyticsService {
         GROUP BY CAST(reviewed_at AS date)
         """;
 
+    private static final String RESOURCE_REQUEST_SQL = """
+        SELECT resource_type,
+               COUNT(*) AS request_count,
+               MAX(created_at) AS last_used_at
+        FROM (
+            SELECT CASE
+                     WHEN service_type = 'VIDEO_GENERATION' THEN 'VIDEO'
+                     WHEN service_type = 'PRACTICE_JUDGE' THEN 'QUIZ'
+                     ELSE COALESCE(
+                       NULLIF(request_payload ->> 'resourceType', ''),
+                       NULLIF(request_payload ->> 'preferredType', ''),
+                       NULLIF(request_payload ->> 'resource_type', ''),
+                       NULLIF(request_payload ->> 'preferred_type', '')
+                     )
+                   END AS resource_type,
+                   created_at
+            FROM app.smart_engine_task
+            WHERE user_id = :userId
+              AND created_at >= :fromAt
+              AND created_at < :toAt
+        ) preference_source
+        WHERE resource_type IS NOT NULL
+          AND resource_type <> ''
+        GROUP BY resource_type
+        """;
+
+    private static final String RESOURCE_ARTIFACT_SQL = """
+        SELECT resource_type::text AS resource_type,
+               COUNT(*) AS generated_count,
+               COALESCE(SUM(download_count), 0) AS download_count,
+               MAX(created_at) AS last_used_at
+        FROM app.generated_artifact
+        WHERE user_id = :userId
+          AND created_at >= :fromAt
+          AND created_at < :toAt
+        GROUP BY resource_type::text
+        """;
+
     private final NamedParameterJdbcTemplate jdbcTemplate;
     private final UserProfileCurrentRepository userProfileCurrentRepository;
 
@@ -141,8 +192,9 @@ public class UserProfileAnalyticsService {
             .map(current -> current.getProfileJson() == null ? Map.<String, Object>of() : current.getProfileJson())
             .orElseGet(Map::of);
         ProfileSystemAnalysisResponse systemAnalysis = buildSystemAnalysis(profile, trend, days);
+        ProfilePreferenceAnalyticsResponse preferenceAnalytics = buildPreferenceAnalytics(profile, params, days);
 
-        return new UserProfileAnalyticsResponse(requestedUserId, days, fromDate, toDate, trend, systemAnalysis);
+        return new UserProfileAnalyticsResponse(requestedUserId, days, fromDate, toDate, trend, systemAnalysis, preferenceAnalytics);
     }
 
     private int normalizeDays(Integer requestedDays) {
@@ -237,6 +289,98 @@ public class UserProfileAnalyticsService {
             buildSummary(coverage, days, dataAvailable),
             dataAvailable
         );
+    }
+
+    private ProfilePreferenceAnalyticsResponse buildPreferenceAnalytics(
+        Map<String, Object> profile,
+        MapSqlParameterSource params,
+        int days
+    ) {
+        Map<String, PreferenceEvidence> evidenceByType = initializePreferenceEvidence();
+        for (String preference : readStringList(firstValue(
+            profile,
+            "preferredResourceTypes",
+            "preferred_resource_types",
+            "preference",
+            "learningPreference",
+            "learning_preference"
+        ))) {
+            PreferenceEvidence evidence = evidenceByType.get(normalizeResourceType(preference));
+            if (evidence != null) {
+                evidence.markProfileMentioned();
+            }
+        }
+
+        for (Map<String, Object> row : safeQuery("smart_engine_task.preference", RESOURCE_REQUEST_SQL, params)) {
+            PreferenceEvidence evidence = evidenceByType.get(normalizeResourceType(readString(row.get("resource_type"))));
+            if (evidence != null) {
+                evidence.addRequests(readInt(row.get("request_count")), readOffsetDateTime(row.get("last_used_at")));
+            }
+        }
+
+        for (Map<String, Object> row : safeQuery("generated_artifact.preference", RESOURCE_ARTIFACT_SQL, params)) {
+            PreferenceEvidence evidence = evidenceByType.get(normalizeResourceType(readString(row.get("resource_type"))));
+            if (evidence != null) {
+                evidence.addArtifacts(
+                    readInt(row.get("generated_count")),
+                    readInt(row.get("download_count")),
+                    readOffsetDateTime(row.get("last_used_at"))
+                );
+            }
+        }
+
+        List<ProfileResourcePreferenceResponse> resourcePreferences = RESOURCE_PREFERENCES.stream()
+            .map(definition -> {
+                PreferenceEvidence evidence = evidenceByType.get(definition.type());
+                boolean identified = evidence != null && evidence.identified();
+                return new ProfileResourcePreferenceResponse(
+                    definition.type(),
+                    definition.label(),
+                    identified,
+                    evidence != null && evidence.profileMentioned(),
+                    evidence == null ? 0 : evidence.requestCount(),
+                    evidence == null ? 0 : evidence.generatedCount(),
+                    evidence == null ? 0 : evidence.downloadCount(),
+                    evidence == null ? null : evidence.lastUsedAt(),
+                    buildEvidenceLabel(evidence, days)
+                );
+            })
+            .toList();
+
+        String explanationPreference = readString(firstValue(
+            profile,
+            "explanationPreference",
+            "explanation_preference"
+        ));
+        ProfileExplanationPreferenceResponse explanation = new ProfileExplanationPreferenceResponse(
+            explanationPreference,
+            EXPLANATION_PREFERENCE_SOURCE,
+            !explanationPreference.isBlank()
+        );
+        return new ProfilePreferenceAnalyticsResponse(resourcePreferences, explanation);
+    }
+
+    private Map<String, PreferenceEvidence> initializePreferenceEvidence() {
+        Map<String, PreferenceEvidence> evidenceByType = new LinkedHashMap<>();
+        for (ResourcePreferenceDefinition definition : RESOURCE_PREFERENCES) {
+            evidenceByType.put(definition.type(), new PreferenceEvidence());
+        }
+        return evidenceByType;
+    }
+
+    private String buildEvidenceLabel(PreferenceEvidence evidence, int days) {
+        if (evidence == null || !evidence.identified()) {
+            return "暂无真实证据";
+        }
+        if (evidence.hasBehaviorEvidence()) {
+            return "已识别 · 近%d天请求 %d 次 / 生成 %d 次 / 下载 %d 次".formatted(
+                days,
+                evidence.requestCount(),
+                evidence.generatedCount(),
+                evidence.downloadCount()
+            );
+        }
+        return "画像已识别，暂无近期行为证据";
     }
 
     private ProfileDataCoverageResponse buildCoverage(
@@ -387,6 +531,22 @@ public class UserProfileAnalyticsService {
             .toList();
     }
 
+    private String normalizeResourceType(String value) {
+        String normalized = value.trim()
+            .toUpperCase(Locale.ROOT)
+            .replace('-', '_')
+            .replace(' ', '_');
+        return switch (normalized) {
+            case "DOCUMENT", "EXPLANATION", "讲解文档" -> "EXPLANATION";
+            case "READING", "拓展阅读" -> "READING";
+            case "CODE", "CODE_CASE", "PRACTICAL_CASE", "代码案例", "实操案例" -> "CODE_CASE";
+            case "QUIZ", "PRACTICE", "练习题" -> "QUIZ";
+            case "MINDMAP", "MIND_MAP", "思维导图" -> "MINDMAP";
+            case "VIDEO", "DIGITAL_HUMAN_VIDEO", "数字人视频", "视频" -> "VIDEO";
+            default -> "";
+        };
+    }
+
     private Integer readScoreValue(Object value) {
         Number number = readNumber(value);
         if (number == null) {
@@ -434,6 +594,26 @@ public class UserProfileAnalyticsService {
         return null;
     }
 
+    private OffsetDateTime readOffsetDateTime(Object value) {
+        if (value instanceof OffsetDateTime dateTime) {
+            return dateTime;
+        }
+        if (value instanceof Timestamp timestamp) {
+            return timestamp.toInstant().atZone(ZoneId.systemDefault()).toOffsetDateTime();
+        }
+        if (value instanceof java.util.Date date) {
+            return date.toInstant().atZone(ZoneId.systemDefault()).toOffsetDateTime();
+        }
+        if (value instanceof String text && !text.isBlank()) {
+            try {
+                return OffsetDateTime.parse(text);
+            } catch (RuntimeException ignored) {
+                return null;
+            }
+        }
+        return null;
+    }
+
     private int readInt(Object value) {
         Number number = readNumber(value);
         return number == null ? 0 : Math.max(0, number.intValue());
@@ -450,7 +630,67 @@ public class UserProfileAnalyticsService {
     private record PracticeAggregate(int submissionCount, int correctCount) {
     }
 
+    private record ResourcePreferenceDefinition(String type, String label) {
+    }
+
     private record SkillScore(String topic, int score) {
+    }
+
+    private static final class PreferenceEvidence {
+        private boolean profileMentioned;
+        private int requestCount;
+        private int generatedCount;
+        private int downloadCount;
+        private OffsetDateTime lastUsedAt;
+
+        private void markProfileMentioned() {
+            this.profileMentioned = true;
+        }
+
+        private void addRequests(int count, OffsetDateTime usedAt) {
+            requestCount += count;
+            rememberLastUsedAt(usedAt);
+        }
+
+        private void addArtifacts(int generated, int downloads, OffsetDateTime usedAt) {
+            generatedCount += generated;
+            downloadCount += downloads;
+            rememberLastUsedAt(usedAt);
+        }
+
+        private boolean identified() {
+            return profileMentioned || hasBehaviorEvidence();
+        }
+
+        private boolean hasBehaviorEvidence() {
+            return requestCount > 0 || generatedCount > 0 || downloadCount > 0;
+        }
+
+        private boolean profileMentioned() {
+            return profileMentioned;
+        }
+
+        private int requestCount() {
+            return requestCount;
+        }
+
+        private int generatedCount() {
+            return generatedCount;
+        }
+
+        private int downloadCount() {
+            return downloadCount;
+        }
+
+        private OffsetDateTime lastUsedAt() {
+            return lastUsedAt;
+        }
+
+        private void rememberLastUsedAt(OffsetDateTime usedAt) {
+            if (usedAt != null && (lastUsedAt == null || usedAt.isAfter(lastUsedAt))) {
+                lastUsedAt = usedAt;
+            }
+        }
     }
 
     private static final class TrendBuilder {

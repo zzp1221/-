@@ -13,6 +13,7 @@ public record UserProfileAnalyticsResponse(
     LocalDate fromDate,
     LocalDate toDate,
     List<ProfileBehaviorTrendPoint> behaviorTrend,
-    ProfileSystemAnalysisResponse systemAnalysis
+    ProfileSystemAnalysisResponse systemAnalysis,
+    ProfilePreferenceAnalyticsResponse preferenceAnalytics
 ) {
 }

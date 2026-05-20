@@ -5,26 +5,33 @@ import com.project.application.common.ApplicationException;
 import com.project.config.AppProperties;
 import com.project.security.JwtAuthenticatedUser;
 import com.project.security.JwtProvider;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.file.Files;
+import java.nio.file.LinkOption;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.time.Instant;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import java.util.stream.Stream;
 
 /**
  * 处理聊天图片上传及用于多模态分析的签名公开读取 URL。
  */
 @Service
 public class ConversationImageService {
+
+    private static final Logger LOGGER = LoggerFactory.getLogger(ConversationImageService.class);
 
     private static final Set<String> ALLOWED_CONTENT_TYPES = Set.of(
         "image/jpeg",
@@ -100,6 +107,65 @@ public class ConversationImageService {
             throw new ApplicationException("IMAGE_NOT_FOUND", "图片不存在或已失效", HttpStatus.NOT_FOUND);
         }
         return new ResolvedImage(path, MediaType.parseMediaType(normalizeContentType(null, parsed.extension())));
+    }
+
+    @Scheduled(fixedDelay = 300_000, initialDelay = 300_000)
+    public void cleanupExpiredImages() {
+        cleanupExpiredImages(Instant.now());
+    }
+
+    void cleanupExpiredImages(Instant now) {
+        Path storageDir = Path.of(appProperties.getUpload().getImageStorageDir()).toAbsolutePath().normalize();
+        if (!Files.exists(storageDir)) {
+            return;
+        }
+        if (!Files.isDirectory(storageDir, LinkOption.NOFOLLOW_LINKS)) {
+            LOGGER.warn("Conversation image storage path is not a directory: {}", storageDir);
+            return;
+        }
+
+        Instant cutoff = now.minusSeconds(appProperties.getUpload().getImageTokenTtlSeconds());
+        try (Stream<Path> userDirs = Files.list(storageDir)) {
+            userDirs
+                .filter(path -> Files.isDirectory(path, LinkOption.NOFOLLOW_LINKS))
+                .forEach(userDir -> cleanupUserImageDirectory(userDir, cutoff));
+        } catch (IOException ex) {
+            LOGGER.warn("Conversation image cleanup failed for {}", storageDir, ex);
+        }
+    }
+
+    private void cleanupUserImageDirectory(Path userDir, Instant cutoff) {
+        try (Stream<Path> entries = Files.list(userDir)) {
+            entries
+                .filter(path -> Files.isRegularFile(path, LinkOption.NOFOLLOW_LINKS))
+                .filter(this::isAllowedImageFile)
+                .forEach(file -> deleteIfExpired(file, cutoff));
+        } catch (IOException ex) {
+            LOGGER.warn("Conversation image cleanup failed for {}", userDir, ex);
+            return;
+        }
+
+        try (Stream<Path> remaining = Files.list(userDir)) {
+            if (remaining.findAny().isEmpty()) {
+                Files.deleteIfExists(userDir);
+            }
+        } catch (IOException ex) {
+            LOGGER.warn("Conversation image directory cleanup failed for {}", userDir, ex);
+        }
+    }
+
+    private void deleteIfExpired(Path file, Instant cutoff) {
+        try {
+            if (Files.getLastModifiedTime(file, LinkOption.NOFOLLOW_LINKS).toInstant().isBefore(cutoff)) {
+                Files.deleteIfExists(file);
+            }
+        } catch (IOException ex) {
+            LOGGER.warn("Failed to delete expired conversation image {}", file, ex);
+        }
+    }
+
+    private boolean isAllowedImageFile(Path file) {
+        return ALLOWED_EXTENSIONS.contains(resolveExtension(file.getFileName().toString()));
     }
 
     private String buildImageUrl(UUID userId, UUID imageId, String extension) {

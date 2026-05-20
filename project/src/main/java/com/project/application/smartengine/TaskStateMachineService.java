@@ -61,6 +61,9 @@ public class TaskStateMachineService {
     @Transactional
     public SmartEngineTask markRunning(UUID taskId) {
         SmartEngineTask task = getTaskInternal(taskId);
+        if (task.isTerminal()) {
+            return task;
+        }
         task.setTaskStatus(TaskStatus.RUNNING);
         task.setStartedAt(task.getStartedAt() == null ? OffsetDateTime.now() : task.getStartedAt());
         if (task.getCurrentStage() == null) {
@@ -73,6 +76,31 @@ public class TaskStateMachineService {
     public TaskStreamEventPayload recordPythonEvent(UUID taskId, PythonStreamEvent pythonEvent) {
         SmartEngineTask task = getTaskInternalForUpdate(taskId);
         int nextSequence = taskEventRepository.countByTaskId(taskId) + 1;
+        return applyAndPersistPythonEvent(task, pythonEvent, nextSequence);
+    }
+
+    @Transactional
+    public TaskEventRecordResult recordPythonEvent(UUID taskId, PythonStreamEvent pythonEvent, int eventSeq) {
+        if (eventSeq <= 0) {
+            throw new ApplicationException("INVALID_EVENT_SEQ", "event seq must be positive", HttpStatus.BAD_REQUEST);
+        }
+
+        SmartEngineTask task = getTaskInternalForUpdate(taskId);
+        return taskEventRepository.findByTaskIdAndEventSeq(taskId, eventSeq)
+            .map(existingEvent -> new TaskEventRecordResult(toPayload(task, existingEvent), false))
+            .orElseGet(() -> {
+                if (task.isTerminal()) {
+                    return TaskEventRecordResult.ignored();
+                }
+                return new TaskEventRecordResult(applyAndPersistPythonEvent(task, pythonEvent, eventSeq), true);
+            });
+    }
+
+    private TaskStreamEventPayload applyAndPersistPythonEvent(
+        SmartEngineTask task,
+        PythonStreamEvent pythonEvent,
+        int sequence
+    ) {
         Map<String, Object> payload = pythonEvent.safePayload();
 
         if (task.getStartedAt() == null) {
@@ -94,7 +122,7 @@ public class TaskStateMachineService {
 
         SmartEngineTaskEvent event = new SmartEngineTaskEvent();
         event.setTask(task);
-        event.setEventSeq(nextSequence);
+        event.setEventSeq(sequence);
         event.setEventType(pythonEvent.eventType());
         event.setStageName(pythonEvent.stage());
         event.setEventPayload(payload);
@@ -104,7 +132,7 @@ public class TaskStateMachineService {
             pythonEvent.eventType(),
             task.getId(),
             task.getTraceId(),
-            nextSequence,
+            sequence,
             savedEvent.getCreatedAt(),
             payload
         );
@@ -113,13 +141,26 @@ public class TaskStateMachineService {
     @Transactional
     public TaskStreamEventPayload failTask(UUID taskId, String errorCode, String message) {
         SmartEngineTask task = getTaskInternalForUpdate(taskId);
+        return failTask(task, errorCode, message);
+    }
+
+    @Transactional
+    public TaskStreamEventPayload failTaskIfActive(UUID taskId, String errorCode, String message) {
+        SmartEngineTask task = getTaskInternalForUpdate(taskId);
+        if (task.isTerminal()) {
+            return null;
+        }
+        return failTask(task, errorCode, message);
+    }
+
+    private TaskStreamEventPayload failTask(SmartEngineTask task, String errorCode, String message) {
         task.setTaskStatus(TaskStatus.FAILED);
         task.setErrorCode(errorCode);
         task.setErrorMessage(message);
         task.setCompletedAt(OffsetDateTime.now());
         videoGenerationTaskService.markFailed(task, message);
 
-        int nextSequence = taskEventRepository.countByTaskId(taskId) + 1;
+        int nextSequence = taskEventRepository.countByTaskId(task.getId()) + 1;
         Map<String, Object> payload = Map.of(
             "code", errorCode,
             "message", message
@@ -206,6 +247,17 @@ public class TaskStateMachineService {
     private SmartEngineTask getTaskInternalForUpdate(UUID taskId) {
         return taskRepository.findWithLockById(taskId)
             .orElseThrow(() -> new ApplicationException("TASK_NOT_FOUND", "任务不存在", HttpStatus.NOT_FOUND));
+    }
+
+    private TaskStreamEventPayload toPayload(SmartEngineTask task, SmartEngineTaskEvent event) {
+        return new TaskStreamEventPayload(
+            event.getEventType(),
+            task.getId(),
+            task.getTraceId(),
+            event.getEventSeq(),
+            event.getCreatedAt(),
+            event.getEventPayload()
+        );
     }
 
     private void applyProgressEvent(SmartEngineTask task, PythonStreamEvent pythonEvent, Map<String, Object> payload) {

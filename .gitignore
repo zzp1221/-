@@ -293,6 +293,8 @@ test-output/
 # Generated data (should be produced by scripts, not committed)
 vector_data.dump
 vector_data/
+models/
+python-agent/models/
 *.vectors.npy
 *.embeddings
 python-agent/grpo_output/
@@ -312,7 +314,9 @@ docker-compose.override.yml
 # ============================================================
 # 10. Docs, Data & Uploads (runtime / agent-generated)
 # ============================================================
-docs/
+docs/*
+!docs/deployment.md
+!docs/experiment_log.md
 uploads/
 .agents/
 .tests/

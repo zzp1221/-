@@ -73,10 +73,8 @@ from src.ai_modules.llms.tutor_llm import (
 from src.ai_modules.llms.workflow_llm import (
     GenerationToolLLMClientFactory,
     QueryRewriteToolLLMClientFactory,
-    RetrievalToolLLMClientFactory,
     RuleBasedGenerationLLM,
     RuleBasedQueryRewriteLLM,
-    RuleBasedRetrievalLLM,
 )
 
 __all__ = [
@@ -130,14 +128,12 @@ __all__ = [
     "ResourcePushReranker",
     "ReviewLLMClientFactory",
     "RetrievalSummaryGenerator",
-    "RetrievalToolLLMClientFactory",
     "RuleBasedGenerationLLM",
     "RuleBasedJudgeLLM",
     "RuleBasedPlanningLLM",
     "RuleBasedPracticeLLM",
     "RuleBasedProfileLLM",
     "RuleBasedQueryRewriteLLM",
-    "RuleBasedRetrievalLLM",
     "RuleBasedReviewLLM",
     "RuleBasedTutorLLM",
     "SafetyReviewer",
