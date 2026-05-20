@@ -16,6 +16,7 @@ from src.ai_modules.runtime.ttl_cache import InMemoryTTLCache, stable_cache_key
 
 LOGGER = logging.getLogger(__name__)
 _RETRIEVAL_RESULT_CACHE = InMemoryTTLCache()
+_RETRIEVAL_RAW_CACHE_NAMESPACE = "retrieval_raw"
 
 
 class SupportsHybridRetrieve(Protocol):
@@ -223,12 +224,17 @@ class HybridRetrievalService:
         )
 
     def retrieve_raw(self, rewritten_query: str, *, web_search_enabled: bool = False) -> dict[str, Any]:
-        cache_key = self._build_raw_result_cache_key(
-            rewritten_query,
-            web_search_enabled=web_search_enabled,
-        )
+        cache_key = ""
+        if self._should_use_raw_result_cache():
+            cache_key = self._build_raw_result_cache_key(
+                rewritten_query,
+                web_search_enabled=web_search_enabled,
+            )
         if cache_key:
-            cached_result = _RETRIEVAL_RESULT_CACHE.get(cache_key)
+            cached_result = _RETRIEVAL_RESULT_CACHE.get(
+                cache_key,
+                namespace=_RETRIEVAL_RAW_CACHE_NAMESPACE,
+            )
             if isinstance(cached_result, dict):
                 return cached_result
 
@@ -241,6 +247,7 @@ class HybridRetrievalService:
                 cache_key,
                 raw_result,
                 ttl_seconds=self._raw_result_cache_ttl_seconds(),
+                namespace=_RETRIEVAL_RAW_CACHE_NAMESPACE,
             )
         return raw_result
 
@@ -310,12 +317,23 @@ class HybridRetrievalService:
         settings = get_settings()
         ttl_seconds = max(0, settings.retrieval_result_cache_ttl_seconds)
         _RETRIEVAL_RESULT_CACHE.max_entries = max(1, settings.runtime_cache_max_entries)
+        _RETRIEVAL_RESULT_CACHE.configure(
+            adaptive_enabled=settings.cache_adaptive_enabled,
+            adaptive_window_size=settings.cache_adaptive_window_size,
+            adaptive_min_samples=settings.cache_adaptive_min_samples,
+            adaptive_min_hit_rate=settings.cache_adaptive_min_hit_rate,
+            adaptive_bypass_seconds=settings.cache_adaptive_bypass_seconds,
+            adaptive_probe_interval=settings.cache_adaptive_probe_interval,
+            max_value_bytes=settings.cache_max_value_bytes,
+        )
         return ttl_seconds
 
+    def _should_use_raw_result_cache(self) -> bool:
+        if self._raw_result_cache_ttl_seconds() <= 0:
+            return False
+        return _RETRIEVAL_RESULT_CACHE.should_read(_RETRIEVAL_RAW_CACHE_NAMESPACE)
+
     def _build_raw_result_cache_key(self, rewritten_query: str, *, web_search_enabled: bool = False) -> str:
-        ttl_seconds = self._raw_result_cache_ttl_seconds()
-        if ttl_seconds <= 0:
-            return ""
         return stable_cache_key(
             "retrieval-raw",
             {

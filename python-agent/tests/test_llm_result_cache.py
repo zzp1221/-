@@ -1,5 +1,7 @@
 import pytest
 
+from src.ai_modules.config import Settings
+from src.ai_modules.llms import agent_models
 from src.ai_modules.llms.agent_models import OpenAICompatibleJSONGenerator
 from src.ai_modules.llms.openai_compatible import extract_json_object_from_text
 
@@ -57,3 +59,32 @@ async def test_json_generator_cache_returns_exact_deep_copied_payload() -> None:
 
     assert fake_client.calls == 1
     assert second["items"][0]["title"] == "stable"
+
+
+@pytest.mark.asyncio
+async def test_json_generator_cache_can_be_disabled(monkeypatch: pytest.MonkeyPatch) -> None:
+    fake_client = FakeJSONClient()
+    generator = OpenAICompatibleJSONGenerator(
+        model_name="cache-test-model",
+        cache_namespace="unit-test-disabled-json",
+    )
+    generator.client = fake_client
+    monkeypatch.setattr(
+        agent_models,
+        "get_settings",
+        lambda: Settings(ENABLE_LLM_RESULT_CACHE=False),
+    )
+
+    first = await generator.generate(
+        system_prompt="stable system disabled",
+        user_prompt="same user payload",
+        max_tokens=64,
+    )
+    second = await generator.generate(
+        system_prompt="stable system disabled",
+        user_prompt="same user payload",
+        max_tokens=64,
+    )
+
+    assert first == second
+    assert fake_client.calls == 2

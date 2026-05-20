@@ -1,4 +1,6 @@
+from src.ai_modules.config import Settings
 from src.ai_modules.retrieval import HybridRetrievalService, QueryRewriteService
+import src.ai_modules.retrieval.services as retrieval_services
 
 
 class FakeRetriever:
@@ -138,6 +140,21 @@ def test_hybrid_retrieval_service_caches_raw_results_without_mutation_leak() -> 
 
     assert retriever.calls == 1
     assert second["top"] == [("cache-doc", "Cache Doc", 1.0)]
+
+
+def test_hybrid_retrieval_service_cache_can_be_disabled(monkeypatch) -> None:
+    monkeypatch.setattr(
+        retrieval_services,
+        "get_settings",
+        lambda: Settings(RETRIEVAL_RESULT_CACHE_TTL_SECONDS=0),
+    )
+    retriever = CountingRetriever()
+    service = HybridRetrievalService(retriever=retriever)
+
+    service.retrieve_raw("cache-disabled-query")
+    service.retrieve_raw("cache-disabled-query")
+
+    assert retriever.calls == 2
 
 
 def test_hybrid_retrieval_service_deduplicates_same_title_documents() -> None:
