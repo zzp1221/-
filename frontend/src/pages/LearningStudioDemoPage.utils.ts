@@ -13,6 +13,7 @@ import type {
   ProfileSkillMastery,
   PracticeJudgeResult,
   PracticeQuestionBatch,
+  ResourceType,
   RunByApiTaskArgs,
   ServiceFormsPayload,
   SmartEngineStreamEvent,
@@ -78,6 +79,7 @@ export async function runByApiTask({
   setDownloadLinks,
   setVideoResult,
   setInlineResource,
+  setInlineResources,
   setPracticeBatch,
   setJudgeResult,
   taskStreamAbortRef,
@@ -121,6 +123,11 @@ export async function runByApiTask({
     },
     onInlineResource: (item) => {
       setInlineResource(item);
+      setInlineResources((prev) => (
+        prev.some((existing) => existing.title === item.title && existing.kind === item.kind)
+          ? prev
+          : [...prev, item]
+      ));
     },
     onQuestionBatch: (item) => {
       setPracticeBatch(item);
@@ -256,6 +263,9 @@ async function consumeTaskStreamEvent(
       await maybeStartBrowserRender(envelope.payload, handlers, browserRenderState);
       const videoResult = readVideoResult(envelope.payload);
       if (videoResult) {
+        if (!ensureGeneratedPayloadProvenance(envelope.payload, handlers, '视频资源')) {
+          return;
+        }
         handlers.onVideo(videoResult);
       }
     }
@@ -270,6 +280,9 @@ async function consumeTaskStreamEvent(
     const downloadUrl = readString(envelope.payload?.downloadUrl);
     const resourceType = readString(envelope.payload?.assetType);
     const fileName = readString(envelope.payload?.fileName);
+    if (!ensureGeneratedPayloadProvenance(envelope.payload, handlers, '资源')) {
+      return;
+    }
     const inlineResource = readInlineResource(envelope.payload);
     if (downloadUrl) {
       const summary = readString(envelope.payload?.summary);
@@ -301,6 +314,9 @@ async function consumeTaskStreamEvent(
   }
 
   if (event.event === 'question_batch') {
+    if (!ensureQuestionBatchProvenance(envelope.payload, handlers)) {
+      return;
+    }
     const batch = readPracticeQuestionBatch(envelope.payload);
     if (batch) {
       handlers.onQuestionBatch(batch);
@@ -321,13 +337,19 @@ async function consumeTaskStreamEvent(
   if (event.event === 'done') {
     const summary = readSummary(envelope.payload);
     const status = readString(envelope.payload?.status).toUpperCase();
-    const doneLabel = status === 'FAILED' || status === 'ERROR' ? '任务失败' : '任务完成';
+    const doneLabel = status === 'FAILED' || status === 'ERROR'
+      ? '任务失败'
+      : status === 'PARTIAL_FAILED'
+        ? '部分完成'
+        : '任务完成';
     handlers.onProgress(100, doneLabel);
     if (summary) {
       handlers.onSummary(summary);
     }
     if (doneLabel === '任务失败') {
       handlers.onLine(summary || '任务执行失败');
+    } else if (doneLabel === '部分完成') {
+      handlers.onLine(summary || '任务部分完成，部分资源生成失败');
     }
     return;
   }
@@ -370,15 +392,29 @@ async function applyTaskSnapshot(
     }
     const videoResult = readVideoResult(task.responseSummary);
     if (videoResult) {
+      if (!ensureGeneratedPayloadProvenance(task.responseSummary, handlers, '视频资源')) {
+        return;
+      }
       handlers.onVideo(videoResult);
     }
-    await maybeStartBrowserRender(task.responseSummary, handlers, browserRenderState);
+    if (readString(task.responseSummary.audioBase64)) {
+      if (!ensureGeneratedPayloadProvenance(task.responseSummary, handlers, '视频资源')) {
+        return;
+      }
+      await maybeStartBrowserRender(task.responseSummary, handlers, browserRenderState);
+    }
     const inlineResource = readInlineResource(task.responseSummary);
     if (inlineResource) {
+      if (!ensureGeneratedPayloadProvenance(task.responseSummary, handlers, '资源')) {
+        return;
+      }
       handlers.onInlineResource(inlineResource);
     }
     const batch = readPracticeQuestionBatch(task.responseSummary);
     if (batch) {
+      if (!ensureQuestionBatchProvenance(task.responseSummary, handlers)) {
+        return;
+      }
       handlers.onQuestionBatch(batch);
     }
     const judgeResult = readPracticeJudgeResult(task.responseSummary);
@@ -409,6 +445,10 @@ async function maybeStartBrowserRender(
   }
   const audioBase64 = readString(payload.audioBase64);
   if (!audioBase64) {
+    return;
+  }
+  if (!ensureGeneratedPayloadProvenance(payload, handlers, '视频资源')) {
+    browserRenderState.errorMessage = '缺少真实 LLM 生成元数据';
     return;
   }
   browserRenderState.started = true;
@@ -469,6 +509,9 @@ async function settleBrowserRender(
     errorMessage: string;
   },
 ): Promise<boolean> {
+  if (browserRenderState.errorMessage) {
+    return false;
+  }
   if (!browserRenderState.started && !browserRenderState.promise) {
     return true;
   }
@@ -1132,9 +1175,10 @@ function localizeNarrativeText(value: string): string {
 export function buildServiceParams(service: EngineService, payload: ServiceFormsPayload): Record<string, unknown> {
   if (service === 'resource') {
     const resourceForm = payload.resourceForm;
-    const includeVideo = resourceForm.resourceType === 'VIDEO';
-    const normalizedResourceType = normalizeResourceType(resourceForm.resourceType);
-    const resourceTypeLabelText = resourceTypeLabel(resourceForm.resourceType);
+    const selectedResourceTypes = resolveSelectedResourceTypes(resourceForm.resourceTypes, resourceForm.resourceType);
+    const normalizedResourceTypes = uniqueResourceTypes(selectedResourceTypes.map(normalizeResourceType));
+    const includeVideo = normalizedResourceTypes.includes('VIDEO');
+    const resourceTypeLabelText = selectedResourceTypes.map(resourceTypeLabel).join('、');
     const difficultyLabel = resourceDifficultyLabel(resourceForm.difficulty);
     const query = [
       resourceForm.course,
@@ -1146,7 +1190,8 @@ export function buildServiceParams(service: EngineService, payload: ServiceForms
       .filter(Boolean)
       .join(' ');
     return {
-      resourceType: normalizedResourceType,
+      resourceType: normalizedResourceTypes[0],
+      resourceTypes: normalizedResourceTypes,
       course: resourceForm.course,
       difficulty: resourceForm.difficulty,
       keyPoints: resourceForm.keyPoints,
@@ -1432,10 +1477,20 @@ function resourceDifficultyLabel(difficulty: string): string {
   }
 }
 
+function resolveSelectedResourceTypes(resourceTypes: ResourceType[] | undefined, fallback: ResourceType): ResourceType[] {
+  return resourceTypes?.length ? resourceTypes : [fallback];
+}
+
+function uniqueResourceTypes(resourceTypes: string[]): string[] {
+  return resourceTypes.filter((item, index) => item && resourceTypes.indexOf(item) === index);
+}
+
 function resourceTypeLabel(resourceType: string): string {
   switch (resourceType) {
     case 'EXPLANATION':
       return '讲解文档';
+    case 'SLIDES':
+      return 'PPT课件';
     case 'CODE_CASE':
       return '代码案例';
     case 'QUIZ':
@@ -1454,7 +1509,7 @@ function resourceTypeLabel(resourceType: string): string {
 function normalizeResourceType(resourceType: string): string {
   switch (resourceType) {
     case 'EXPLANATION':
-      return 'READING';
+      return 'DOCUMENT';
     case 'CODE_CASE':
       return 'CODE';
     case 'QUIZ':
@@ -1518,6 +1573,59 @@ function readUrlField(payload: Record<string, unknown> | undefined, keys: string
     }
   }
   return '';
+}
+
+function requiresLlmProvenance(payload: Record<string, unknown> | undefined): boolean {
+  if (!payload) {
+    return false;
+  }
+  const displayMode = readString(payload.displayMode).toLowerCase();
+  const sourceName = readString(payload.sourceName).toLowerCase();
+  if (displayMode === 'external_link') {
+    return false;
+  }
+  return !sourceName || sourceName === 'generated';
+}
+
+function ensureGeneratedPayloadProvenance(
+  payload: Record<string, unknown> | undefined,
+  handlers: TaskRunHandlers,
+  label: string,
+): boolean {
+  if (!requiresLlmProvenance(payload)) {
+    return true;
+  }
+  if (hasRealLlmProvenance(payload)) {
+    return true;
+  }
+  handlers.onLine(`${label}生成失败：缺少真实 LLM 生成元数据`);
+  return false;
+}
+
+function ensureQuestionBatchProvenance(
+  payload: Record<string, unknown> | undefined,
+  handlers: TaskRunHandlers,
+): boolean {
+  if (hasRealLlmProvenance(payload)) {
+    return true;
+  }
+  handlers.onLine('练习题生成失败：缺少真实 LLM 生成元数据');
+  return false;
+}
+
+function hasRealLlmProvenance(payload: Record<string, unknown> | undefined): boolean {
+  if (!payload) {
+    return false;
+  }
+  const evidenceIds = payload.evidenceIds;
+  return readString(payload.generatedBy).toUpperCase() === 'LLM'
+    && readString(payload.contentOrigin).toUpperCase() === 'LLM'
+    && Boolean(readString(payload.provider))
+    && Boolean(readString(payload.model))
+    && Boolean(readString(payload.agentName))
+    && Array.isArray(evidenceIds)
+    && payload.fallback === false
+    && typeof payload.fromCache === 'boolean';
 }
 
 function isVideoLink(item: TempDownloadLink): boolean {
@@ -1680,6 +1788,14 @@ function readPracticeQuestionBatch(payload: Record<string, unknown> | undefined)
     description: readString(record.description),
     assessmentDimension: readString(record.assessmentDimension),
     submitLabel: readString(record.submitLabel),
+    generatedBy: readString(record.generatedBy),
+    contentOrigin: readString(record.contentOrigin),
+    provider: readString(record.provider),
+    model: readString(record.model),
+    agentName: readString(record.agentName),
+    evidenceIds: Array.isArray(record.evidenceIds) ? record.evidenceIds.map((id) => readString(id)).filter(Boolean) : undefined,
+    fallback: typeof record.fallback === 'boolean' ? record.fallback : undefined,
+    fromCache: typeof record.fromCache === 'boolean' ? record.fromCache : undefined,
     questions: questions
       .map((item) => readRecord(item))
       .filter((item): item is Record<string, unknown> => Boolean(item))

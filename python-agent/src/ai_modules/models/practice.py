@@ -30,6 +30,14 @@ class QuestionBatchPayload(BaseModel):
     assessment_dimension: str | None = Field(default=None, alias="assessmentDimension")
     submit_label: str | None = Field(default=None, alias="submitLabel")
     questions: list[PracticeQuestion]
+    generated_by: str | None = Field(default=None, alias="generatedBy")
+    content_origin: str | None = Field(default=None, alias="contentOrigin")
+    provider: str | None = None
+    model: str | None = None
+    agent_name: str | None = Field(default=None, alias="agentName")
+    evidence_ids: list[str] = Field(default_factory=list, alias="evidenceIds")
+    fallback: bool | None = None
+    from_cache: bool = Field(default=False, alias="fromCache")
 
     model_config = ConfigDict(populate_by_name=True)
 

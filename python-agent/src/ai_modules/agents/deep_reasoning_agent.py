@@ -122,7 +122,9 @@ class DeepReasoningAgent(TutorAgent):
                 artifacts=artifacts,
             )
 
-        final_text = artifacts.get("final") or artifacts.get("reasoning") or "我已经完成深度思考，但暂时没有生成有效回答。"
+        final_text = artifacts.get("final")
+        if not final_text:
+            raise RuntimeError("Deep reasoning LLM did not produce a final answer")
         params["deepReasoningArtifacts"] = artifacts
         yield ResultChunkSSEEvent(
             taskId=task_id,
@@ -182,7 +184,9 @@ class DeepReasoningAgent(TutorAgent):
                 step_key=step_key,
                 artifacts=artifacts,
             )
-        return self._build_step_fallback(step_key=step_key, user_query=user_query, artifacts=artifacts)
+        raise RuntimeError(
+            f"Deep reasoning LLM returned empty output for {step_key}; deterministic fallback is not allowed"
+        )
 
     async def _run_direct_reasoning_step(
         self,
@@ -194,10 +198,8 @@ class DeepReasoningAgent(TutorAgent):
     ) -> str:
         client = getattr(self.llm_client, "client", None)
         if client is None or not hasattr(client, "chat_completion"):
-            return self._build_step_fallback(
-                step_key=step_key,
-                user_query=user_query,
-                artifacts=artifacts,
+            raise RuntimeError(
+                f"Deep reasoning direct LLM client unavailable for {step_key}; deterministic fallback is not allowed"
             )
         try:
             response = await client.chat_completion(
@@ -219,25 +221,12 @@ class DeepReasoningAgent(TutorAgent):
             content = client.extract_content(message).strip()
             if content:
                 return content
+            raise RuntimeError(f"Deep reasoning direct LLM returned empty output for {step_key}")
         except Exception as exc:
             LOGGER.warning("Direct deep reasoning fallback failed step=%s: %s", step_key, exc)
-        return self._build_step_fallback(step_key=step_key, user_query=user_query, artifacts=artifacts)
-
-    def _build_step_fallback(
-        self,
-        *,
-        step_key: str,
-        user_query: str,
-        artifacts: dict[str, str],
-    ) -> str:
-        if step_key == "analysis":
-            return f"问题核心：{user_query.strip() or '当前问题'}。需要结合概念定义、对比维度和学习场景来回答。"
-        if step_key == "reasoning":
-            return "推理路径：先明确比较对象，再从语法生态、性能、并发、工程复杂度和适用场景逐项分析。"
-        if step_key == "critique":
-            return "检查结论：避免绝对化比较，需要说明不同语言优势依赖具体项目、团队和业务场景。"
-        previous = artifacts.get("reasoning") or artifacts.get("analysis") or user_query
-        return f"可以这样看：\n\n{previous}"
+            raise RuntimeError(
+                f"Deep reasoning direct LLM generation failed for {step_key}; deterministic fallback is not allowed"
+            ) from exc
 
     def _build_deep_reasoning_tools(
         self,

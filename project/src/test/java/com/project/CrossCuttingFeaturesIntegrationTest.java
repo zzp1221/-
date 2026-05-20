@@ -18,6 +18,7 @@ import org.springframework.test.web.servlet.MvcResult;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.function.Consumer;
@@ -66,12 +67,20 @@ class CrossCuttingFeaturesIntegrationTest {
             consumer.accept(new PythonStreamEvent(
                 "resource_file",
                 "generating",
-                Map.of(
-                    "assetType", "DOCUMENT",
-                    "title", "数据库索引讲义",
-                    "fileName", tempFile.getFileName().toString(),
-                    "localPath", tempFile.toString(),
-                    "mimeType", "text/markdown"
+                Map.ofEntries(
+                    Map.entry("assetType", "DOCUMENT"),
+                    Map.entry("title", "数据库索引讲义"),
+                    Map.entry("fileName", tempFile.getFileName().toString()),
+                    Map.entry("localPath", tempFile.toString()),
+                    Map.entry("mimeType", "text/markdown"),
+                    Map.entry("generatedBy", "LLM"),
+                    Map.entry("contentOrigin", "LLM"),
+                    Map.entry("provider", "test-provider"),
+                    Map.entry("model", "test-model"),
+                    Map.entry("agentName", "document_generation"),
+                    Map.entry("evidenceIds", List.of("doc-1")),
+                    Map.entry("fallback", false),
+                    Map.entry("fromCache", false)
                 )
             ));
             consumer.accept(new PythonStreamEvent("done", "completed", Map.of("summary", "资源生成完成")));

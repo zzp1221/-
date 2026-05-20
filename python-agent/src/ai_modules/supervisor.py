@@ -41,6 +41,7 @@ from src.ai_modules.retrieval.query_classifier import (
     QueryClassifier,
 )
 from src.ai_modules.runtime import SnapshotBuilder, SystemSnapshot
+from src.ai_modules.runtime.resource_bundle_workflow import ResourceBundleWorkflow
 
 LOGGER = logging.getLogger(__name__)
 
@@ -112,10 +113,13 @@ class PythonAgentSupervisor:
             classification_confidence = classification.confidence
             classification_reason = classification.reason
             route_template = self._resolve_tutoring_route(classification)
-        resolved_route = [
-            generation_agent if agent_name == "{generation_agent}" else agent_name
-            for agent_name in route_template
-        ]
+        if service_type == "RESOURCE_GENERATION":
+            resolved_route = ["query_rewrite", "retrieval", "resource_bundle"]
+        else:
+            resolved_route = [
+                generation_agent if agent_name == "{generation_agent}" else agent_name
+                for agent_name in route_template
+            ]
 
         return RoutePlan(
             serviceType=service_type,
@@ -195,6 +199,65 @@ class PythonAgentSupervisor:
         self._seed_query_routing_params(current_params, route_plan)
         snapshot = await self.build_snapshot(request)
         seq = 1
+
+        if route_plan.service_type == "RESOURCE_GENERATION":
+            workflow = ResourceBundleWorkflow(
+                agent_registry=self.agent_registry,
+                snapshot_builder=self.snapshot_builder,
+                system_prompt_builder=lambda agent_name, snapshot: self.build_agent_system_prompt(
+                    agent_name=agent_name,
+                    snapshot=snapshot,
+                ),
+            )
+            try:
+                async for event in workflow.stream(
+                    request=request,
+                    params=current_params,
+                    snapshot=snapshot,
+                    seq=seq,
+                    cancelled=cancelled,
+                ):
+                    yield event
+                final_state = workflow.last_state
+                if final_state is None:
+                    raise RuntimeError("Resource bundle workflow finished without final state")
+            except Exception as exc:
+                message = f"Resource bundle generation failed: {type(exc).__name__}: {exc}"
+                LOGGER.exception(message)
+                error_seq = workflow.last_state.seq if workflow.last_state is not None else seq
+                yield ErrorSSEEvent(
+                    taskId=request.task_id,
+                    traceId=request.trace_id,
+                    seq=error_seq,
+                    payload=ErrorPayload(
+                        code="RESOURCE_BUNDLE_FAILED",
+                        message=message,
+                    ),
+                )
+                yield DoneSSEEvent(
+                    taskId=request.task_id,
+                    traceId=request.trace_id,
+                    seq=error_seq + 1,
+                    payload=DonePayload(
+                        status="FAILED",
+                        summary=message,
+                    ),
+                )
+                return
+            current_params = final_state.params
+            seq = final_state.seq
+            yield DoneSSEEvent(
+                taskId=request.task_id,
+                traceId=request.trace_id,
+                seq=seq,
+                payload=self._build_done_payload(
+                    service_type=route_plan.service_type,
+                    agent_names=route_plan.agent_names,
+                    params=current_params,
+                ),
+            )
+            return
+
         agent_names = list(route_plan.agent_names)
         i = 0
         while i < len(agent_names):
@@ -333,6 +396,35 @@ class PythonAgentSupervisor:
         )
 
     def _build_done_payload(self, *, service_type: str, agent_names: list[str], params: dict) -> DonePayload:
+        generated_assets = params.get("generatedAssets")
+        resource_failures = params.get("resourceFailures")
+        if not isinstance(resource_failures, list):
+            resource_failures = []
+        if service_type == "RESOURCE_GENERATION" and isinstance(generated_assets, list) and generated_assets:
+            titles = "、".join(
+                str(item.get("title") or item.get("assetType") or "资源")
+                for item in generated_assets[:3]
+                if isinstance(item, dict)
+            )
+            if resource_failures:
+                failed_types = "、".join(
+                    str(item.get("resourceType") or "UNKNOWN")
+                    for item in resource_failures[:3]
+                    if isinstance(item, dict)
+                )
+                return DonePayload(
+                    status="PARTIAL_FAILED",
+                    summary=(
+                        f"资源包部分完成，共 {len(generated_assets)} 个真实 LLM 产物：{titles}；"
+                        f"{len(resource_failures)} 个资源失败：{failed_types}"
+                    ),
+                    resourceFailures=resource_failures,
+                )
+            return DonePayload(
+                status="SUCCESS",
+                summary=f"资源包生成完成，共 {len(generated_assets)} 个真实 LLM 产物：{titles}",
+                resourceFailures=[],
+            )
         generated_asset = params.get("generatedAsset")
         if service_type in {"RESOURCE_GENERATION", "VIDEO_GENERATION"} and isinstance(generated_asset, dict):
             title = str(generated_asset.get("title") or "资源")

@@ -22,6 +22,7 @@ from src.ai_modules.models import (
     ResultChunkSSEEvent,
     SSEEvent,
 )
+from src.ai_modules.runtime.provenance import build_llm_provenance, validate_llm_provenance
 
 LOGGER = logging.getLogger(__name__)
 
@@ -96,6 +97,7 @@ class ResourcePushAgent(PlaceholderAgent):
                 profile_context=profile_context,
                 snapshot=snapshot,
             )
+            provenance = self._build_generated_asset_provenance(params=params)
             params["pushedResources"] = [
                 {
                     "title": asset.title,
@@ -108,6 +110,7 @@ class ResourcePushAgent(PlaceholderAgent):
                     "rerankScore": 1.0,
                     "sourceName": "generated",
                     "thumbnailUrl": None,
+                    **provenance,
                 }
             ]
             yield ProgressSSEEvent(
@@ -131,27 +134,37 @@ class ResourcePushAgent(PlaceholderAgent):
                     ),
                 ),
             )
+            resource_payload = ResourceFilePayload(
+                assetType=asset.asset_type,
+                title=asset.title,
+                summary=asset.summary,
+                displayMode=asset.display_mode,
+                fileName=asset.file_name,
+                localPath=asset.local_path,
+                mimeType=asset.mime_type,
+                inlineContent=asset.inline_content,
+                language=asset.language,
+                explanation=asset.explanation,
+                thumbnailPath=asset.thumbnail_path,
+                thumbnailFileName=asset.thumbnail_file_name,
+                thumbnailMimeType=asset.thumbnail_mime_type,
+                durationSeconds=asset.duration_seconds,
+                knowledgePoint=asset.knowledge_point,
+                generatedBy=provenance["generatedBy"],
+                contentOrigin=provenance["contentOrigin"],
+                provider=provenance["provider"],
+                model=provenance["model"],
+                agentName=provenance["agentName"],
+                evidenceIds=provenance["evidenceIds"],
+                fallback=provenance["fallback"],
+                fromCache=provenance["fromCache"],
+            )
+            validate_llm_provenance(resource_payload, artifact_label=f"{self.stage_name}:{asset.asset_type}")
             yield ResourceFileSSEEvent(
                 taskId=task_id,
                 traceId=trace_id,
                 seq=seq + 4,
-                payload=ResourceFilePayload(
-                    assetType=asset.asset_type,
-                    title=asset.title,
-                    summary=asset.summary,
-                    displayMode=asset.display_mode,
-                    fileName=asset.file_name,
-                    localPath=asset.local_path,
-                    mimeType=asset.mime_type,
-                    inlineContent=asset.inline_content,
-                    language=asset.language,
-                    explanation=asset.explanation,
-                    thumbnailPath=asset.thumbnail_path,
-                    thumbnailFileName=asset.thumbnail_file_name,
-                    thumbnailMimeType=asset.thumbnail_mime_type,
-                    durationSeconds=asset.duration_seconds,
-                    knowledgePoint=asset.knowledge_point,
-                ),
+                payload=resource_payload,
             )
             return
 
@@ -272,6 +285,14 @@ class ResourcePushAgent(PlaceholderAgent):
             asset_type="SLIDES",
             params=generated_params,
             snapshot=snapshot,
+        )
+
+    def _build_generated_asset_provenance(self, *, params: dict[str, Any]) -> dict[str, Any]:
+        generator = getattr(self.resource_generation_service.content_chain, "primary_generator", None)
+        return build_llm_provenance(
+            agent_name=self.stage_name,
+            generator=generator,
+            params=params,
         )
 
     def _build_query(self, params: dict[str, Any], profile_context: dict[str, Any]) -> str:

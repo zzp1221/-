@@ -289,12 +289,16 @@ def test_generation_service_writes_non_document_assets_from_llm_output(tmp_path:
     assert "这里是百炼生成的阅读正文。" in Path(reading_asset.local_path).read_text(encoding="utf-8")
     assert "讲解备注: 先讲概念。" in Path(slides_asset.local_path).read_text(encoding="utf-8")
     assert mindmap_asset.display_mode == "INLINE_MERMAID"
-    assert mindmap_asset.local_path is None
+    assert mindmap_asset.file_name == "mindmap_task-multi.mmd"
+    assert Path(mindmap_asset.local_path).exists()
+    assert Path(mindmap_asset.local_path).read_text(encoding="utf-8") == mindmap_asset.inline_content
     assert "mindmap" in mindmap_asset.inline_content
     assert 'root["联合索引"]' in mindmap_asset.inline_content
     assert 'node_1["定义"]' in mindmap_asset.inline_content
     assert code_asset.display_mode == "INLINE_CODE"
-    assert code_asset.local_path is None
+    assert code_asset.file_name == "code_case_task-multi.py"
+    assert Path(code_asset.local_path).exists()
+    assert Path(code_asset.local_path).read_text(encoding="utf-8") == code_asset.inline_content
     assert "百炼代码案例" in code_asset.inline_content
 
 
@@ -351,6 +355,8 @@ def test_generation_service_rebuilds_safe_mermaid_mindmap(tmp_path: Path) -> Non
 
     assert asset.display_mode == "INLINE_MERMAID"
     assert asset.inline_content.startswith("mindmap\n")
+    assert asset.file_name == "mindmap_task-mindmap-safe.mmd"
+    assert Path(asset.local_path).read_text(encoding="utf-8") == asset.inline_content
     assert 'root["线程池 \\"核心\\""]' in asset.inline_content
     assert 'node_1["阻塞队列(BlockingQueue)"]' in asset.inline_content
     assert 'node_2["拒绝策略 \\"CallerRuns\\""]' in asset.inline_content

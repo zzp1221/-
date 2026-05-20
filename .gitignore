@@ -317,6 +317,7 @@ docker-compose.override.yml
 docs/*
 !docs/deployment.md
 !docs/experiment_log.md
+!docs/graph_multi_agent_architecture.md
 uploads/
 .agents/
 .tests/

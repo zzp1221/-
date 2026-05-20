@@ -14,7 +14,7 @@ function ensureMermaidInitialized(): void {
   }
   mermaid.initialize({
     startOnLoad: false,
-    securityLevel: 'strict',
+    securityLevel: 'loose',
     theme: 'default',
   });
   mermaidInitialized = true;
@@ -55,7 +55,11 @@ export default function MermaidDiagram({ chart }: MermaidDiagramProps) {
       try {
         const result = await mermaid.render(`mermaid-${id}`, normalizedChart);
         if (!cancelled) {
-          setSvg(DOMPurify.sanitize(result.svg, { USE_PROFILES: { svg: true } }));
+          setSvg(DOMPurify.sanitize(result.svg, {
+            USE_PROFILES: { svg: true, svgFilters: true },
+            ADD_TAGS: ['foreignObject'],
+            ADD_ATTR: ['class', 'style', 'xmlns', 'width', 'height', 'viewBox'],
+          }));
           setError('');
         }
       } catch (renderError) {
@@ -89,9 +93,36 @@ export default function MermaidDiagram({ chart }: MermaidDiagramProps) {
   }
 
   return (
-    <div
-      className="overflow-x-auto rounded-xl border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-950"
-      dangerouslySetInnerHTML={{ __html: svg }}
-    />
+    <>
+      <style>{`
+        .mermaid-diagram svg {
+          max-width: 100%;
+          height: auto;
+        }
+        .mermaid-diagram svg text,
+        .mermaid-diagram svg .nodeLabel,
+        .mermaid-diagram svg .label,
+        .mermaid-diagram svg foreignObject,
+        .mermaid-diagram svg foreignObject div,
+        .mermaid-diagram svg foreignObject span {
+          color: #1e293b !important;
+          fill: #1e293b !important;
+          opacity: 1 !important;
+        }
+        .dark .mermaid-diagram svg text,
+        .dark .mermaid-diagram svg .nodeLabel,
+        .dark .mermaid-diagram svg .label,
+        .dark .mermaid-diagram svg foreignObject,
+        .dark .mermaid-diagram svg foreignObject div,
+        .dark .mermaid-diagram svg foreignObject span {
+          color: #e2e8f0 !important;
+          fill: #e2e8f0 !important;
+        }
+      `}</style>
+      <div
+        className="mermaid-diagram overflow-x-auto rounded-xl border border-slate-200 bg-white p-4 text-slate-800 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
+        dangerouslySetInnerHTML={{ __html: svg }}
+      />
+    </>
   );
 }
