@@ -48,7 +48,19 @@
       "properties": {
         "stage": { "type": "string", "minLength": 1 },
         "percent": { "type": "integer", "minimum": 0, "maximum": 100 },
-        "message": { "type": ["string", "null"] }
+        "message": { "type": ["string", "null"] },
+        "agentName": { "type": ["string", "null"] },
+        "phase": { "type": ["string", "null"] },
+        "artifactType": { "type": ["string", "null"] },
+        "status": { "type": ["string", "null"] },
+        "parentStep": { "type": ["string", "null"] },
+        "generatedBy": { "type": ["string", "null"] },
+        "contentOrigin": { "type": ["string", "null"] },
+        "provider": { "type": ["string", "null"] },
+        "model": { "type": ["string", "null"] },
+        "evidenceIds": { "type": "array", "items": { "type": "string" } },
+        "fallback": { "type": ["boolean", "null"] },
+        "fromCache": { "type": "boolean" }
       }
     },
     "ResultChunkPayload": {
@@ -80,7 +92,15 @@
         "thumbnailMimeType": { "type": ["string", "null"] },
         "durationSeconds": { "type": ["integer", "null"] },
         "videoStyle": { "type": ["string", "null"] },
-        "knowledgePoint": { "type": ["string", "null"] }
+        "knowledgePoint": { "type": ["string", "null"] },
+        "generatedBy": { "type": ["string", "null"] },
+        "contentOrigin": { "type": ["string", "null"] },
+        "provider": { "type": ["string", "null"] },
+        "model": { "type": ["string", "null"] },
+        "agentName": { "type": ["string", "null"] },
+        "evidenceIds": { "type": "array", "items": { "type": "string" } },
+        "fallback": { "type": ["boolean", "null"] },
+        "fromCache": { "type": "boolean" }
       }
     },
     "QuestionBatchPayload": {
@@ -88,7 +108,15 @@
       "additionalProperties": true,
       "required": ["questions"],
       "properties": {
-        "questions": { "type": "array" }
+        "questions": { "type": "array" },
+        "generatedBy": { "type": ["string", "null"] },
+        "contentOrigin": { "type": ["string", "null"] },
+        "provider": { "type": ["string", "null"] },
+        "model": { "type": ["string", "null"] },
+        "agentName": { "type": ["string", "null"] },
+        "evidenceIds": { "type": "array", "items": { "type": "string" } },
+        "fallback": { "type": ["boolean", "null"] },
+        "fromCache": { "type": "boolean" }
       }
     },
     "JudgeResultPayload": {
@@ -100,9 +128,10 @@
       "additionalProperties": true,
       "required": ["status", "summary"],
       "properties": {
-        "status": { "type": "string", "enum": ["SUCCESS", "FAILED"] },
+        "status": { "type": "string", "enum": ["SUCCESS", "FAILED", "PARTIAL_FAILED"] },
         "summary": { "type": "string" },
-        "learningPath": { "type": ["object", "null"] }
+        "learningPath": { "type": ["object", "null"] },
+        "resourceFailures": { "type": "array", "items": { "type": "object" } }
       }
     },
     "ErrorPayload": {

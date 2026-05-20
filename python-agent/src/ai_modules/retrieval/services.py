@@ -317,17 +317,16 @@ class HybridRetrievalService:
         rewritten_query: str,
         keywords: list[str],
     ) -> dict[str, Any]:
-        keyword = keywords[0] if keywords else rewritten_query
+        del keywords
         return {
             "query": rewritten_query,
             "channels": {
-                "grep": {
-                    "priority": [(f"fallback-{keyword}", f"候选知识: {keyword}", 0.4, [keyword])]
-                },
+                "grep": {"priority": []},
                 "vector": [],
                 "graph": [],
+                "web": [],
             },
-            "top": [(f"fallback-{keyword}", f"候选知识: {keyword}", 0.4)],
+            "top": [],
         }
 
     def channel_results(self, raw_result: dict[str, Any], channel_name: str) -> Any:
@@ -405,17 +404,7 @@ class HybridRetrievalService:
             if documents:
                 return documents
 
-        return [
-            RetrievalDocument(
-                slug=f"fallback-{index + 1}",
-                title=f"候选知识: {keyword}",
-                score=round(1.0 - index * 0.1, 2),
-                channel="fallback",
-                matchType="fallback",
-                evidence=f"由关键词 `{keyword}` 生成的回退候选。",
-            )
-            for index, keyword in enumerate(keywords[:3])
-        ]
+        return []
 
     def _build_ranked_documents(
         self,

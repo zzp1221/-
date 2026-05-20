@@ -118,7 +118,7 @@ def test_hybrid_retrieval_service_normalizes_documents() -> None:
     assert "联合索引" in result.sources_summary
 
 
-def test_hybrid_retrieval_service_falls_back_when_no_results() -> None:
+def test_hybrid_retrieval_service_does_not_fabricate_documents_when_no_results() -> None:
     service = HybridRetrievalService(retriever=EmptyRetriever())
 
     result = service.retrieve(
@@ -127,7 +127,7 @@ def test_hybrid_retrieval_service_falls_back_when_no_results() -> None:
         keywords=["数据库原理", "索引", "联合索引"],
     )
 
-    assert result.documents[0].channel == "fallback"
+    assert result.documents == []
 
 
 def test_hybrid_retrieval_service_caches_raw_results_without_mutation_leak() -> None:

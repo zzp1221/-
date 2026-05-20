@@ -32,7 +32,7 @@ def test_supervisor_resolves_resource_generation_route() -> None:
     assert route.agent_names == [
         "query_rewrite",
         "retrieval",
-        "document_generator",
+        "resource_bundle",
     ]
 
 
@@ -47,7 +47,7 @@ def test_supervisor_prefers_video_generator_when_resource_types_include_video() 
     assert route.agent_names == [
         "query_rewrite",
         "retrieval",
-        "video_generator",
+        "resource_bundle",
     ]
 
 
@@ -55,7 +55,7 @@ def test_supervisor_resolves_video_generation_route() -> None:
     supervisor = PythonAgentSupervisor()
 
     route = supervisor.resolve_route(
-        "RESOURCE_GENERATION",
+        "VIDEO_GENERATION",
         {"resourceType": "VIDEO"},
     )
 
@@ -64,6 +64,15 @@ def test_supervisor_resolves_video_generation_route() -> None:
         "retrieval",
         "video_generator",
     ]
+
+
+def test_supervisor_route_templates_reference_registered_or_virtual_agents() -> None:
+    supervisor = PythonAgentSupervisor()
+    virtual_agents = {"{generation_agent}", "resource_bundle"}
+
+    for route in supervisor.route_templates.values():
+        for agent_name in route:
+            assert agent_name in supervisor.agent_registry or agent_name in virtual_agents
 
 
 def test_supervisor_routes_tutoring_through_profile_update() -> None:
@@ -236,32 +245,63 @@ class _FailingBackgroundProfileAgent(PlaceholderAgent):
             yield
 
 
-class _StubDocumentGeneratorAgent(PlaceholderAgent):
-    def __init__(self) -> None:
-        super().__init__("stub document", "document_generation")
+def _test_provenance(agent_name: str) -> dict:
+    return {
+        "generatedBy": "LLM",
+        "contentOrigin": "LLM",
+        "provider": "test-provider",
+        "model": "test-model",
+        "agentName": agent_name,
+        "evidenceIds": ["联合索引导学"],
+        "fallback": False,
+        "fromCache": False,
+    }
+
+
+class _StubResourceGeneratorAgent(PlaceholderAgent):
+    def __init__(self, asset_type: str, stage_name: str) -> None:
+        super().__init__(f"stub {asset_type.lower()}", stage_name)
+        self.asset_type = asset_type
 
     async def run(self, *, task_id, trace_id, seq, params, **kwargs):
-        params["generatedAsset"] = {"title": "联合索引导学文档", "summary": "结构化导学"}
+        provenance = _test_provenance(self.stage_name)
+        title = f"联合索引导学 {self.asset_type}"
+        params["generatedAsset"] = {"title": title, "summary": "结构化导学", **provenance}
         yield ResultChunkSSEEvent(
             taskId=task_id,
             traceId=trace_id,
             seq=seq,
-            payload=ResultChunkPayload(text="文档生成完成"),
+            payload=ResultChunkPayload(text=f"{self.asset_type} 生成完成"),
         )
         yield ResourceFileSSEEvent(
             taskId=task_id,
             traceId=trace_id,
             seq=seq + 1,
             payload=ResourceFilePayload(
-                assetType="DOCUMENT",
-                title="联合索引导学文档",
+                assetType=self.asset_type,
+                title=title,
                 summary="结构化导学",
                 displayMode="download",
-                fileName="document.md",
-                localPath="sandbox/document.md",
+                fileName=f"{self.asset_type.lower()}.md",
+                localPath=f"sandbox/{self.asset_type.lower()}.md",
                 mimeType="text/markdown",
+                **provenance,
             ),
         )
+
+
+class _StubDocumentGeneratorAgent(_StubResourceGeneratorAgent):
+    def __init__(self) -> None:
+        super().__init__("DOCUMENT", "document_generation")
+
+
+def _install_resource_bundle_stubs(supervisor: PythonAgentSupervisor) -> None:
+    supervisor.agent_registry["document_generator"] = _StubDocumentGeneratorAgent()
+    supervisor.agent_registry["slide_generator"] = _StubResourceGeneratorAgent("SLIDES", "slide_generation")
+    supervisor.agent_registry["mindmap_generator"] = _StubResourceGeneratorAgent("MINDMAP", "mindmap_generation")
+    supervisor.agent_registry["reading_generator"] = _StubResourceGeneratorAgent("READING", "reading_generation")
+    supervisor.agent_registry["code_generator"] = _StubResourceGeneratorAgent("CODE", "code_generation")
+    supervisor.agent_registry["practice"] = _StubPracticeAgent()
 
 
 class _StubVideoGeneratorAgent(PlaceholderAgent):
@@ -362,6 +402,7 @@ class _StubPracticeAgent(PlaceholderAgent):
                         "explanation": "解释",
                     }
                 ],
+                **_test_provenance(self.stage_name),
             }
         )
         params["practiceQuestionBatch"] = payload.model_dump(by_alias=True)
@@ -469,7 +510,7 @@ async def test_supervisor_runs_retrieval_after_query_rewrite() -> None:
     retrieval_agent = _RecordingRetrievalAgent()
     supervisor.agent_registry["query_rewrite"] = rewrite_agent
     supervisor.agent_registry["retrieval"] = retrieval_agent
-    supervisor.agent_registry["document_generator"] = PlaceholderAgent("doc", "document_generator")
+    _install_resource_bundle_stubs(supervisor)
 
     request = EngineStreamRequest(
         serviceType="RESOURCE_GENERATION",
@@ -529,7 +570,7 @@ async def test_supervisor_streams_resource_generation_with_retrieval_chain() -> 
     supervisor = PythonAgentSupervisor()
     supervisor.agent_registry["query_rewrite"] = _StubRewriteAgent()
     supervisor.agent_registry["retrieval"] = _StubRetrievalAgent()
-    supervisor.agent_registry["document_generator"] = _StubDocumentGeneratorAgent()
+    _install_resource_bundle_stubs(supervisor)
     request = EngineStreamRequest(
         serviceType="RESOURCE_GENERATION",
         params={
@@ -546,7 +587,11 @@ async def test_supervisor_streams_resource_generation_with_retrieval_chain() -> 
     assert events[0].event == "progress"
     assert events[1].event == "result_chunk"
     assert events[-1].event == "done"
-    assert any(e.event == "resource_file" for e in events)
+    resource_events = [e for e in events if e.event in {"resource_file", "question_batch"}]
+    assert len(resource_events) == 1
+    assert all(e.payload.generated_by == "LLM" for e in resource_events)
+    assert all(e.payload.content_origin == "LLM" for e in resource_events)
+    assert all(e.payload.fallback is False for e in resource_events)
     assert "改写后" in events[1].payload.text
     assert "来源摘要" in events[3].payload.text
 
@@ -558,7 +603,7 @@ async def test_supervisor_streams_video_generation_events() -> None:
     supervisor.agent_registry["retrieval"] = _StubRetrievalAgent()
     supervisor.agent_registry["video_generator"] = _StubVideoGeneratorAgent()
     request = EngineStreamRequest(
-        serviceType="RESOURCE_GENERATION",
+        serviceType="VIDEO_GENERATION",
         params={
             "resourceType": "VIDEO",
             "query": "联合索引",
@@ -591,7 +636,7 @@ async def test_supervisor_streams_video_generation_route() -> None:
     supervisor.agent_registry["retrieval"] = _StubRetrievalAgent()
     supervisor.agent_registry["video_generator"] = _StubVideoGeneratorAgent()
     request = EngineStreamRequest(
-        serviceType="RESOURCE_GENERATION",
+        serviceType="VIDEO_GENERATION",
         params={
             "resourceType": "VIDEO",
             "query": "快速排序",
@@ -849,10 +894,13 @@ async def test_supervisor_does_not_commit_partial_param_mutations_when_agent_fai
         traceId="trace-failure",
     )
 
-    with pytest.raises(RuntimeError, match="simulated failure"):
-        _ = [event async for event in supervisor.stream(request)]
+    events = [event async for event in supervisor.stream(request)]
 
     assert request.params == {
         "resourceType": "DOCUMENT",
         "query": "联合索引",
     }
+    assert [event.event for event in events] == ["error", "done"]
+    assert events[0].payload.code == "RESOURCE_BUNDLE_FAILED"
+    assert "simulated failure" in events[0].payload.message
+    assert events[-1].payload.status == "FAILED"

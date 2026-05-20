@@ -13,6 +13,7 @@ import com.project.domain.conversation.QnaSession;
 import com.project.domain.conversation.QnaSessionRepository;
 import com.project.domain.profile.UserProfileCurrentRepository;
 import com.project.security.JwtAuthenticatedUser;
+import org.apache.catalina.connector.ClientAbortException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Qualifier;
@@ -21,6 +22,7 @@ import org.springframework.core.task.TaskExecutor;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.context.request.async.AsyncRequestNotUsableException;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.io.IOException;
@@ -193,20 +195,7 @@ public class ConversationService {
     private boolean isClientDisconnect(Throwable throwable) {
         Throwable current = throwable;
         while (current != null) {
-            if (current instanceof IOException) {
-                String message = current.getMessage();
-                if (message != null) {
-                    String normalized = message.toLowerCase();
-                    if (normalized.contains("broken pipe")
-                        || normalized.contains("connection reset")
-                        || normalized.contains("forcibly closed")
-                        || normalized.contains("asyncrequestnotusableexception")) {
-                        return true;
-                    }
-                }
-            }
-            String className = current.getClass().getName();
-            if (className.contains("AsyncRequestNotUsableException")) {
+            if (current instanceof AsyncRequestNotUsableException || current instanceof ClientAbortException) {
                 return true;
             }
             current = current.getCause();

@@ -72,6 +72,22 @@ export interface InlineResourceView {
   explanation?: string;
 }
 
+export interface EngineTaskResultRecord {
+  taskId: string;
+  title: string;
+  taskStatus: string;
+  engineState: EngineState;
+  taskSummary: string;
+  serviceResultLines: string[];
+  downloadLinks: TempDownloadLink[];
+  videoResult: VideoResult | null;
+  inlineResources: InlineResourceView[];
+  practiceBatch: PracticeQuestionBatch | null;
+  judgeResult: PracticeJudgeResult | null;
+  createdAt: number;
+  updatedAt: number;
+}
+
 export interface PracticeQuestion {
   questionId: string;
   questionType: 'SINGLE_CHOICE' | 'SHORT_ANSWER' | string;
@@ -90,6 +106,14 @@ export interface PracticeQuestionBatch {
   description?: string;
   assessmentDimension?: string;
   submitLabel?: string;
+  generatedBy?: string;
+  contentOrigin?: string;
+  provider?: string;
+  model?: string;
+  agentName?: string;
+  evidenceIds?: string[];
+  fallback?: boolean;
+  fromCache?: boolean;
   questions: PracticeQuestion[];
 }
 
@@ -134,12 +158,16 @@ export interface EngineTaskSnapshot {
   downloadLinks: TempDownloadLink[];
   videoResult: VideoResult | null;
   inlineResource: InlineResourceView | null;
+  inlineResources: InlineResourceView[];
   practiceBatch: PracticeQuestionBatch | null;
   judgeResult: PracticeJudgeResult | null;
+  resultHistory: EngineTaskResultRecord[];
+  selectedResultTaskId: string;
 }
 
 export interface ResourceForm {
   resourceType: ResourceType;
+  resourceTypes: ResourceType[];
   course: string;
   difficulty: 'basic' | 'intermediate' | 'advanced';
   keyPoints: string;
@@ -249,6 +277,7 @@ export interface RunByApiTaskArgs {
   setDownloadLinks: (value: React.SetStateAction<TempDownloadLink[]>) => void;
   setVideoResult: (value: React.SetStateAction<VideoResult | null>) => void;
   setInlineResource: (value: React.SetStateAction<InlineResourceView | null>) => void;
+  setInlineResources: (value: React.SetStateAction<InlineResourceView[]>) => void;
   setPracticeBatch: (value: React.SetStateAction<PracticeQuestionBatch | null>) => void;
   setJudgeResult: (value: React.SetStateAction<PracticeJudgeResult | null>) => void;
   taskStreamAbortRef: React.MutableRefObject<AbortController | null>;
@@ -324,6 +353,7 @@ export const serviceTypeMap: Record<EngineService, SmartEngineServiceType> = {
 
 export const defaultResourceForm: ResourceForm = {
   resourceType: 'EXPLANATION',
+  resourceTypes: ['EXPLANATION'],
   course: '',
   difficulty: 'intermediate',
   keyPoints: '',

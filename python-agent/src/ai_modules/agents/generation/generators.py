@@ -31,6 +31,7 @@ from src.ai_modules.models import (
 from src.ai_modules.runtime import (
     SystemSnapshot,
 )
+from src.ai_modules.runtime.provenance import build_llm_provenance, validate_llm_provenance
 
 LOGGER = logging.getLogger(__name__)
 
@@ -137,28 +138,38 @@ class _BaseGenerationAgent(PlaceholderAgent):
                 )
             ),
         )
+        resource_payload = ResourceFilePayload(
+            assetType=asset.asset_type,
+            title=asset.title,
+            summary=asset.summary,
+            displayMode=asset.display_mode,
+            fileName=asset.file_name,
+            localPath=asset.local_path,
+            mimeType=asset.mime_type,
+            inlineContent=asset.inline_content,
+            language=asset.language,
+            explanation=asset.explanation,
+            thumbnailPath=asset.thumbnail_path,
+            thumbnailFileName=asset.thumbnail_file_name,
+            thumbnailMimeType=asset.thumbnail_mime_type,
+            durationSeconds=asset.duration_seconds,
+            videoStyle=asset.video_style,
+            knowledgePoint=asset.knowledge_point,
+            generatedBy=asset.generated_by,
+            contentOrigin=asset.content_origin,
+            provider=asset.provider,
+            model=asset.model,
+            agentName=asset.agent_name,
+            evidenceIds=asset.evidence_ids,
+            fallback=asset.fallback,
+            fromCache=asset.from_cache,
+        )
+        validate_llm_provenance(resource_payload, artifact_label=f"{self.stage_name}:{asset.asset_type}")
         yield ResourceFileSSEEvent(
             taskId=task_id,
             traceId=trace_id,
             seq=next_seq + 1,
-            payload=ResourceFilePayload(
-                assetType=asset.asset_type,
-                title=asset.title,
-                summary=asset.summary,
-                displayMode=asset.display_mode,
-                fileName=asset.file_name,
-                localPath=asset.local_path,
-                mimeType=asset.mime_type,
-                inlineContent=asset.inline_content,
-                language=asset.language,
-                explanation=asset.explanation,
-                thumbnailPath=asset.thumbnail_path,
-                thumbnailFileName=asset.thumbnail_file_name,
-                thumbnailMimeType=asset.thumbnail_mime_type,
-                durationSeconds=asset.duration_seconds,
-                videoStyle=asset.video_style,
-                knowledgePoint=asset.knowledge_point,
-            ),
+            payload=resource_payload,
         )
 
     async def _run_agent_core_loop(
@@ -271,12 +282,25 @@ class _BaseGenerationAgent(PlaceholderAgent):
                 "generatedContent": generated_content,
             }
         draft = await operation()
+        provenance = self._build_asset_provenance(params=params)
+        draft["asset"].update(provenance)
         for key in ("videoGenerationTask", "videoSandboxArtifact", "tts_audio_bytes"):
             if key in build_params:
                 params[key] = build_params[key]
         params["generatedAsset"] = draft["asset"]
         params["generatedContent"] = draft["generatedContent"]
         return draft
+
+    def _build_asset_provenance(self, *, params: dict[str, Any]) -> dict[str, Any]:
+        generator = getattr(getattr(self.generation_service, "content_chain", None), "primary_generator", None)
+        return build_llm_provenance(
+            agent_name=self._wire_agent_name(),
+            generator=generator,
+            params=params,
+        )
+
+    def _wire_agent_name(self) -> str:
+        return self.stage_name
 
     @staticmethod
     def _should_read_local_asset_text(asset: Any) -> bool:
@@ -351,70 +375,6 @@ class _BaseGenerationAgent(PlaceholderAgent):
             "criticReview": CriticReviewPayload.model_validate(payload["criticReview"]),
             "safetyReview": SafetyReviewPayload.model_validate(payload["safetyReview"]),
         }
-
-    async def _build_minimal_asset(
-        self,
-        *,
-        task_id: str,
-        params: dict[str, Any],
-    ):
-        from src.ai_modules.generation import GeneratedAsset
-
-        title = f"{params.get('query', '学习主题')}{self.asset_type}回退资源"
-        file_name = self.generation_service._scoped_file_name(
-            f"{self.asset_type.lower()}_fallback",
-            "md",
-            {"taskId": task_id},
-        )
-        retrieval_result = params.get("retrievalResult", {})
-        documents = retrieval_result.get("documents", []) if isinstance(retrieval_result, dict) else []
-        reference_lines = []
-        for index, item in enumerate(documents[:5], start=1):
-            if not isinstance(item, dict):
-                continue
-            ref_title = str(item.get("title") or item.get("slug") or f"候选来源 {index}")
-            evidence = str(item.get("evidence") or "").strip()
-            reference_lines.append(f"{index}. {ref_title}")
-            if evidence:
-                reference_lines.append(f"   - 要点: {evidence}")
-        if not reference_lines:
-            reference_lines = ["1. 未检索到可用来源，请检查知识库索引或检索配置。"]
-
-        content = "\n".join(
-            [
-                f"# {title}",
-                "",
-                "## 当前状态",
-                "本次生成进入降级模式，已根据当前检索结果整理可读版内容。",
-                "",
-                "## 学习目标",
-                f"- 主题: {params.get('query', '学习主题')}",
-                f"- 资源类型: {self.asset_type}",
-                "",
-                "## 推荐学习提纲",
-                "- 先掌握核心定义与边界条件",
-                "- 再用一个典型案例验证理解",
-                "- 最后对照误区清单进行自测",
-                "",
-                "## 参考来源",
-                *reference_lines,
-                "",
-                "## 下一步建议",
-                "- 可直接基于以上来源继续学习",
-                "- 若需更完整内容，请重试生成任务",
-            ]
-        )
-        path = await asyncio.to_thread(self.generation_service._write_text, file_name, content)
-        return GeneratedAsset(
-            assetType=self.asset_type,
-            title=title,
-            summary="回退生成资源",
-            displayMode="MARKDOWN_CARD",
-            fileName=file_name,
-            localPath=str(path),
-            previewText=title,
-        )
-
 
 class DocumentGeneratorAgent(_BaseGenerationAgent):
     def __init__(
@@ -625,27 +585,48 @@ class VideoGenerationAgent(_BaseGenerationAgent):
             ),
         )
         current_seq += 1
+        resource_payload = ResourceFilePayload(
+            assetType=asset.asset_type,
+            title=asset.title,
+            summary=asset.summary,
+            displayMode=asset.display_mode,
+            fileName=asset.file_name,
+            localPath=asset.local_path,
+            mimeType=asset.mime_type,
+            thumbnailPath=asset.thumbnail_path,
+            thumbnailFileName=asset.thumbnail_file_name,
+            thumbnailMimeType=asset.thumbnail_mime_type,
+            durationSeconds=asset.duration_seconds,
+            videoStyle=asset.video_style,
+            knowledgePoint=asset.knowledge_point,
+            generatedBy=asset.generated_by,
+            contentOrigin=asset.content_origin,
+            provider=asset.provider,
+            model=asset.model,
+            agentName=asset.agent_name,
+            evidenceIds=asset.evidence_ids,
+            fallback=asset.fallback,
+            fromCache=asset.from_cache,
+        )
+        validate_llm_provenance(resource_payload, artifact_label=f"{self.stage_name}:{asset.asset_type}")
         yield ResourceFileSSEEvent(
             taskId=task_id,
             traceId=trace_id,
             seq=current_seq,
-            payload=ResourceFilePayload(
-                assetType=asset.asset_type,
-                title=asset.title,
-                summary=asset.summary,
-                displayMode=asset.display_mode,
-                fileName=asset.file_name,
-                localPath=asset.local_path,
-                mimeType=asset.mime_type,
-                thumbnailPath=asset.thumbnail_path,
-                thumbnailFileName=asset.thumbnail_file_name,
-                thumbnailMimeType=asset.thumbnail_mime_type,
-                durationSeconds=asset.duration_seconds,
-                videoStyle=asset.video_style,
-                knowledgePoint=asset.knowledge_point,
-            ),
+            payload=resource_payload,
         )
         current_seq += 1
+        video_provenance = {
+            "generatedBy": asset.generated_by,
+            "contentOrigin": asset.content_origin,
+            "provider": asset.provider,
+            "model": asset.model,
+            "agentName": asset.agent_name,
+            "evidenceIds": asset.evidence_ids,
+            "fallback": asset.fallback,
+            "fromCache": asset.from_cache,
+        }
+        validate_llm_provenance(video_provenance, artifact_label=f"{self.stage_name}:video_progress")
         settings = get_settings()
         video_task_payload = params.get("videoGenerationTask")
         video_artifact_payload = params.get("videoSandboxArtifact")
@@ -675,6 +656,7 @@ class VideoGenerationAgent(_BaseGenerationAgent):
                     topic=topic,
                     knowledgePoint=asset.knowledge_point,
                     videoStyle=asset.video_style,
+                    **video_provenance,
                 ),
             )
             current_seq += 1
@@ -699,6 +681,7 @@ class VideoGenerationAgent(_BaseGenerationAgent):
                     videoStyle=asset.video_style,
                     scriptJson=script_payload if isinstance(script_payload, dict) else None,
                     scriptText=script_payload.get("fullText") if isinstance(script_payload, dict) else None,
+                    **video_provenance,
                 ),
             )
             current_seq += 1
@@ -718,6 +701,7 @@ class VideoGenerationAgent(_BaseGenerationAgent):
                 topic=topic,
                 knowledgePoint=asset.knowledge_point,
                 videoStyle=asset.video_style,
+                **video_provenance,
             ),
         )
         current_seq += 1
@@ -741,6 +725,7 @@ class VideoGenerationAgent(_BaseGenerationAgent):
             "audioBase64": browser_audio_base64,
             "format": browser_audio_format,
             "avatarDataUrl": browser_avatar_data_url,
+            **video_provenance,
         }
         if isinstance(video_task_payload, dict):
             complete_payload["videoGenerationTask"] = video_task_payload

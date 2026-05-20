@@ -46,6 +46,14 @@ class GeneratedAsset(BaseModel):
     duration_seconds: int | None = Field(default=None, alias="durationSeconds")
     video_style: str | None = Field(default=None, alias="videoStyle")
     knowledge_point: str | None = Field(default=None, alias="knowledgePoint")
+    generated_by: str | None = Field(default=None, alias="generatedBy")
+    content_origin: str | None = Field(default=None, alias="contentOrigin")
+    provider: str | None = None
+    model: str | None = None
+    agent_name: str | None = Field(default=None, alias="agentName")
+    evidence_ids: list[str] = Field(default_factory=list, alias="evidenceIds")
+    fallback: bool | None = None
+    from_cache: bool = Field(default=False, alias="fromCache")
 
     model_config = ConfigDict(populate_by_name=True)
 
@@ -689,13 +697,15 @@ class ResourceGenerationService:
             fallback_builder=self,
         )
         mermaid = self._render_mindmap_mermaid(generated_mindmap)
+        file_name = self._scoped_file_name("mindmap", "mmd", params)
+        path = self._write_text(file_name, mermaid)
         return GeneratedAsset(
             assetType="MINDMAP",
             title=generated_mindmap.title,
             summary=generated_mindmap.summary,
             displayMode="INLINE_MERMAID",
-            fileName="",
-            localPath=None,
+            fileName=file_name,
+            localPath=str(path),
             previewText=generated_mindmap.title,
             mimeType="text/plain; charset=UTF-8",
             inlineContent=mermaid,
@@ -741,13 +751,16 @@ class ResourceGenerationService:
             sources=sources,
             fallback_builder=self,
         )
+        code_suffix = self._code_file_suffix(generated_code.language)
+        file_name = self._scoped_file_name("code_case", code_suffix, params)
+        path = self._write_text(file_name, generated_code.code)
         return GeneratedAsset(
             assetType="CODE",
             title=generated_code.title,
             summary=generated_code.summary,
             displayMode="INLINE_CODE",
-            fileName="",
-            localPath=None,
+            fileName=file_name,
+            localPath=str(path),
             previewText=generated_code.title,
             mimeType="text/plain; charset=UTF-8",
             inlineContent=generated_code.code,
@@ -915,26 +928,8 @@ class ResourceGenerationService:
         snapshot: dict[str, Any],
         sources: list[dict[str, Any]],
     ) -> GeneratedTextAsset:
+        del title, topic, snapshot, sources
         raise RuntimeError("Local fallback reading asset generation is disabled; use LLM generation only.")
-        reading_lines = [
-            f"- 第 {index} 篇: {item.get('title', '未知来源')}"
-            for index, item in enumerate(sources[:3], start=1)
-        ] or ["- 当前为 fallback 阶段，待补真实来源。"]
-        body = "\n".join(
-            [
-                f"适用课程: {snapshot.get('current_course', '未指定课程')}",
-                "",
-                "## 阅读目标",
-                f"围绕 `{topic}` 进行延伸阅读。",
-                "",
-                "## 推荐阅读顺序",
-                *reading_lines,
-                "",
-                "## 阅读提醒",
-                "- 阅读时优先关注定义、适用场景和常见误区。",
-            ]
-        )
-        return GeneratedTextAsset(title=title, summary="延伸阅读材料", body=body)
 
     def build_fallback_slides_asset(
         self,
@@ -944,29 +939,8 @@ class ResourceGenerationService:
         snapshot: dict[str, Any],
         sources: list[dict[str, Any]],
     ) -> GeneratedSlideDeck:
+        del title, topic, snapshot, sources
         raise RuntimeError("Local fallback slides generation is disabled; use LLM generation only.")
-        del sources
-        return GeneratedSlideDeck(
-            title=title,
-            summary="PPT 页结构大纲",
-            slides=[
-                {
-                    "title": "学习目标与问题背景",
-                    "bullets": [f"主题: {topic}", f"课程: {snapshot.get('current_course', '未指定课程')}"],
-                    "speakerNotes": "先说明为什么要学习这个主题。",
-                },
-                {
-                    "title": "关键原理拆解",
-                    "bullets": ["定义", "适用条件", "判断步骤"],
-                    "speakerNotes": "重点讲清楚概念和判断边界。",
-                },
-                {
-                    "title": "误区与练习",
-                    "bullets": ["典型误区", "例题分析", "课后练习"],
-                    "speakerNotes": "把错因和练习建议串起来。",
-                },
-            ],
-        )
 
     def build_fallback_mindmap_asset(
         self,
@@ -976,18 +950,8 @@ class ResourceGenerationService:
         snapshot: dict[str, Any],
         sources: list[dict[str, Any]],
     ) -> GeneratedMindMap:
+        del title, topic, snapshot, sources
         raise RuntimeError("Local fallback mindmap generation is disabled; use LLM generation only.")
-        del snapshot, sources
-        return GeneratedMindMap(
-            title=title,
-            summary="思维导图 JSON 结构",
-            root=topic,
-            children=[
-                {"name": "定义", "children": [{"name": "核心概念"}, {"name": "适用场景"}]},
-                {"name": "原理", "children": [{"name": "判断条件"}, {"name": "边界"}]},
-                {"name": "练习", "children": [{"name": "例题"}, {"name": "误区"}]},
-            ],
-        )
 
     def build_fallback_code_asset(
         self,
@@ -997,31 +961,39 @@ class ResourceGenerationService:
         snapshot: dict[str, Any],
         sources: list[dict[str, Any]],
     ) -> GeneratedCodeAsset:
+        del title, topic, snapshot, sources
         raise RuntimeError("Local fallback code generation is disabled; use LLM generation only.")
-        del sources
-        code = "\n".join(
-            [
-                '"""示例代码：根据当前课程主题生成的回退案例。"""',
-                "",
-                f"# course: {snapshot.get('current_course', '未指定课程')}",
-                f"# topic: {topic}",
-                "",
-                "def explain_topic() -> str:",
-                f'    return "这是围绕 {topic} 的回退示例。"'
-            ]
-        )
-        return GeneratedCodeAsset(
-            title=title,
-            summary="代码案例文件",
-            code=code,
-            explanation="当前为回退代码示例，用于保证链路稳定。",
-        )
 
     def _write_text(self, file_name: str, content: str) -> Path:
         self.sandbox_root.mkdir(parents=True, exist_ok=True)
         path = self.sandbox_root / file_name
         path.write_text(content, encoding="utf-8")
         return path
+
+    @staticmethod
+    def _code_file_suffix(language: str | None) -> str:
+        normalized = (language or "").strip().lower()
+        suffix_by_language = {
+            "python": "py",
+            "py": "py",
+            "javascript": "js",
+            "js": "js",
+            "typescript": "ts",
+            "ts": "ts",
+            "java": "java",
+            "rust": "rs",
+            "rs": "rs",
+            "go": "go",
+            "c": "c",
+            "cpp": "cpp",
+            "c++": "cpp",
+            "sql": "sql",
+            "html": "html",
+            "css": "css",
+            "shell": "sh",
+            "bash": "sh",
+        }
+        return suffix_by_language.get(normalized, "txt")
 
     def _scoped_file_name(self, prefix: str, suffix: str, params: dict[str, Any]) -> str:
         task_id = str(params.get("taskId") or "shared")

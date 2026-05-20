@@ -6,7 +6,7 @@
   "RESOURCE_GENERATION": [
     "query_rewrite",
     "retrieval",
-    "{generation_agent}"
+    "resource_bundle"
   ],
   "RESOURCE_PUSH": [
     "resource_push"

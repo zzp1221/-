@@ -210,6 +210,23 @@ async def test_deep_reasoning_agent_passes_params_to_input_mode_classifier() -> 
 
 
 @pytest.mark.asyncio
+async def test_deep_reasoning_agent_disables_deterministic_direct_fallback() -> None:
+    agent = DeepReasoningAgent(
+        compactor=ConversationCompactor(token_budget=1000, keep_recent_turns=4),
+        summary_store=InMemoryConversationSummaryStore(),
+        llm_client=object(),
+    )
+
+    with pytest.raises(RuntimeError, match="deterministic fallback is not allowed"):
+        await agent._run_direct_reasoning_step(
+            system_prompt="test",
+            user_query="Explain indexes deeply",
+            step_key="analysis",
+            artifacts={},
+        )
+
+
+@pytest.mark.asyncio
 async def test_tutor_agent_golden_eval_preserves_guidance_contract() -> None:
     tutor = TutorAgent(
         compactor=ConversationCompactor(token_budget=1000, keep_recent_turns=4),

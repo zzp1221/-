@@ -17,6 +17,8 @@ import {
   type EngineService,
   type EngineState,
   type EngineTaskSnapshot,
+  type EngineTaskResultRecord,
+  type InlineResourceView,
   type PathForm,
   type PendingChatImage,
   type PracticeQuestionBatch,
@@ -357,8 +359,11 @@ function createEmptyEngineTaskSnapshot(baseState: EngineState = 'ENGINE_IDLE'): 
     downloadLinks: [],
     videoResult: null,
     inlineResource: null,
+    inlineResources: [],
     practiceBatch: null,
     judgeResult: null,
+    resultHistory: [],
+    selectedResultTaskId: '',
   };
 }
 
@@ -393,15 +398,118 @@ function dedupeResultLines(lines: string[]): string[] {
   return normalized;
 }
 
+function getInlineResourcesFromSnapshot(snapshot: Partial<EngineTaskSnapshot>): InlineResourceView[] {
+  const resources = Array.isArray(snapshot.inlineResources) ? snapshot.inlineResources.filter(Boolean) : [];
+  if (snapshot.inlineResource && !resources.some((item) => item.kind === snapshot.inlineResource?.kind && item.title === snapshot.inlineResource?.title)) {
+    resources.push(snapshot.inlineResource);
+  }
+  return resources;
+}
+
+function normalizeTaskResultRecord(record: Partial<EngineTaskResultRecord>): EngineTaskResultRecord | null {
+  if (!record.taskId) {
+    return null;
+  }
+  const now = Date.now();
+  return {
+    taskId: record.taskId,
+    title: record.title || `任务 ${record.taskId.slice(0, 8)}`,
+    taskStatus: record.taskStatus || '任务结果',
+    engineState: record.engineState || 'ENGINE_COMPLETED',
+    taskSummary: record.taskSummary || '',
+    serviceResultLines: Array.isArray(record.serviceResultLines) ? record.serviceResultLines : [],
+    downloadLinks: Array.isArray(record.downloadLinks) ? record.downloadLinks : [],
+    videoResult: record.videoResult ?? null,
+    inlineResources: Array.isArray(record.inlineResources) ? record.inlineResources : [],
+    practiceBatch: record.practiceBatch ?? null,
+    judgeResult: record.judgeResult ?? null,
+    createdAt: typeof record.createdAt === 'number' ? record.createdAt : now,
+    updatedAt: typeof record.updatedAt === 'number' ? record.updatedAt : now,
+  };
+}
+
+function createTaskResultRecord(
+  taskId: string,
+  snapshot: EngineTaskSnapshot,
+  overrides: Partial<EngineTaskResultRecord> = {},
+): EngineTaskResultRecord {
+  const now = Date.now();
+  return {
+    taskId,
+    title: overrides.title || snapshot.taskSummary || snapshot.taskStatus || `任务 ${taskId.slice(0, 8)}`,
+    taskStatus: overrides.taskStatus ?? snapshot.taskStatus,
+    engineState: overrides.engineState ?? snapshot.engineState,
+    taskSummary: overrides.taskSummary ?? snapshot.taskSummary,
+    serviceResultLines: overrides.serviceResultLines ?? snapshot.serviceResultLines,
+    downloadLinks: overrides.downloadLinks ?? snapshot.downloadLinks,
+    videoResult: overrides.videoResult ?? snapshot.videoResult,
+    inlineResources: overrides.inlineResources ?? getInlineResourcesFromSnapshot(snapshot),
+    practiceBatch: overrides.practiceBatch ?? snapshot.practiceBatch,
+    judgeResult: overrides.judgeResult ?? snapshot.judgeResult,
+    createdAt: overrides.createdAt ?? now,
+    updatedAt: overrides.updatedAt ?? now,
+  };
+}
+
+function upsertTaskResultRecord(
+  history: EngineTaskResultRecord[],
+  taskId: string,
+  snapshot: EngineTaskSnapshot,
+  overrides: Partial<EngineTaskResultRecord> = {},
+): EngineTaskResultRecord[] {
+  if (!taskId) {
+    return history;
+  }
+  const index = history.findIndex((item) => item.taskId === taskId);
+  if (index < 0) {
+    return [createTaskResultRecord(taskId, snapshot, overrides), ...history].slice(0, 8);
+  }
+  const current = history[index];
+  const next: EngineTaskResultRecord = {
+    ...current,
+    ...overrides,
+    taskId,
+    title: overrides.title || current.title || snapshot.taskSummary || snapshot.taskStatus || `任务 ${taskId.slice(0, 8)}`,
+    taskStatus: overrides.taskStatus ?? snapshot.taskStatus,
+    engineState: overrides.engineState ?? snapshot.engineState,
+    taskSummary: overrides.taskSummary ?? snapshot.taskSummary,
+    serviceResultLines: overrides.serviceResultLines ?? snapshot.serviceResultLines,
+    downloadLinks: overrides.downloadLinks ?? snapshot.downloadLinks,
+    videoResult: overrides.videoResult ?? snapshot.videoResult,
+    inlineResources: overrides.inlineResources ?? getInlineResourcesFromSnapshot(snapshot),
+    practiceBatch: overrides.practiceBatch ?? snapshot.practiceBatch,
+    judgeResult: overrides.judgeResult ?? snapshot.judgeResult,
+    createdAt: current.createdAt,
+    updatedAt: Date.now(),
+  };
+  return [next, ...history.slice(0, index), ...history.slice(index + 1)].slice(0, 8);
+}
+
+function syncSnapshotResultRecord(snapshot: EngineTaskSnapshot): EngineTaskSnapshot {
+  if (!snapshot.taskId) {
+    return snapshot;
+  }
+  return {
+    ...snapshot,
+    resultHistory: upsertTaskResultRecord(snapshot.resultHistory, snapshot.taskId, snapshot),
+    selectedResultTaskId: snapshot.selectedResultTaskId || snapshot.taskId,
+  };
+}
+
 function sanitizeEngineSnapshot(snapshot: EngineTaskSnapshot): EngineTaskSnapshot {
   const normalized: EngineTaskSnapshot = {
     ...snapshot,
     serviceResultLines: dedupeResultLines(snapshot.serviceResultLines),
+    inlineResources: getInlineResourcesFromSnapshot(snapshot),
+    resultHistory: Array.isArray(snapshot.resultHistory)
+      ? snapshot.resultHistory.map(normalizeTaskResultRecord).filter((item): item is EngineTaskResultRecord => Boolean(item))
+      : [],
+    selectedResultTaskId: snapshot.selectedResultTaskId || snapshot.taskId || '',
   };
   if (normalized.engineState === 'ENGINE_SUBMITTING' && !normalized.taskId) {
     return createEmptyEngineTaskSnapshot('ENGINE_FORM_EDITING');
   }
-  return normalized;
+  return syncSnapshotResultRecord(normalized);
 }
 
 function buildPersistedEngineSnapshots(
@@ -450,7 +558,7 @@ export default function LearningStudioDemoPage({ mode }: { mode: 'qna' | 'engine
   const { isAuthenticated, openAuthModal } = useOutletContext<LayoutOutletContext>();
   const navigate = useNavigate();
   const pendingActionRef = useRef<null | (() => void)>(null);
-  const qnaAbortRef = useRef<AbortController | null>(null);
+  const qnaStreamControllersRef = useRef<Record<string, AbortController>>({});
   const taskMonitorRefsRef = useRef<Record<EngineService, {
     taskStreamAbortRef: { current: AbortController | null };
     streamQueueRef: { current: string[] };
@@ -533,6 +641,7 @@ export default function LearningStudioDemoPage({ mode }: { mode: 'qna' | 'engine
   const serviceResultLines = activeEngineSnapshot.serviceResultLines;
   const downloadLinks = activeEngineSnapshot.downloadLinks;
   const videoResult = activeEngineSnapshot.videoResult;
+  const inlineResources = getInlineResourcesFromSnapshot(activeEngineSnapshot);
   const selectedServiceButton = selectedService ? serviceButtons.find((item) => item.id === selectedService) ?? null : null;
   const selectedServiceDescription = selectedService ? serviceDescriptions[selectedService] : null;
 
@@ -618,7 +727,7 @@ export default function LearningStudioDemoPage({ mode }: { mode: 'qna' | 'engine
         const next = typeof updater === 'function' ? updater(current) : updater;
         return {
           ...prev,
-          [service]: next,
+          [service]: syncSnapshotResultRecord(next),
         };
       });
     },
@@ -627,7 +736,6 @@ export default function LearningStudioDemoPage({ mode }: { mode: 'qna' | 'engine
 
   const resetQnaConversation = useCallback(() => {
     qnaRequestVersionRef.current += 1;
-    qnaAbortRef.current = null;
     cacheConversationView(conversationIdRef.current, {
       qnaInput: qnaInputRef.current,
       qnaMessages: qnaMessagesRef.current,
@@ -818,7 +926,6 @@ export default function LearningStudioDemoPage({ mode }: { mode: 'qna' | 'engine
         { id: `qna-loading-${nextConversationId}`, role: 'assistant', content: '正在加载历史对话...' },
       ];
 
-    qnaAbortRef.current = null;
     conversationIdRef.current = nextConversationId;
     qnaInputRef.current = nextInput;
     qnaMessagesRef.current = nextMessages;
@@ -881,6 +988,8 @@ export default function LearningStudioDemoPage({ mode }: { mode: 'qna' | 'engine
         refs.taskStreamAbortRef.current?.abort();
         cleanupStreamSchedulers(refs.streamFlushTimerRef, refs.streamRafRef);
       });
+      Object.values(qnaStreamControllersRef.current).forEach((controller) => controller.abort());
+      qnaStreamControllersRef.current = {};
     };
   }, []);
 
@@ -1138,6 +1247,12 @@ export default function LearningStudioDemoPage({ mode }: { mode: 'qna' | 'engine
             inlineResource: typeof value === 'function' ? value(current.inlineResource) : value,
           }));
         },
+        setInlineResources: (value) => {
+          updateServiceSnapshot(service, (current) => ({
+            ...current,
+            inlineResources: typeof value === 'function' ? value(getInlineResourcesFromSnapshot(current)) : value,
+          }));
+        },
         setPracticeBatch: (value) => {
           updateServiceSnapshot(service, (current) => ({
             ...current,
@@ -1256,18 +1371,18 @@ export default function LearningStudioDemoPage({ mode }: { mode: 'qna' | 'engine
     });
 
     qnaRequestVersionRef.current += 1;
-    const requestVersion = qnaRequestVersionRef.current;
     const abortController = new AbortController();
-    qnaAbortRef.current = abortController;
-    const draftConversationId = conversationId;
+    const originConversationId = conversationIdRef.current.trim();
+    let streamConversationId = originConversationId;
 
     try {
       const currentConversationId = conversationId || (await conversationApi.createConversation()).conversationId;
-      if (abortController.signal.aborted || qnaRequestVersionRef.current !== requestVersion) {
-        setQnaStateView('QNA_IDLE');
+      streamConversationId = currentConversationId;
+      if (abortController.signal.aborted || !mountedRef.current) {
         return;
       }
-      if (!conversationId) {
+      const stillViewingOrigin = conversationIdRef.current === originConversationId;
+      if (!conversationId && stillViewingOrigin) {
         conversationIdRef.current = currentConversationId;
         setConversationId(currentConversationId);
         qnaDraftsRef.current.__new__ = '';
@@ -1279,6 +1394,8 @@ export default function LearningStudioDemoPage({ mode }: { mode: 'qna' | 'engine
         qnaState: 'QNA_STREAMING',
       });
       const streamToken = `${currentConversationId}:${assistantMessageId}`;
+      qnaStreamControllersRef.current[currentConversationId]?.abort();
+      qnaStreamControllersRef.current[currentConversationId] = abortController;
       qnaStreamTokensRef.current[currentConversationId] = streamToken;
 
       await conversationApi.streamMessage(
@@ -1328,6 +1445,9 @@ export default function LearningStudioDemoPage({ mode }: { mode: 'qna' | 'engine
               return;
             }
             delete qnaStreamTokensRef.current[currentConversationId];
+            if (qnaStreamControllersRef.current[currentConversationId] === abortController) {
+              delete qnaStreamControllersRef.current[currentConversationId];
+            }
             updateQnaConversationMessages(currentConversationId, (messages) => messages, { qnaState: 'QNA_IDLE' });
             window.dispatchEvent(new Event('app:conversation-updated'));
           },
@@ -1336,6 +1456,9 @@ export default function LearningStudioDemoPage({ mode }: { mode: 'qna' | 'engine
               return;
             }
             delete qnaStreamTokensRef.current[currentConversationId];
+            if (qnaStreamControllersRef.current[currentConversationId] === abortController) {
+              delete qnaStreamControllersRef.current[currentConversationId];
+            }
             const message = getErrorMessage(error);
             updateQnaConversationMessages(
               currentConversationId,
@@ -1368,13 +1491,32 @@ export default function LearningStudioDemoPage({ mode }: { mode: 'qna' | 'engine
         abortController.signal,
       );
     } catch (error) {
-      if (qnaRequestVersionRef.current !== requestVersion) {
-        return;
-      }
-      if (draftConversationId && conversationIdRef.current !== draftConversationId) {
-        return;
-      }
       const message = getErrorMessage(error);
+      const targetConversationId = streamConversationId || (
+        conversationIdRef.current === originConversationId
+          ? conversationIdRef.current
+          : originConversationId
+      );
+      if (targetConversationId) {
+        delete qnaStreamTokensRef.current[targetConversationId];
+        if (qnaStreamControllersRef.current[targetConversationId] === abortController) {
+          delete qnaStreamControllersRef.current[targetConversationId];
+        }
+        updateQnaConversationMessages(
+          targetConversationId,
+          (messages) =>
+            messages.map((item) =>
+              item.id === assistantMessageId
+                ? { ...item, content: item.content || `会话失败：${message}` }
+                : item,
+            ),
+          { qnaState: 'QNA_IDLE' },
+        );
+        return;
+      }
+      if (conversationIdRef.current !== originConversationId) {
+        return;
+      }
       setQnaMessages((prev) =>
         prev.map((item) => (item.id === assistantMessageId ? { ...item, content: `会话失败：${message}` } : item)),
       );
@@ -1514,8 +1656,11 @@ export default function LearningStudioDemoPage({ mode }: { mode: 'qna' | 'engine
       downloadLinks: [],
       videoResult: null,
       inlineResource: null,
+      inlineResources: [],
       practiceBatch: null,
       judgeResult: null,
+      resultHistory: serviceSnapshots[selectedService].resultHistory,
+      selectedResultTaskId: serviceSnapshots[selectedService].selectedResultTaskId,
     });
 
     const params = buildServiceParams(selectedService, { resourceForm, pathForm, pushForm, assessmentForm });
@@ -1538,6 +1683,7 @@ export default function LearningStudioDemoPage({ mode }: { mode: 'qna' | 'engine
         taskId: submitResp.taskId,
         engineState: 'ENGINE_RUNNING',
         taskStatus: toUiTaskStatus(submitResp.status),
+        selectedResultTaskId: submitResp.taskId,
       }));
       void monitorTask(selectedService, submitResp.taskId);
     } catch (error) {
@@ -1577,7 +1723,10 @@ export default function LearningStudioDemoPage({ mode }: { mode: 'qna' | 'engine
       downloadLinks: [],
       videoResult: null,
       inlineResource: null,
+      inlineResources: [],
       judgeResult: null,
+      resultHistory: current.resultHistory,
+      selectedResultTaskId: current.selectedResultTaskId,
     }));
 
     try {
@@ -1610,6 +1759,7 @@ export default function LearningStudioDemoPage({ mode }: { mode: 'qna' | 'engine
         taskId: submitResp.taskId,
         engineState: 'ENGINE_RUNNING',
         taskStatus: toUiTaskStatus(submitResp.status),
+        selectedResultTaskId: submitResp.taskId,
       }));
       void monitorTask(targetService, submitResp.taskId);
     } catch (error) {
@@ -1665,6 +1815,16 @@ export default function LearningStudioDemoPage({ mode }: { mode: 'qna' | 'engine
         serviceResultLines: [...current.serviceResultLines, `取消失败：${message}`],
       }));
     }
+  };
+
+  const handleSelectResultTask = (resultTaskId: string) => {
+    if (!selectedService || !resultTaskId) {
+      return;
+    }
+    updateServiceSnapshot(selectedService, (current) => ({
+      ...current,
+      selectedResultTaskId: resultTaskId,
+    }));
   };
 
   useEffect(() => {
@@ -1896,9 +2056,13 @@ export default function LearningStudioDemoPage({ mode }: { mode: 'qna' | 'engine
           downloadLinks={downloadLinks}
           videoResult={videoResult}
           inlineResource={activeEngineSnapshot.inlineResource}
+          inlineResources={inlineResources}
+          resultHistory={activeEngineSnapshot.resultHistory}
+          selectedResultTaskId={activeEngineSnapshot.selectedResultTaskId}
           practiceBatch={activeEngineSnapshot.practiceBatch}
           judgeResult={activeEngineSnapshot.judgeResult}
           canSubmitPractice={!hasLockedTask(activeEngineSnapshot)}
+          onSelectResultTask={handleSelectResultTask}
           onSubmitPracticeAnswers={handleSubmitPracticeAnswers}
         />
       </div>

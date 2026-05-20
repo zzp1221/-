@@ -18,6 +18,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.math.BigDecimal;
 import java.nio.file.Path;
 import java.time.OffsetDateTime;
+import java.util.Collection;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.UUID;
@@ -108,28 +109,37 @@ public class TaskStateMachineService {
         }
 
         StreamEventType eventType = pythonEvent.resolvedEventType();
-        switch (eventType) {
-            case PROGRESS -> applyProgressEvent(task, pythonEvent, payload);
-            case RESOURCE_FILE -> payload = applyResourceFileEvent(task, payload);
-            case QUESTION_BATCH, JUDGE_RESULT, VIDEO_GEN_SPEECH, VIDEO_GEN_COMPLETE -> applyStructuredResultEvent(task, pythonEvent, payload);
-            case DONE -> applyDoneEvent(task, payload);
-            case ERROR -> applyErrorEvent(task, payload);
-            default -> applyIntermediateEvent(task, pythonEvent);
+        String persistedEventType = pythonEvent.eventType();
+        boolean skipVideoSync = false;
+        if (isInvalidGeneratedArtifactEvent(eventType, payload)) {
+            payload = provenanceFailurePayload(eventType, payload);
+            applyErrorEvent(task, payload);
+            persistedEventType = StreamEventType.ERROR.wireValue();
+            skipVideoSync = true;
+        } else {
+            switch (eventType) {
+                case PROGRESS -> applyProgressEvent(task, pythonEvent, payload);
+                case RESOURCE_FILE -> payload = applyResourceFileEvent(task, payload);
+                case QUESTION_BATCH, JUDGE_RESULT, VIDEO_GEN_SPEECH, VIDEO_GEN_COMPLETE -> applyStructuredResultEvent(task, pythonEvent, payload);
+                case DONE -> applyDoneEvent(task, payload);
+                case ERROR -> applyErrorEvent(task, payload);
+                default -> applyIntermediateEvent(task, pythonEvent);
+            }
         }
-        if (eventType != StreamEventType.RESOURCE_FILE) {
+        if (!skipVideoSync && eventType != StreamEventType.RESOURCE_FILE) {
             videoGenerationTaskService.syncFromPythonEvent(task, pythonEvent, payload);
         }
 
         SmartEngineTaskEvent event = new SmartEngineTaskEvent();
         event.setTask(task);
         event.setEventSeq(sequence);
-        event.setEventType(pythonEvent.eventType());
+        event.setEventType(persistedEventType);
         event.setStageName(pythonEvent.stage());
         event.setEventPayload(payload);
         SmartEngineTaskEvent savedEvent = taskEventRepository.save(event);
 
         return new TaskStreamEventPayload(
-            pythonEvent.eventType(),
+            persistedEventType,
             task.getId(),
             task.getTraceId(),
             sequence,
@@ -282,10 +292,19 @@ public class TaskStateMachineService {
     }
 
     private void applyDoneEvent(SmartEngineTask task, Map<String, Object> payload) {
-        task.setTaskStatus(TaskStatus.COMPLETED);
-        task.setCurrentStage("completed");
+        Object statusValue = payload.get("status");
+        String normalizedStatus = statusValue == null ? "" : String.valueOf(statusValue);
+        boolean failed = "FAILED".equalsIgnoreCase(normalizedStatus);
+        boolean partialFailed = "PARTIAL_FAILED".equalsIgnoreCase(normalizedStatus);
+        task.setTaskStatus(failed ? TaskStatus.FAILED : TaskStatus.COMPLETED);
+        task.setCurrentStage(failed ? "failed" : partialFailed ? "partial_failed" : "completed");
         task.setProgressPercent(BigDecimal.valueOf(100));
         task.setCompletedAt(OffsetDateTime.now());
+        if (failed) {
+            task.setErrorCode("PYTHON_AGENT_DONE_FAILED");
+            Object summaryValue = payload.getOrDefault("summary", "Python Agent execution failed");
+            task.setErrorMessage(summaryValue == null ? "Python Agent execution failed" : String.valueOf(summaryValue));
+        }
         Map<String, Object> mergedSummary = new LinkedHashMap<>(task.getResponseSummary());
         mergedSummary.putAll(payload);
         task.setResponseSummary(mergedSummary);
@@ -298,6 +317,83 @@ public class TaskStateMachineService {
         Object messageValue = payload.getOrDefault("message", "Python Agent 执行失败");
         task.setErrorCode(codeValue == null ? "PYTHON_AGENT_ERROR" : String.valueOf(codeValue));
         task.setErrorMessage(messageValue == null ? "Python Agent 执行失败" : String.valueOf(messageValue));
+    }
+
+    private boolean isInvalidGeneratedArtifactEvent(StreamEventType eventType, Map<String, Object> payload) {
+        if (eventType == StreamEventType.RESOURCE_FILE) {
+            return requiresGeneratedResourceProvenance(payload) && !hasRealLlmProvenance(payload);
+        }
+        if (eventType == StreamEventType.QUESTION_BATCH) {
+            return !hasRealLlmProvenance(payload);
+        }
+        if (isVideoArtifactEvent(eventType) && containsVideoArtifactPayload(payload)) {
+            return !hasRealLlmProvenance(payload);
+        }
+        return false;
+    }
+
+    private boolean requiresGeneratedResourceProvenance(Map<String, Object> payload) {
+        String displayMode = stringValue(payload.get("displayMode"));
+        if ("external_link".equalsIgnoreCase(displayMode)) {
+            return false;
+        }
+        String sourceName = stringValue(payload.get("sourceName"));
+        return sourceName == null || sourceName.isBlank() || "generated".equalsIgnoreCase(sourceName);
+    }
+
+    private boolean hasRealLlmProvenance(Map<String, Object> payload) {
+        return "LLM".equalsIgnoreCase(stringValue(payload.get("generatedBy")))
+            && "LLM".equalsIgnoreCase(stringValue(payload.get("contentOrigin")))
+            && hasText(payload.get("provider"))
+            && hasText(payload.get("model"))
+            && hasText(payload.get("agentName"))
+            && payload.get("evidenceIds") instanceof Collection<?>
+            && Boolean.FALSE.equals(payload.get("fallback"))
+            && payload.get("fromCache") instanceof Boolean;
+    }
+
+    private boolean isVideoArtifactEvent(StreamEventType eventType) {
+        return eventType == StreamEventType.VIDEO_GEN_SCRIPT
+            || eventType == StreamEventType.VIDEO_GEN_SPEECH
+            || eventType == StreamEventType.VIDEO_GEN_AVATAR
+            || eventType == StreamEventType.VIDEO_GEN_COMPLETE;
+    }
+
+    private boolean containsVideoArtifactPayload(Map<String, Object> payload) {
+        return hasText(payload.get("scriptText"))
+            || hasText(payload.get("audioBase64"))
+            || hasText(payload.get("audioUrl"))
+            || hasText(payload.get("videoUrl"))
+            || hasText(payload.get("finalVideoUrl"))
+            || hasText(payload.get("downloadUrl"))
+            || payload.get("scriptJson") instanceof Map<?, ?>
+            || payload.get("videoGenerationTask") instanceof Map<?, ?>
+            || payload.get("videoSandboxArtifact") instanceof Map<?, ?>;
+    }
+
+    private Map<String, Object> provenanceFailurePayload(StreamEventType eventType, Map<String, Object> originalPayload) {
+        Map<String, Object> failure = new LinkedHashMap<>();
+        failure.put("code", "PROVENANCE_INVALID");
+        failure.put("message", "Generated artifact is missing required LLM provenance metadata");
+        failure.put("sourceEvent", eventType.wireValue());
+        Object title = originalPayload.get("title");
+        if (title != null) {
+            failure.put("title", title);
+        }
+        Object assetType = originalPayload.get("assetType");
+        if (assetType != null) {
+            failure.put("assetType", assetType);
+        }
+        return failure;
+    }
+
+    private boolean hasText(Object value) {
+        String text = stringValue(value);
+        return text != null && !text.isBlank();
+    }
+
+    private String stringValue(Object value) {
+        return value == null ? null : String.valueOf(value);
     }
 
     private Map<String, Object> applyResourceFileEvent(SmartEngineTask task, Map<String, Object> payload) {

@@ -22,6 +22,7 @@ from src.ai_modules.prompts import build_practice_system_prompt
 from src.ai_modules.runtime import (
     SystemSnapshot,
 )
+from src.ai_modules.runtime.provenance import build_llm_provenance
 from src.ai_modules.runtime.skill_loader import SkillPromptLoader
 
 
@@ -141,7 +142,9 @@ class PracticeAgent(PlaceholderAgent):
         validated = self._tool_validate_question(raw_batch)
 
         # 步骤 3: 格式化（确定性操作）
-        return self._tool_format_question_batch(tool_input=validated, params=params)
+        formatted = self._tool_format_question_batch(tool_input=validated, params=params)
+        formatted.update(self._build_question_provenance(params=params))
+        return formatted
 
     async def _tool_generate_questions(
         self,
@@ -161,81 +164,10 @@ class PracticeAgent(PlaceholderAgent):
                 learning_context=params.get("learningContext", {}),
             )
             return question_batch.model_dump(by_alias=True)
-        except Exception:
-            templates = [
-                PracticeQuestion(
-                    questionId="q1",
-                    questionType="SINGLE_CHOICE",
-                    stem=f"关于 `{topic}`，下列哪项最符合其核心概念？",
-                    options=[
-                        "只和存储空间有关",
-                        "只影响前端渲染",
-                        "与查询条件和访问路径密切相关",
-                        "只在主键场景生效",
-                    ],
-                    answer="C",
-                    knowledgeTags=[topic, "核心概念"],
-                    difficultyLevel=difficulty,
-                    explanation=f"{topic} 的核心在于理解访问路径与适用条件。",
-                ),
-                PracticeQuestion(
-                    questionId="q2",
-                    questionType="SINGLE_CHOICE",
-                    stem=f"学习 `{topic}` 时，最容易导致错误的一项是？",
-                    options=[
-                        "忽略题目条件",
-                        "背诵定义",
-                        "查看例题",
-                        "整理笔记",
-                    ],
-                    answer="A",
-                    knowledgeTags=[topic, "易错点"],
-                    difficultyLevel=difficulty,
-                    explanation="很多错误来自没有先判断题目是否满足使用前提。",
-                ),
-                PracticeQuestion(
-                    questionId="q3",
-                    questionType="SHORT_ANSWER",
-                    stem=f"请用自己的话说明 `{topic}` 的使用前提，并举一个容易误判的场景。",
-                    answer="需要先判断题目条件是否满足使用前提，并结合具体查询场景说明容易误判的位置。",
-                    knowledgeTags=[topic, "使用条件", "错因分析"],
-                    difficultyLevel=difficulty,
-                    explanation="回答应覆盖使用前提和误判场景两个部分。",
-                ),
-                PracticeQuestion(
-                    questionId="q4",
-                    questionType="SINGLE_CHOICE",
-                    stem=f"如果你在 `{topic}` 相关题目中总做错，第一步最应该做什么？",
-                    options=[
-                        "直接记答案",
-                        "先判断知识点适用条件",
-                        "跳过这类题",
-                        "只看结论",
-                    ],
-                    answer="B",
-                    knowledgeTags=[topic, "解题步骤"],
-                    difficultyLevel=difficulty,
-                    explanation="先判断适用条件，再做后续推理。",
-                ),
-                PracticeQuestion(
-                    questionId="q5",
-                    questionType="SHORT_ANSWER",
-                    stem=f"请给出一个你检查 `{topic}` 是否掌握的自测方法。",
-                    answer="先复述定义，再判断一个具体场景是否满足使用条件，最后解释原因。",
-                    knowledgeTags=[topic, "自测方法"],
-                    difficultyLevel=difficulty,
-                    explanation="回答要体现定义、条件判断和原因解释。",
-                ),
-            ]
-            return {
-                "title": f"{topic} 练习题",
-                "topic": topic,
-                "difficulty": difficulty,
-                "questions": [
-                    question.model_dump(by_alias=True)
-                    for question in templates[:count]
-                ],
-            }
+        except Exception as exc:
+            raise RuntimeError(
+                "Practice question LLM generation failed; template fallback is not allowed"
+            ) from exc
 
     def _tool_validate_question(self, tool_input: dict[str, Any]) -> dict[str, Any]:
         questions = [
@@ -279,6 +211,13 @@ class PracticeAgent(PlaceholderAgent):
         if not isinstance(questions, list) or not questions:
             return None
         return QuestionBatchPayload.model_validate(raw_batch).model_dump(by_alias=True)
+
+    def _build_question_provenance(self, *, params: dict[str, Any]) -> dict[str, Any]:
+        return build_llm_provenance(
+            agent_name=self.stage_name,
+            generator=self.question_generator,
+            params=params,
+        )
 
     def _resolve_topic(self, params: dict[str, Any]) -> str:
         learning_context = params.get("learningContext", {})

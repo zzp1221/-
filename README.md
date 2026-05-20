@@ -1,4 +1,4 @@
-# 智学引擎 Zhixue Engine
+﻿# 智学引擎 Zhixue Engine
 
 基于大语言模型的多智能体个性化学习资源生成与学习系统。
 
@@ -62,7 +62,7 @@
 ### 独创机制
 
 - **KnowledgeGuardHook**: 知识库守卫钩子，拦截所有 `generate_*` 工具调用，自动检索知识依据；无证据则拒绝生成，从源头防止 LLM 幻觉
-- **Supervisor 路由编排**: 根据 `serviceType` + `resourceType` 动态解析 Agent 链，支持 `{generation_agent}` 动态槽位
+- **Supervisor + Graph 路由编排**: 根据 `serviceType` 解析 Agent 链，`RESOURCE_GENERATION` 进入 `resource_bundle` Graph 工作流并按 `resourceTypes[]` 编排多资源生成
 - **工具输出智能压缩**: 字符串/列表/字典三级截断，防止工具返回内容撑爆上下文窗口
 - **Skill 系统** (参考 [sanyuan-skills](https://github.com/sanyuan0704/sanyuan-skills)): Agent prompt 通过 `skills/{agent}/SKILL.md` 文件管理 (YAML frontmatter + Markdown body)，运行时注入 `{{snapshot_context}}` 学生画像上下文，prompt 迭代独立于代码变更
 
@@ -76,7 +76,7 @@
 |---|---|---|
 | 智能辅导 | query_rewrite → retrieval → image_analysis → tutor → profile | 多轮对话辅导，自动更新画像 |
 | 深度推理 | query_rewrite → retrieval → image_analysis → deep_reasoning → profile | 四步推理：分析→推理→自审→最终回答 |
-| 资源生成 | query_rewrite → retrieval → {生成 Agent} → critic → safety | 根据资源类型动态选择生成器 + 质量/安全审查 |
+| 资源生成 | query_rewrite → retrieval → resource_bundle(Graph) | 按用户选择的多资源类型编排生成器，统一 provenance、质量与安全闸门 |
 | 视频生成 | query_rewrite → retrieval → video_generator → critic → safety | 脚本生成 → TTS → 浏览器端 DH Live 渲染 |
 | 练习评判 | practice → judge → profile | 自动出题、评分、反馈，错题自动收录错题本 |
 | 路径规划 | path_planning | 基于画像生成个性化学习计划 |
@@ -285,7 +285,7 @@ cd frontend && npx tsc --noEmit && npx vite build
 │   ├── src/ai_modules/
 │   │   ├── supervisor.py    # Agent 编排器 (路由解析 → Agent 链执行)
 │   │   ├── agents/          # 16 个专业 Agent
-│   │   ├── runtime/         # Agent 运行时内核 (参考 Claude Code 设计)
+│   │   ├── runtime/         # Agent 运行时内核 + ResourceBundleWorkflow Graph 编排
 │   │   │   ├── agent_core_loop.py       # 工具调用执行循环
 │   │   │   ├── tool_registry.py         # 工具注册表
 │   │   │   ├── hook_chain.py            # 前置/后置钩子链

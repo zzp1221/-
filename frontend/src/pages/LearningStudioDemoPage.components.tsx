@@ -7,12 +7,14 @@ import {
   resourceTypeButtons,
   type AssessmentForm,
   type EngineService,
+  type EngineTaskResultRecord,
   type InlineResourceView,
   type PathForm,
   type PracticeJudgeResult,
   type PracticeQuestionBatch,
   type PushForm,
   type ResourceForm,
+  type ResourceType,
   type TempDownloadLink,
   type VideoResult,
 } from './LearningStudioDemoPage.types';
@@ -69,17 +71,33 @@ export function ServiceDynamicForm(props: {
   }`;
 
   if (props.service === 'resource') {
+    const selectedResourceTypes = resolveSelectedResourceTypes(props.resourceForm);
+    const includesVideo = selectedResourceTypes.includes('VIDEO');
+    const toggleResourceType = (resourceType: ResourceType) => {
+      const active = selectedResourceTypes.includes(resourceType);
+      const nextResourceTypes = active
+        ? selectedResourceTypes.filter((item) => item !== resourceType)
+        : [...selectedResourceTypes, resourceType];
+      const safeResourceTypes = nextResourceTypes.length > 0 ? nextResourceTypes : [resourceType];
+      props.onResourceChange({
+        ...props.resourceForm,
+        resourceType: safeResourceTypes[0],
+        resourceTypes: safeResourceTypes,
+      });
+    };
+
     return (
       <div className="rounded-2xl border border-slate-200 bg-slate-50/50 p-4 dark:border-slate-700 dark:bg-slate-900/50 md:p-5">
         <div className="mb-3 text-sm font-semibold text-slate-700 dark:text-slate-300">资源生成参数</div>
         <div className="mb-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
           {resourceTypeButtons.map((item) => {
-            const active = props.resourceForm.resourceType === item.type;
+            const active = selectedResourceTypes.includes(item.type);
             return (
               <button
                 key={item.type}
                 type="button"
-                onClick={() => props.onResourceChange({ ...props.resourceForm, resourceType: item.type })}
+                aria-pressed={active}
+                onClick={() => toggleResourceType(item.type)}
                 className={`${chipButton(active)} w-full justify-center py-2 text-sm`}
               >
                 {item.label}
@@ -116,7 +134,7 @@ export function ServiceDynamicForm(props: {
           placeholder="重点知识点"
           className={`${baseInputClass} mt-3`}
         />
-        {props.resourceForm.resourceType === 'VIDEO' ? (
+        {includesVideo ? (
           <div className="mt-4 rounded-2xl border border-primary-200 bg-primary-50/70 px-4 py-3 text-sm text-primary-700 dark:border-primary-700 dark:bg-primary-500/10 dark:text-primary-200">
             已固定为数字人视频生成，系统将按默认时长自动完成脚本、TTS，并在当前浏览器本地渲染视频。
           </div>
@@ -201,6 +219,10 @@ export function ServiceDynamicForm(props: {
       </div>
     </div>
   );
+}
+
+function resolveSelectedResourceTypes(resourceForm: ResourceForm): ResourceType[] {
+  return resourceForm.resourceTypes?.length ? resourceForm.resourceTypes : [resourceForm.resourceType];
 }
 
 function InlineResourcePanel(props: { resource: InlineResourceView }) {
@@ -369,17 +391,35 @@ export function TaskResultPanel(props: {
   downloadLinks: TempDownloadLink[];
   videoResult: VideoResult | null;
   inlineResource: InlineResourceView | null;
+  inlineResources: InlineResourceView[];
+  resultHistory: EngineTaskResultRecord[];
+  selectedResultTaskId: string;
   practiceBatch: PracticeQuestionBatch | null;
   judgeResult: PracticeJudgeResult | null;
   canSubmitPractice: boolean;
+  onSelectResultTask: (taskId: string) => void;
   onSubmitPracticeAnswers: (batch: PracticeQuestionBatch, answers: Record<string, string>) => void;
 }) {
+  const selectedRecord = props.resultHistory.find((item) => item.taskId === props.selectedResultTaskId) ?? null;
+  const visibleTaskSummary = selectedRecord?.taskSummary ?? props.taskSummary;
+  const visibleResultLines = selectedRecord?.serviceResultLines ?? props.serviceResultLines;
+  const visibleDownloadLinks = selectedRecord?.downloadLinks ?? props.downloadLinks;
+  const visibleVideoResult = selectedRecord?.videoResult ?? props.videoResult;
+  const visibleInlineResources = selectedRecord?.inlineResources?.length
+    ? selectedRecord.inlineResources
+    : props.inlineResources.length
+      ? props.inlineResources
+      : props.inlineResource
+        ? [props.inlineResource]
+        : [];
+  const visiblePracticeBatch = selectedRecord?.practiceBatch ?? props.practiceBatch;
+  const visibleJudgeResult = selectedRecord?.judgeResult ?? props.judgeResult;
   const externalRecommendations = props.service === 'push'
-    ? props.downloadLinks.filter(isExternalRecommendation)
+    ? visibleDownloadLinks.filter(isExternalRecommendation)
     : [];
   const fileDownloads = props.service === 'push'
     ? []
-    : props.downloadLinks.filter((item) => !isExternalRecommendation(item));
+    : visibleDownloadLinks.filter((item) => !isExternalRecommendation(item));
 
   const handleDownload = async (item: TempDownloadLink) => {
     const absoluteUrl = /^https?:\/\//i.test(item.url) ? item.url : `${window.location.origin}${item.url.startsWith('/') ? item.url : `/${item.url}`}`;
@@ -422,19 +462,54 @@ export function TaskResultPanel(props: {
   }
 
   const hasContent = Boolean(props.taskSummary)
-    || props.serviceResultLines.length > 0
-    || props.downloadLinks.length > 0
-    || Boolean(props.videoResult)
-    || Boolean(props.inlineResource)
-    || Boolean(props.practiceBatch)
-    || Boolean(props.judgeResult);
+    || visibleResultLines.length > 0
+    || visibleDownloadLinks.length > 0
+    || Boolean(visibleVideoResult)
+    || visibleInlineResources.length > 0
+    || Boolean(visiblePracticeBatch)
+    || Boolean(visibleJudgeResult)
+    || props.resultHistory.length > 0;
   if (!hasContent) {
     return null;
   }
 
   return (
     <div className="space-y-4">
-      {props.videoResult ? (
+      {props.resultHistory.length > 1 ? (
+        <div className="modern-card overflow-hidden">
+          <div className="flex items-center gap-2 border-b border-slate-100 px-4 py-3 dark:border-slate-800">
+            <Sparkles className="h-4 w-4 text-primary-500" />
+            <span className="text-sm font-semibold text-slate-700 dark:text-slate-300">结果选择</span>
+          </div>
+          <div className="flex gap-2 overflow-x-auto p-3 sm:p-4">
+            {props.resultHistory.map((record) => {
+              const active = record.taskId === (selectedRecord?.taskId || props.selectedResultTaskId);
+              const assetCount =
+                (record.inlineResources?.length ?? 0)
+                + (record.downloadLinks?.length ?? 0)
+                + (record.practiceBatch ? 1 : 0)
+                + (record.videoResult ? 1 : 0);
+              return (
+                <button
+                  key={record.taskId}
+                  type="button"
+                  onClick={() => props.onSelectResultTask(record.taskId)}
+                  className={`min-w-[180px] rounded-xl border px-3 py-2 text-left transition-all ${
+                    active
+                      ? 'border-primary-300 bg-primary-50 text-primary-700 dark:border-primary-700 dark:bg-primary-500/10 dark:text-primary-200'
+                      : 'border-slate-200 bg-slate-50/70 text-slate-600 hover:border-primary-200 hover:bg-white dark:border-slate-700 dark:bg-slate-900/50 dark:text-slate-300 dark:hover:border-primary-700'
+                  }`}
+                >
+                  <div className="truncate text-sm font-semibold">{record.title}</div>
+                  <div className="mt-1 text-[11px] opacity-75">{record.taskStatus || '任务结果'} · {assetCount} 个产物</div>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      ) : null}
+
+      {visibleVideoResult ? (
         <div className="modern-card overflow-hidden">
           <div className="flex items-center gap-2 border-b border-slate-100 px-4 py-3 dark:border-slate-800">
             <Sparkles className="h-4 w-4 text-primary-500" />
@@ -443,14 +518,14 @@ export function TaskResultPanel(props: {
           <div className="p-3 sm:p-4">
             <Suspense fallback={<div className="aspect-video rounded-xl border border-dashed border-slate-200 bg-slate-50 dark:border-slate-700 dark:bg-slate-900" />}>
               <LazyVideoCard
-                title={props.videoResult.title}
-                videoUrl={props.videoResult.videoUrl}
-                thumbnailUrl={props.videoResult.thumbnailUrl}
-                duration={props.videoResult.duration}
-                style={props.videoResult.style}
-                knowledgePoint={props.videoResult.knowledgePoint}
-                expiresHint={props.videoResult.expiresHint}
-                fileName={props.videoResult.fileName}
+                title={visibleVideoResult.title}
+                videoUrl={visibleVideoResult.videoUrl}
+                thumbnailUrl={visibleVideoResult.thumbnailUrl}
+                duration={visibleVideoResult.duration}
+                style={visibleVideoResult.style}
+                knowledgePoint={visibleVideoResult.knowledgePoint}
+                expiresHint={visibleVideoResult.expiresHint}
+                fileName={visibleVideoResult.fileName}
               />
             </Suspense>
           </div>
@@ -477,33 +552,33 @@ export function TaskResultPanel(props: {
           <span className="text-sm font-semibold text-slate-700 dark:text-slate-300">任务结果</span>
         </div>
         <div className="p-3 sm:p-4">
-          {props.service === 'assessment' && props.practiceBatch ? (
+          {props.service === 'assessment' && visiblePracticeBatch ? (
             <PracticeQuestionPanel
-              batch={props.practiceBatch}
-              judgeResult={props.judgeResult}
+              batch={visiblePracticeBatch}
+              judgeResult={visibleJudgeResult}
               canSubmit={props.canSubmitPractice}
               onSubmitAnswers={props.onSubmitPracticeAnswers}
             />
           ) : null}
-          {props.inlineResource ? (
-            <InlineResourcePanel resource={props.inlineResource} />
-          ) : null}
-          {props.service !== 'assessment' && props.practiceBatch ? (
+          {visibleInlineResources.map((resource, index) => (
+            <InlineResourcePanel key={`${resource.kind}-${resource.title}-${index}`} resource={resource} />
+          ))}
+          {props.service !== 'assessment' && visiblePracticeBatch ? (
             <PracticeQuestionPanel
-              batch={props.practiceBatch}
-              judgeResult={props.judgeResult}
+              batch={visiblePracticeBatch}
+              judgeResult={visibleJudgeResult}
               canSubmit={props.canSubmitPractice}
               onSubmitAnswers={props.onSubmitPracticeAnswers}
             />
           ) : null}
-          {props.taskSummary ? (
+          {visibleTaskSummary ? (
             <div className="mb-4 rounded-xl border border-slate-100 bg-slate-50/50 p-4 text-sm leading-7 text-slate-700 dark:border-slate-800 dark:bg-slate-900/50 dark:text-slate-300">
-              <DeferredMarkdownRenderer content={props.taskSummary} />
+              <DeferredMarkdownRenderer content={visibleTaskSummary} />
             </div>
           ) : null}
-          {props.serviceResultLines.length > 0 ? (
+          {visibleResultLines.length > 0 ? (
             <ul className="space-y-2">
-              {props.serviceResultLines.map((line, index) => (
+              {visibleResultLines.map((line, index) => (
                 <li key={`${index}-${line}`} className="flex items-start gap-2 text-sm text-slate-600 dark:text-slate-400">
                   <span className="mt-1.5 block h-1.5 w-1.5 shrink-0 rounded-full bg-primary-400" />
                   {line}

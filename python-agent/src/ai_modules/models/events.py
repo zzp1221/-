@@ -80,6 +80,11 @@ class ProgressPayload(BaseModel):
     stage: str
     percent: int
     message: str | None = None
+    agent_name: str | None = Field(default=None, alias="agentName")
+    phase: str | None = None
+    artifact_type: str | None = Field(default=None, alias="artifactType")
+    status: str | None = None
+    parent_step: str | None = Field(default=None, alias="parentStep")
     script_json: dict[str, Any] | None = Field(default=None, alias="scriptJson")
     script_text: str | None = Field(default=None, alias="scriptText")
     audio_base64: str | None = Field(default=None, alias="audioBase64")
@@ -91,6 +96,13 @@ class ProgressPayload(BaseModel):
     topic: str | None = None
     knowledge_point: str | None = Field(default=None, alias="knowledgePoint")
     video_style: str | None = Field(default=None, alias="videoStyle")
+    generated_by: str | None = Field(default=None, alias="generatedBy")
+    content_origin: str | None = Field(default=None, alias="contentOrigin")
+    provider: str | None = None
+    model: str | None = None
+    evidence_ids: list[str] = Field(default_factory=list, alias="evidenceIds")
+    fallback: bool | None = None
+    from_cache: bool = Field(default=False, alias="fromCache")
 
     model_config = ConfigDict(populate_by_name=True)
 
@@ -125,6 +137,14 @@ class ResourceFilePayload(BaseModel):
     video_style: str | None = Field(default=None, alias="videoStyle")
     knowledge_point: str | None = Field(default=None, alias="knowledgePoint")
     source_name: str | None = Field(default=None, alias="sourceName")
+    generated_by: str | None = Field(default=None, alias="generatedBy")
+    content_origin: str | None = Field(default=None, alias="contentOrigin")
+    provider: str | None = None
+    model: str | None = None
+    agent_name: str | None = Field(default=None, alias="agentName")
+    evidence_ids: list[str] = Field(default_factory=list, alias="evidenceIds")
+    fallback: bool | None = None
+    from_cache: bool = Field(default=False, alias="fromCache")
 
     model_config = ConfigDict(populate_by_name=True)
 
@@ -132,9 +152,10 @@ class ResourceFilePayload(BaseModel):
 class DonePayload(BaseModel):
     """Completion payload."""
 
-    status: Literal["SUCCESS", "FAILED"] = "SUCCESS"
+    status: Literal["SUCCESS", "FAILED", "PARTIAL_FAILED"] = "SUCCESS"
     summary: str
     learning_path: dict[str, Any] | None = Field(default=None, alias="learningPath")
+    resource_failures: list[dict[str, Any]] = Field(default_factory=list, alias="resourceFailures")
 
     model_config = ConfigDict(populate_by_name=True)
 

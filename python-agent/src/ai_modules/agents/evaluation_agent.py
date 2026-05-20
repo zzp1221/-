@@ -10,7 +10,6 @@ from src.ai_modules.agents.base import PlaceholderAgent
 from src.ai_modules.llms import EvaluationGenerator, PlanningLLMClientFactory, PracticeQuestionGenerator
 from src.ai_modules.models import (
     EvaluationPayload,
-    PracticeQuestion,
     ProgressPayload,
     ProgressSSEEvent,
     QuestionBatchPayload,
@@ -25,6 +24,7 @@ from src.ai_modules.prompts import build_evaluation_system_prompt
 from src.ai_modules.runtime import (
     SystemSnapshot,
 )
+from src.ai_modules.runtime.provenance import build_llm_provenance, validate_llm_provenance
 from src.ai_modules.runtime.skill_loader import SkillPromptLoader
 
 LOGGER = logging.getLogger(__name__)
@@ -70,6 +70,9 @@ class EvaluationAgent(PlaceholderAgent):
             snapshot=snapshot,
             system_prompt=system_prompt,
         )
+        evaluation_provenance = params.get("evaluationProvenance")
+        if not isinstance(evaluation_provenance, dict):
+            raise RuntimeError("Evaluation LLM provenance is missing")
         primary_dimension = self._resolve_primary_dimension(params)
         params["evaluationResult"] = payload.model_dump(by_alias=True)
         params["profileSource"] = "EVALUATION"
@@ -102,20 +105,23 @@ class EvaluationAgent(PlaceholderAgent):
                 message=f"已完成{primary_dimension}专项评估",
             ),
         )
+        resource_payload = ResourceFilePayload(
+            assetType="DOCUMENT",
+            title=f"{primary_dimension}专项评估",
+            summary=payload.summary_text,
+            displayMode="MARKDOWN_CARD",
+            fileName="",
+            localPath=None,
+            mimeType="text/markdown; charset=UTF-8",
+            inlineContent=report_markdown,
+            **evaluation_provenance,
+        )
+        validate_llm_provenance(resource_payload, artifact_label=f"{self.stage_name}:evaluation_report")
         yield ResourceFileSSEEvent(
             taskId=task_id,
             traceId=trace_id,
             seq=seq + 1,
-            payload=ResourceFilePayload(
-                assetType="DOCUMENT",
-                title=f"{primary_dimension}专项评估",
-                summary=payload.summary_text,
-                displayMode="MARKDOWN_CARD",
-                fileName="",
-                localPath=None,
-                mimeType="text/markdown; charset=UTF-8",
-                inlineContent=report_markdown,
-            ),
+            payload=resource_payload,
         )
         yield ResultChunkSSEEvent(
             taskId=task_id,
@@ -124,6 +130,7 @@ class EvaluationAgent(PlaceholderAgent):
             payload=ResultChunkPayload(text=self._build_dimension_summary(primary_dimension, payload, question_batch)),
         )
         if question_batch is not None:
+            validate_llm_provenance(question_batch, artifact_label=f"{self.stage_name}:assessment_questions")
             yield QuestionBatchSSEEvent(
                 taskId=task_id,
                 traceId=trace_id,
@@ -246,7 +253,7 @@ class EvaluationAgent(PlaceholderAgent):
     ) -> EvaluationPayload:
         generator = self.generator or EvaluationGenerator()
         try:
-            return await generator.evaluate(
+            payload = await generator.evaluate(
                 system_prompt=system_prompt,
                 context_payload=self._build_context_payload(
                     params=params,
@@ -254,6 +261,12 @@ class EvaluationAgent(PlaceholderAgent):
                     aggregated_behavior=aggregated_behavior,
                 ),
             )
+            params["evaluationProvenance"] = build_llm_provenance(
+                agent_name=self.stage_name,
+                generator=generator,
+                params=params,
+            )
+            return payload
         except Exception as exc:
             LOGGER.exception("Evaluation LLM failed")
             raise RuntimeError("Evaluation LLM failed") from exc
@@ -302,210 +315,40 @@ class EvaluationAgent(PlaceholderAgent):
         difficulty = self._resolve_practice_difficulty(payload, snapshot)
         focus_items = self._resolve_focus_items(payload, snapshot)
         learning_context = params.get("learningContext", {})
-        if dimension == "练习掌握":
+        if dimension in INTERACTIVE_DIMENSIONS:
             try:
                 generated = await self.question_generator.generate_batch(
-                    topic=topic,
+                    topic=f"{dimension}：{topic}",
                     difficulty=difficulty,
                     count=3,
-                    learning_context=learning_context if isinstance(learning_context, dict) else {},
+                    learning_context={
+                        **(learning_context if isinstance(learning_context, dict) else {}),
+                        "assessmentDimension": dimension,
+                        "focusItems": focus_items[:3],
+                        "evaluationSummary": payload.summary_text,
+                    },
                 )
-                return generated.model_copy(
-                    update={
-                        "description": "系统已围绕当前薄弱点生成 1-3 道测评题，请直接作答后查看掌握判断。",
-                        "assessment_dimension": dimension,
-                        "submit_label": "提交掌握评估",
-                    }
-                )
-            except Exception:
-                LOGGER.warning("Failed to generate practice assessment batch, falling back to deterministic questions", exc_info=True)
-                questions = [
-                    PracticeQuestion(
-                        questionId="assessment-q1",
-                        questionType="SINGLE_CHOICE",
-                        stem=f"关于“{topic}”，下列哪项最能体现你是否真正掌握了核心概念？",
-                        options=[
-                            "只会背定义",
-                            "能判断适用条件并解释原因",
-                            "只记住例题答案",
-                            "只知道结论但不会推导",
-                        ],
-                        answer="B",
-                        knowledgeTags=[topic, "核心概念"],
-                        difficultyLevel=difficulty,
-                        explanation="真正掌握意味着不仅记住概念，还能判断何时使用以及为什么使用。",
+            except Exception as exc:
+                raise RuntimeError(
+                    "Evaluation question LLM generation failed; deterministic fallback is not allowed"
+                ) from exc
+            batch_payload = generated.model_dump(by_alias=True)
+            batch_payload.update(
+                {
+                    "title": f"{topic} {dimension}专项评估",
+                    "topic": topic,
+                    "difficulty": difficulty,
+                    "description": "系统已围绕当前评估维度生成 1-3 道测评题，请直接作答后查看专项判断。",
+                    "assessmentDimension": dimension,
+                    "submitLabel": f"提交{dimension}评估",
+                    **build_llm_provenance(
+                        agent_name=self.stage_name,
+                        generator=self.question_generator,
+                        params=params,
                     ),
-                    PracticeQuestion(
-                        questionId="assessment-q2",
-                        questionType="SINGLE_CHOICE",
-                        stem=f"如果题目场景发生变化，检验“{topic}”掌握情况时最关键的一步是什么？",
-                        options=[
-                            "直接套模板",
-                            "先看别人答案",
-                            "先判断场景是否满足使用前提",
-                            "忽略限制条件",
-                        ],
-                        answer="C",
-                        knowledgeTags=[topic, "适用条件", "迁移判断"],
-                        difficultyLevel=difficulty,
-                        explanation="先判断适用条件，才能说明你掌握的不是死记硬背，而是真理解。",
-                    ),
-                    PracticeQuestion(
-                        questionId="assessment-q3",
-                        questionType="SHORT_ANSWER",
-                        stem=f"请用自己的话说明“{topic}”最容易做错的一步，并给出你的改正策略。",
-                        answer="先指出最容易忽略的条件或判断步骤，再说明你会如何检查并修正。",
-                        knowledgeTags=[topic, "错因分析", "复盘策略"],
-                        difficultyLevel=difficulty,
-                        explanation="回答需同时体现错因识别和纠错策略，才能反映真实掌握情况。",
-                    ),
-                ]
-                return QuestionBatchPayload(
-                    title=f"{topic} 练习掌握专项评估",
-                    topic=topic,
-                    difficulty=difficulty,
-                    description="系统已围绕当前薄弱点生成 1-3 道测评题，请直接作答后查看掌握判断。",
-                    assessmentDimension=dimension,
-                    submitLabel="提交掌握评估",
-                    questions=questions,
-                )
-        if dimension == "案例迁移":
-            focus = focus_items[0]
-            transfer_scene = self._resolve_transfer_scene(params, snapshot)
-            return QuestionBatchPayload(
-                title=f"{topic} 案例迁移专项评估",
-                topic=topic,
-                difficulty=difficulty,
-                description="请把当前知识点迁移到新场景中判断适用条件，系统会根据你的分析过程评估迁移能力。",
-                assessmentDimension=dimension,
-                submitLabel="提交迁移分析",
-                questions=[
-                    PracticeQuestion(
-                        questionId="transfer-q1",
-                        questionType="SINGLE_CHOICE",
-                        stem=f"如果把“{focus}”放到“{transfer_scene}”这个新场景中，第一步最应该做什么？",
-                        options=[
-                            "直接沿用原题解法",
-                            "先判断新场景是否满足使用前提",
-                            "只看结论是否相似",
-                            "优先背诵定义避免出错",
-                        ],
-                        answer="B",
-                        knowledgeTags=[topic, focus, "案例迁移"],
-                        difficultyLevel=difficulty,
-                        explanation="迁移评估核心看你是否会先检查新场景与原知识点的适用条件是否一致。",
-                    ),
-                    PracticeQuestion(
-                        questionId="transfer-q2",
-                        questionType="SHORT_ANSWER",
-                        stem=f"请说明“{focus}”在“{transfer_scene}”中能否直接使用，并写出你判断时会检查的两个条件。",
-                        answer="先明确能否直接使用，再至少写出两个判断条件，例如输入限制、前置依赖、边界条件或目标是否一致。",
-                        knowledgeTags=[topic, focus, "条件判断", "迁移说明"],
-                        difficultyLevel=difficulty,
-                        explanation="回答需要同时体现结论和判断依据，才能说明你具备迁移能力。",
-                    ),
-                    PracticeQuestion(
-                        questionId="transfer-q3",
-                        questionType="SHORT_ANSWER",
-                        stem=f"请你自拟一个与“{topic}”相近但不完全相同的新案例，并说明你会如何调整原来的思路。",
-                        answer="需给出一个新案例，并说明与原案例的不同点，再写出至少一条思路调整或校验步骤。",
-                        knowledgeTags=[topic, "案例迁移", "策略调整"],
-                        difficultyLevel=difficulty,
-                        explanation="真正的迁移不是复述旧题，而是能针对新约束调整方法。",
-                    ),
-                ],
+                }
             )
-        if dimension == "学习主动性":
-            focus = focus_items[0]
-            return QuestionBatchPayload(
-                title=f"{topic} 学习主动性专项评估",
-                topic=topic,
-                difficulty=difficulty,
-                description="请结合你下一轮学习计划作答，系统会根据目标拆解、验证方式和主动提问意识评估你的主动性。",
-                assessmentDimension=dimension,
-                submitLabel="提交主动性计划",
-                questions=[
-                    PracticeQuestion(
-                        questionId="initiative-q1",
-                        questionType="SINGLE_CHOICE",
-                        stem=f"当你发现自己在“{focus}”上理解不稳时，最能体现学习主动性的做法是哪一项？",
-                        options=[
-                            "等系统再次推送答案",
-                            "先写出薄弱点、验证方式和准备追问的问题",
-                            "直接跳过这个知识点",
-                            "只收藏资料，不安排自测",
-                        ],
-                        answer="B",
-                        knowledgeTags=[topic, focus, "学习主动性"],
-                        difficultyLevel=difficulty,
-                        explanation="主动学习不是等待内容，而是先定义目标、验证和提问。",
-                    ),
-                    PracticeQuestion(
-                        questionId="initiative-q2",
-                        questionType="SHORT_ANSWER",
-                        stem=f"请写出你下一次学习“{topic}”时的 3 步主动学习计划，至少包含：先补什么、怎么验证、卡住时问什么。",
-                        answer="答案应包含明确补强目标、一个可执行的验证动作，以及至少一个准备主动提出的问题。",
-                        knowledgeTags=[topic, "学习计划", "主动提问"],
-                        difficultyLevel=difficulty,
-                        explanation="回答越具体，越能反映你是否形成了主动学习闭环。",
-                    ),
-                    PracticeQuestion(
-                        questionId="initiative-q3",
-                        questionType="SHORT_ANSWER",
-                        stem="如果这轮学习结束后效果仍不理想，你会如何调整资源选择或练习方式？",
-                        answer="需要说明至少一项调整动作，例如更换资源类型、缩小目标范围、增加自测频率或补做案例。",
-                        knowledgeTags=[topic, "策略调整", "学习主动性"],
-                        difficultyLevel=difficulty,
-                        explanation="主动性不仅体现在开始阶段，也体现在效果不佳时是否会主动调整策略。",
-                    ),
-                ],
-            )
-        if dimension == "复盘闭环":
-            focus = focus_items[0]
-            recent_mistake = self._resolve_recent_mistake(snapshot, focus)
-            return QuestionBatchPayload(
-                title=f"{topic} 复盘闭环专项评估",
-                topic=topic,
-                difficulty=difficulty,
-                description="请围绕最近一次错误或薄弱点完成复盘，系统会重点判断你是否能形成“错误原因 -> 改正动作 -> 再验证”的闭环。",
-                assessmentDimension=dimension,
-                submitLabel="提交复盘结果",
-                questions=[
-                    PracticeQuestion(
-                        questionId="review-q1",
-                        questionType="SHORT_ANSWER",
-                        stem=f"请回顾最近一次与“{recent_mistake}”相关的失误，写出真正的错误原因，而不是只写“粗心”。",
-                        answer="需要指出具体错因，例如忽略条件、概念混淆、步骤顺序错误、没有验证边界或复习不充分。",
-                        knowledgeTags=[topic, focus, "错因分析"],
-                        difficultyLevel=difficulty,
-                        explanation="复盘的关键是找到真正原因，而不是只给出笼统结论。",
-                    ),
-                    PracticeQuestion(
-                        questionId="review-q2",
-                        questionType="SINGLE_CHOICE",
-                        stem=f"如果下次再遇到“{focus}”相关题目，最能形成复盘闭环的第一步是什么？",
-                        options=[
-                            "先做完再说",
-                            "先核对自己上次的错因，并按检查清单验证",
-                            "直接背标准答案",
-                            "只看别人讲解，不再自己作答",
-                        ],
-                        answer="B",
-                        knowledgeTags=[topic, focus, "复盘闭环"],
-                        difficultyLevel=difficulty,
-                        explanation="真正的闭环是把上次的错因转成下一次作答前的检查动作。",
-                    ),
-                    PracticeQuestion(
-                        questionId="review-q3",
-                        questionType="SHORT_ANSWER",
-                        stem=f"请为“{focus}”写一个 2-3 步的纠错检查清单，说明你下次做题前/做题后会怎么验证自己不再犯同类错误。",
-                        answer="答案应包含至少两个可执行检查动作，并覆盖做题前的预判或做题后的复查。",
-                        knowledgeTags=[topic, focus, "检查清单", "复盘闭环"],
-                        difficultyLevel=difficulty,
-                        explanation="只有把改正动作写成可执行步骤，复盘才算形成闭环。",
-                    ),
-                ],
-            )
+            return QuestionBatchPayload.model_validate(batch_payload)
         return None
 
     def _resolve_assessment_topic(

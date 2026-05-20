@@ -109,7 +109,10 @@ class QueryRewriteAgent(PlaceholderAgent):
         # 步骤 2: 通过 LLM 改写查询（1 次 LLM 调用）
         try:
             rewritten_payload = await self._tool_rewrite_query(
-                tool_input={}, params=params, snapshot=snapshot, system_prompt=system_prompt,
+                tool_input={},
+                params=params,
+                snapshot=snapshot,
+                system_prompt=system_prompt,
             )
         except Exception:
             LOGGER.warning("LLM query rewrite failed, falling back to direct rewrite.", exc_info=True)
