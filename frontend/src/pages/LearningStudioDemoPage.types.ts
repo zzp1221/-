@@ -72,6 +72,10 @@ export interface InlineResourceView {
   explanation?: string;
 }
 
+export type CompletedResourceView =
+  | { kind: 'inline'; key: string; resource: InlineResourceView }
+  | { kind: 'question_batch'; key: string; batch: PracticeQuestionBatch };
+
 export interface EngineTaskResultRecord {
   taskId: string;
   title: string;
@@ -83,6 +87,7 @@ export interface EngineTaskResultRecord {
   videoResult: VideoResult | null;
   inlineResources: InlineResourceView[];
   practiceBatch: PracticeQuestionBatch | null;
+  completedResources: CompletedResourceView[];
   judgeResult: PracticeJudgeResult | null;
   createdAt: number;
   updatedAt: number;
@@ -160,6 +165,7 @@ export interface EngineTaskSnapshot {
   inlineResource: InlineResourceView | null;
   inlineResources: InlineResourceView[];
   practiceBatch: PracticeQuestionBatch | null;
+  completedResources: CompletedResourceView[];
   judgeResult: PracticeJudgeResult | null;
   resultHistory: EngineTaskResultRecord[];
   selectedResultTaskId: string;
@@ -278,6 +284,7 @@ export interface RunByApiTaskArgs {
   setVideoResult: (value: React.SetStateAction<VideoResult | null>) => void;
   setInlineResource: (value: React.SetStateAction<InlineResourceView | null>) => void;
   setInlineResources: (value: React.SetStateAction<InlineResourceView[]>) => void;
+  setCompletedResources: (value: React.SetStateAction<CompletedResourceView[]>) => void;
   setPracticeBatch: (value: React.SetStateAction<PracticeQuestionBatch | null>) => void;
   setJudgeResult: (value: React.SetStateAction<PracticeJudgeResult | null>) => void;
   taskStreamAbortRef: React.MutableRefObject<AbortController | null>;

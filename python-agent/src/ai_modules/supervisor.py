@@ -88,17 +88,6 @@ class PythonAgentSupervisor:
         self.query_classifier = QueryClassifier()
 
     def resolve_route(self, service_type: str, params: dict) -> RoutePlan:
-        requested_resource_type = self._resolve_resource_type(params)
-        generation_agent = {
-            "DOCUMENT": "document_generator",
-            "SLIDES": "slide_generator",
-            "READING": "reading_generator",
-            "MINDMAP": "mindmap_generator",
-            "CODE": "code_generator",
-            "QUIZ": "practice",
-            "VIDEO": "video_generator",
-        }.get(requested_resource_type, "document_generator")
-
         route_template = self.route_templates.get(service_type)
         if route_template is None:
             raise ValueError(f"Unsupported serviceType: {service_type}")
@@ -116,10 +105,7 @@ class PythonAgentSupervisor:
         if service_type == "RESOURCE_GENERATION":
             resolved_route = ["query_rewrite", "retrieval", "resource_bundle"]
         else:
-            resolved_route = [
-                generation_agent if agent_name == "{generation_agent}" else agent_name
-                for agent_name in route_template
-            ]
+            resolved_route = list(route_template)
 
         return RoutePlan(
             serviceType=service_type,
@@ -140,27 +126,6 @@ class PythonAgentSupervisor:
                 continue
             route_templates[service_type.strip().upper()] = [str(agent_name) for agent_name in agent_names]
         return route_templates
-
-    def _resolve_resource_type(self, params: dict) -> str:
-        resource_type = params.get("resourceType")
-        if isinstance(resource_type, str) and resource_type.strip():
-            return self._normalize_resource_type(resource_type)
-        resource_types = params.get("resourceTypes")
-        if isinstance(resource_types, list):
-            normalized = [self._normalize_resource_type(str(item)) for item in resource_types if str(item).strip()]
-            if "VIDEO" in normalized:
-                return "VIDEO"
-            if normalized:
-                return normalized[0]
-        return "DOCUMENT"
-
-    def _normalize_resource_type(self, resource_type: str) -> str:
-        normalized = resource_type.strip().upper()
-        return {
-            "EXPLANATION": "DOCUMENT",
-            "CODE_CASE": "CODE",
-            "QUIZ": "QUIZ",
-        }.get(normalized, normalized)
 
     def _resolve_tutoring_route(self, classification) -> list[str]:
         if classification.confidence < self.query_classifier.low_confidence_threshold:

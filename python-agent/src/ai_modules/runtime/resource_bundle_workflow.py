@@ -4,10 +4,12 @@ from __future__ import annotations
 
 import copy
 import operator
+import time
 from collections.abc import AsyncIterator, Callable, Container
 from dataclasses import dataclass
 from typing import Annotated, Any, TypedDict
 
+from langgraph.config import get_stream_writer
 from langgraph.graph import END, START, StateGraph
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -54,6 +56,7 @@ class ResourceAgentResult:
     agent_name: str
     params: dict[str, Any]
     events: list[SSEEvent]
+    published_at_ns: int
 
 
 class WorkflowGraphState(TypedDict, total=False):
@@ -146,153 +149,42 @@ class ResourceBundleWorkflow:
             snapshot=snapshot,
             seq=seq,
         )
-        emitted_count = 0
-
-        async def yield_new_events() -> AsyncIterator[SSEEvent]:
-            nonlocal emitted_count
-            while emitted_count < len(state.events):
-                event = state.events[emitted_count]
-                emitted_count += 1
-                yield event
-
-        state = WorkflowState.model_validate(await self._run_linear_agent(state, "query_rewrite"))
-        async for event in yield_new_events():
-            yield event
-
-        state = WorkflowState.model_validate(await self._run_linear_agent(state, "retrieval"))
-        self._reject_fallback_evidence(state.params)
-        async for event in yield_new_events():
-            yield event
-
-        resource_types = self.resolve_resource_types(state.params)
-        if not resource_types:
-            raise RuntimeError("No supported resource types requested")
-        state.resource_types = resource_types
-        state.events.append(
-            ProgressSSEEvent(
-                taskId=state.request.task_id,
-                traceId=state.request.trace_id,
-                seq=state.seq,
-                payload=ProgressPayload(
-                    stage="resource_bundle",
-                    percent=50,
-                    message=f"Starting resource bundle generation for {len(resource_types)} agents",
-                    agentName="resource_bundle",
-                    phase="sequential",
-                    status="RUNNING",
-                ),
-            )
-        )
-        state.seq += 1
-        async for event in yield_new_events():
-            yield event
-
-        for index, resource_type in enumerate(resource_types, start=1):
+        graph_event_count = len(state.events)
+        async for stream_mode, item in self._graph.astream(
+            self._state_to_dict(state),
+            stream_mode=["updates", "custom"],
+        ):
             if cancelled and request.task_id in cancelled:
                 raise RuntimeError("Task was cancelled during resource bundle generation")
-            agent_name = RESOURCE_AGENT_BY_TYPE[resource_type]
-            state.events.append(
-                ProgressSSEEvent(
-                    taskId=state.request.task_id,
-                    traceId=state.request.trace_id,
-                    seq=state.seq,
-                    payload=ProgressPayload(
-                        stage="resource_bundle",
-                        percent=min(85, 50 + index * 30 // max(len(resource_types), 1)),
-                        message=f"Generating {resource_type} resource",
-                        agentName=agent_name,
-                        phase="generate",
-                        artifactType=resource_type,
-                        status="RUNNING",
-                    ),
-                )
-            )
-            state.seq += 1
-            async for event in yield_new_events():
-                yield event
-
-            try:
-                agent = self.agent_registry[agent_name]
-                agent_params = copy.deepcopy(state.params)
-                agent_params["resourceType"] = resource_type
-                agent_params["artifactType"] = resource_type
-                system_prompt = self.system_prompt_builder(agent_name, state.snapshot)
-                resource_events: list[SSEEvent] = []
-                produced = 0
-                async for event in agent.run(
-                    task_id=state.request.task_id,
-                    trace_id=state.request.trace_id,
-                    seq=0,
-                    service_type=state.request.service_type,
-                    params=agent_params,
-                    snapshot=state.snapshot,
-                    system_prompt=system_prompt,
-                ):
-                    if event.event in {"done", "error"}:
-                        raise RuntimeError(
-                            f"{agent_name} emitted terminal {event.event}: {self._terminal_event_reason(event)}"
-                        )
-                    if isinstance(event, ResourceFileSSEEvent):
-                        validate_llm_provenance(
-                            event.payload,
-                            artifact_label=f"{agent_name}:{resource_type}",
-                        )
-                        produced += 1
-                        state.generated_assets.append(event.payload.model_dump(by_alias=True))
-                    elif isinstance(event, QuestionBatchSSEEvent):
-                        validate_llm_provenance(
-                            event.payload,
-                            artifact_label=f"{agent_name}:{resource_type}",
-                        )
-                        produced += 1
-                        payload = event.payload.model_dump(by_alias=True)
-                        state.generated_assets.append({"assetType": "QUIZ", **payload})
-                    resource_events.append(event)
-                    state.events.append(event.model_copy(update={"seq": state.seq}))
+            if stream_mode == "custom":
+                event = item.get("event") if isinstance(item, dict) else None
+                if isinstance(event, SSEEvent):
+                    event = event.model_copy(update={"seq": state.seq})
+                    state.events.append(event)
                     state.seq += 1
-                    async for emitted_event in yield_new_events():
-                        yield emitted_event
-                if produced == 0:
-                    raise RuntimeError(f"{agent_name} produced no publishable resource event")
-                result = ResourceAgentResult(
-                    resource_type=resource_type,
-                    agent_name=agent_name,
-                    params=agent_params,
-                    events=resource_events,
-                )
-                state.resource_results.append(result)
-                state.params = self._merge_agent_params(state.params, result.params)
-            except Exception as exc:
-                failure = {
-                    "resourceType": resource_type,
-                    "agentName": agent_name,
-                    "error": f"{type(exc).__name__}: {exc}",
-                }
-                state.resource_failures.append(failure)
-                state.events.append(
-                    ProgressSSEEvent(
-                        taskId=state.request.task_id,
-                        traceId=state.request.trace_id,
-                        seq=state.seq,
-                        payload=ProgressPayload(
-                            stage="resource_bundle",
-                            percent=90,
-                            message=f"{resource_type} generation failed: {failure['error']}",
-                            agentName=agent_name,
-                            phase="generate",
-                            artifactType=resource_type,
-                            status="FAILED",
-                        ),
-                    )
-                )
-                state.seq += 1
-            async for event in yield_new_events():
-                yield event
-
-        state.params["generatedAssets"] = state.generated_assets
-        state.params["resourceFailures"] = state.resource_failures
-        if state.generated_assets:
-            state.params["generatedAsset"] = state.generated_assets[0]
+                    yield event
+                continue
+            if stream_mode != "updates" or not isinstance(item, dict):
+                continue
+            for update in item.values():
+                if not isinstance(update, dict):
+                    continue
+                next_state = WorkflowState.model_validate({**self._state_to_dict(state), **update})
+                new_events: list[SSEEvent] = []
+                if "events" in update:
+                    new_events = next_state.events[graph_event_count:]
+                    graph_event_count = len(next_state.events)
+                state.params = next_state.params
+                state.snapshot = next_state.snapshot
+                state.resource_types = next_state.resource_types
+                state.generated_assets = next_state.generated_assets
+                state.resource_results = next_state.resource_results
+                state.resource_failures = next_state.resource_failures
+                for event in new_events:
+                    event = event.model_copy(update={"seq": state.seq})
+                    state.events.append(event)
+                    state.seq += 1
+                    yield event
         if state.resource_failures and not state.generated_assets:
             if initial_state is not None:
                 self._copy_state(initial_state, state)
@@ -368,11 +260,31 @@ class ResourceBundleWorkflow:
         if resource_type not in state.resource_types:
             return {"resource_results": [], "resource_failures": []}
         agent_name = RESOURCE_AGENT_BY_TYPE[resource_type]
+        writer = get_stream_writer()
         try:
+            writer(
+                {
+                    "event": ProgressSSEEvent(
+                        taskId=state.request.task_id,
+                        traceId=state.request.trace_id,
+                        seq=state.seq,
+                        payload=ProgressPayload(
+                            stage="resource_bundle",
+                            percent=60,
+                            message=f"Generating {resource_type} resource",
+                            agentName=agent_name,
+                            phase="generate",
+                            artifactType=resource_type,
+                            status="RUNNING",
+                        ),
+                    )
+                }
+            )
             result = await self._run_resource_agent(
                 state=state,
                 resource_type=resource_type,
                 agent_name=agent_name,
+                writer=writer,
             )
             self._validate_resource_events(result)
             return {"resource_results": [result], "resource_failures": []}
@@ -393,31 +305,26 @@ class ResourceBundleWorkflow:
         resource_order = {resource_type: index for index, resource_type in enumerate(state.resource_types)}
         results = sorted(
             state.resource_results,
-            key=lambda item: resource_order.get(item.resource_type, len(resource_order)),
+            key=lambda item: (
+                item.published_at_ns,
+                resource_order.get(item.resource_type, len(resource_order)),
+            ),
         )
         failures = sorted(
             state.resource_failures,
             key=lambda item: resource_order.get(str(item.get("resourceType") or ""), len(resource_order)),
         )
 
-        if failures and not results:
-            state.resource_failures = failures
-            raise RuntimeError(f"Resource bundle generation failed: {failures}")
-
-        accepted_events: list[SSEEvent] = []
         generated_assets: list[dict[str, Any]] = []
         for result in results:
             state.params = self._merge_agent_params(state.params, result.params)
             for event in result.events:
-                accepted_events.append(event.model_copy(update={"seq": state.seq}))
-                state.seq += 1
                 if isinstance(event, ResourceFileSSEEvent):
                     generated_assets.append(event.payload.model_dump(by_alias=True))
                 elif isinstance(event, QuestionBatchSSEEvent):
                     payload = event.payload.model_dump(by_alias=True)
                     generated_assets.append({"assetType": "QUIZ", **payload})
 
-        state.events.extend(accepted_events)
         for failure in failures:
             resource_type = str(failure.get("resourceType") or "UNKNOWN")
             state.events.append(
@@ -471,6 +378,7 @@ class ResourceBundleWorkflow:
         state: WorkflowState,
         resource_type: str,
         agent_name: str,
+        writer: Callable[[Any], None] | None = None,
     ) -> ResourceAgentResult:
         agent = self.agent_registry[agent_name]
         agent_params = copy.deepcopy(state.params)
@@ -478,6 +386,7 @@ class ResourceBundleWorkflow:
         agent_params["artifactType"] = resource_type
         system_prompt = self.system_prompt_builder(agent_name, state.snapshot)
         events: list[SSEEvent] = []
+        first_publish_at_ns: int | None = None
         async for event in agent.run(
             task_id=state.request.task_id,
             trace_id=state.request.trace_id,
@@ -487,12 +396,39 @@ class ResourceBundleWorkflow:
             snapshot=state.snapshot,
             system_prompt=system_prompt,
         ):
+            if event.event in {"done", "error"}:
+                raise RuntimeError(
+                    f"{agent_name} emitted terminal {event.event}: {self._terminal_event_reason(event)}"
+                )
+            if isinstance(event, ResourceFileSSEEvent):
+                if event.payload.asset_type != resource_type:
+                    raise RuntimeError(
+                        f"{agent_name} emitted {event.payload.asset_type} for requested {resource_type}"
+                    )
+                validate_llm_provenance(
+                    event.payload,
+                    artifact_label=f"{agent_name}:{resource_type}",
+                )
+                first_publish_at_ns = first_publish_at_ns or time.monotonic_ns()
+            elif isinstance(event, QuestionBatchSSEEvent):
+                if resource_type != "QUIZ":
+                    raise RuntimeError(
+                        f"{agent_name} emitted question_batch for requested {resource_type}"
+                    )
+                validate_llm_provenance(
+                    event.payload,
+                    artifact_label=f"{agent_name}:{resource_type}",
+                )
+                first_publish_at_ns = first_publish_at_ns or time.monotonic_ns()
             events.append(event)
+            if writer is not None:
+                writer({"event": event})
         return ResourceAgentResult(
             resource_type=resource_type,
             agent_name=agent_name,
             params=agent_params,
             events=events,
+            published_at_ns=first_publish_at_ns or time.monotonic_ns(),
         )
 
     async def _build_snapshot(self, request: EngineStreamRequest, params: dict[str, Any]) -> SystemSnapshot:

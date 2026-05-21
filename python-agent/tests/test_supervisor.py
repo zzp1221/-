@@ -36,7 +36,7 @@ def test_supervisor_resolves_resource_generation_route() -> None:
     ]
 
 
-def test_supervisor_prefers_video_generator_when_resource_types_include_video() -> None:
+def test_supervisor_keeps_resource_generation_on_bundle_when_resource_types_include_video() -> None:
     supervisor = PythonAgentSupervisor()
 
     route = supervisor.resolve_route(
@@ -68,7 +68,7 @@ def test_supervisor_resolves_video_generation_route() -> None:
 
 def test_supervisor_route_templates_reference_registered_or_virtual_agents() -> None:
     supervisor = PythonAgentSupervisor()
-    virtual_agents = {"{generation_agent}", "resource_bundle"}
+    virtual_agents = {"resource_bundle"}
 
     for route in supervisor.route_templates.values():
         for agent_name in route:

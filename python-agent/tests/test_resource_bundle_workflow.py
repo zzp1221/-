@@ -127,11 +127,18 @@ class _FailingResourceAgent(PlaceholderAgent):
 
 
 class _ResourceStartProbe:
-    def __init__(self) -> None:
+    def __init__(self, expected_count: int = 0) -> None:
         self.started: list[str] = []
+        self.expected_count = expected_count
+        self._all_started = asyncio.Event()
 
     async def record_start(self, agent_name: str) -> None:
         self.started.append(agent_name)
+        if self.expected_count and len(self.started) >= self.expected_count:
+            self._all_started.set()
+
+    async def wait_for_all_started(self) -> None:
+        await asyncio.wait_for(self._all_started.wait(), timeout=1)
 
 
 class _OrderedResourceAgent(PlaceholderAgent):
@@ -142,6 +149,7 @@ class _OrderedResourceAgent(PlaceholderAgent):
 
     async def run(self, *, task_id, trace_id, seq, params, **kwargs):
         await self.probe.record_start(self.stage_name)
+        await self.probe.wait_for_all_started()
         payload = ResourceFilePayload(
             assetType=self.asset_type,
             title=f"Ordered {self.asset_type}",
@@ -149,6 +157,46 @@ class _OrderedResourceAgent(PlaceholderAgent):
             displayMode="download",
             fileName=f"{self.asset_type.lower()}.md",
             localPath=f"sandbox/{self.asset_type.lower()}.md",
+            mimeType="text/markdown",
+            **_provenance(self.stage_name),
+        )
+        yield ResourceFileSSEEvent(taskId=task_id, traceId=trace_id, seq=seq, payload=payload)
+
+
+class _DelayedResourceAgent(PlaceholderAgent):
+    def __init__(self, asset_type: str, stage_name: str, delay_seconds: float) -> None:
+        super().__init__(asset_type, stage_name)
+        self.asset_type = asset_type
+        self.delay_seconds = delay_seconds
+
+    async def run(self, *, task_id, trace_id, seq, params, **kwargs):
+        await asyncio.sleep(self.delay_seconds)
+        payload = ResourceFilePayload(
+            assetType=self.asset_type,
+            title=f"Delayed {self.asset_type}",
+            summary="LLM generated delayed resource",
+            displayMode="download",
+            fileName=f"{self.asset_type.lower()}.md",
+            localPath=f"sandbox/{self.asset_type.lower()}.md",
+            mimeType="text/markdown",
+            **_provenance(self.stage_name),
+        )
+        yield ResourceFileSSEEvent(taskId=task_id, traceId=trace_id, seq=seq, payload=payload)
+
+
+class _WrongTypeResourceAgent(PlaceholderAgent):
+    def __init__(self, emitted_asset_type: str, stage_name: str) -> None:
+        super().__init__(emitted_asset_type, stage_name)
+        self.emitted_asset_type = emitted_asset_type
+
+    async def run(self, *, task_id, trace_id, seq, params, **kwargs):
+        payload = ResourceFilePayload(
+            assetType=self.emitted_asset_type,
+            title=f"Wrong {self.emitted_asset_type}",
+            summary="LLM generated wrong resource type",
+            displayMode="download",
+            fileName=f"{self.emitted_asset_type.lower()}.md",
+            localPath=f"sandbox/{self.emitted_asset_type.lower()}.md",
             mimeType="text/markdown",
             **_provenance(self.stage_name),
         )
@@ -241,9 +289,9 @@ async def test_resource_bundle_partial_failed_publishes_only_successful_real_out
 
 
 @pytest.mark.asyncio
-async def test_resource_bundle_runs_requested_generation_agents_in_request_order() -> None:
+async def test_resource_bundle_runs_requested_generation_agents_concurrently() -> None:
     supervisor = PythonAgentSupervisor()
-    probe = _ResourceStartProbe()
+    probe = _ResourceStartProbe(expected_count=3)
     supervisor.agent_registry["query_rewrite"] = _StubRewriteAgent()
     supervisor.agent_registry["retrieval"] = _StubRetrievalAgent()
     supervisor.agent_registry["document_generator"] = _OrderedResourceAgent("DOCUMENT", "document_generation", probe)
@@ -258,12 +306,88 @@ async def test_resource_bundle_runs_requested_generation_agents_in_request_order
 
     events = [event async for event in supervisor.stream(request)]
 
-    assert probe.started == [
+    assert set(probe.started) == {
         "document_generation",
         "slide_generation",
         "mindmap_generation",
-    ]
+    }
     assert len([event for event in events if event.event == "resource_file"]) == 3
+
+
+@pytest.mark.asyncio
+async def test_resource_bundle_reports_assets_in_completion_order() -> None:
+    supervisor = PythonAgentSupervisor()
+    supervisor.agent_registry["query_rewrite"] = _StubRewriteAgent()
+    supervisor.agent_registry["retrieval"] = _StubRetrievalAgent()
+    supervisor.agent_registry["document_generator"] = _DelayedResourceAgent("DOCUMENT", "document_generation", 0.05)
+    supervisor.agent_registry["slide_generator"] = _DelayedResourceAgent("SLIDES", "slide_generation", 0.0)
+    request = EngineStreamRequest(
+        serviceType="RESOURCE_GENERATION",
+        params={"resourceTypes": ["DOCUMENT", "SLIDES"], "query": "鑱斿悎绱㈠紩"},
+        taskId="task-completion-order-bundle",
+        traceId="trace-completion-order-bundle",
+    )
+
+    events = [event async for event in supervisor.stream(request)]
+    published = [event.payload.asset_type for event in events if event.event == "resource_file"]
+
+    assert published == ["SLIDES", "DOCUMENT"]
+    assert supervisor.resolve_route("RESOURCE_GENERATION", request.params).agent_names[-1] == "resource_bundle"
+
+    workflow = ResourceBundleWorkflow(
+        agent_registry=supervisor.agent_registry,
+        snapshot_builder=supervisor.snapshot_builder,
+        system_prompt_builder=lambda agent_name, snapshot: supervisor.build_agent_system_prompt(
+            agent_name=agent_name,
+            snapshot=snapshot,
+        ),
+    )
+    final_state = await workflow.run(
+        request=request,
+        params=request.params,
+        snapshot=_snapshot(),
+    )
+    final_asset_types = [
+        item.get("assetType")
+        for item in final_state.params.get("generatedAssets", [])
+    ]
+
+    assert final_asset_types == ["SLIDES", "DOCUMENT"]
+
+
+@pytest.mark.asyncio
+async def test_resource_bundle_rejects_mismatched_resource_type_events() -> None:
+    supervisor = PythonAgentSupervisor()
+    supervisor.agent_registry["query_rewrite"] = _StubRewriteAgent()
+    supervisor.agent_registry["retrieval"] = _StubRetrievalAgent()
+    supervisor.agent_registry["document_generator"] = _WrongTypeResourceAgent("CODE", "document_generation")
+    supervisor.agent_registry["mindmap_generator"] = _StubResourceAgent("MINDMAP", "mindmap_generation")
+    request = EngineStreamRequest(
+        serviceType="RESOURCE_GENERATION",
+        params={"resourceTypes": ["DOCUMENT", "MINDMAP"], "query": "联合索引"},
+        taskId="task-mismatched-resource-type",
+        traceId="trace-mismatched-resource-type",
+    )
+
+    events = [event async for event in supervisor.stream(request)]
+    published = [
+        event.payload.asset_type
+        for event in events
+        if event.event == "resource_file"
+    ]
+    failed = [
+        event
+        for event in events
+        if event.event == "progress"
+        and event.payload.status == "FAILED"
+        and event.payload.artifact_type == "DOCUMENT"
+    ]
+
+    assert published == ["MINDMAP"]
+    assert failed
+    assert events[-1].event == "done"
+    assert events[-1].payload.status == "PARTIAL_FAILED"
+    assert events[-1].payload.resource_failures[0]["resourceType"] == "DOCUMENT"
 
 
 @pytest.mark.asyncio

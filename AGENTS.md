@@ -10,7 +10,7 @@ AI agent 自主优化"智学引擎"全栈项目的运行指令。人类写这份
 
 | 指标 | 命令/方式 | 通过标准 |
 |---|---|---|
-| 全链路功能 | `docker compose up -d --build && sleep 15 && pytest tests/ -v` | 全部通过 |
+| 全链路功能 | 当前热更新环境：`docker compose ps && pytest tests/ -v`；全新部署才可 `docker compose up -d --build` | 全部通过 |
 | RAG 检索质量 | `pytest python-agent/tests/ -k rag -v` | hits@3 >= 90% |
 | 前端构建 | `cd frontend && npx tsc --noEmit && npx vite build` | 无错误 |
 | SSE 流式联通 | 前端 Console 无 CORS/401/ERR | 流式对话逐字渲染 |
@@ -47,6 +47,7 @@ AI agent 自主优化"智学引擎"全栈项目的运行指令。人类写这份
 - **禁止硬编码**：类型→枚举，密码→env，模型名→`LLMComponentOverride`，中文→i18n
 - **资源清理**：文件写入带 finally 删除；SSE emitter 三回调都 remove；cache 必须 TTL
 - **禁止** `except: pass`
+- **热更新边界**：当前联调/演示环境只允许 `docker cp` 热更新，禁止 `docker compose build`、`docker compose up --build`、`--force-recreate` 和重建容器；全新部署文档中的 build 命令只用于空环境。
 
 ## 5. 全链路检查清单
 

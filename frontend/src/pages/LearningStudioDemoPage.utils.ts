@@ -80,6 +80,7 @@ export async function runByApiTask({
   setVideoResult,
   setInlineResource,
   setInlineResources,
+  setCompletedResources,
   setPracticeBatch,
   setJudgeResult,
   taskStreamAbortRef,
@@ -128,9 +129,21 @@ export async function runByApiTask({
           ? prev
           : [...prev, item]
       ));
+      setCompletedResources((prev) => {
+        const key = `inline:${item.kind}:${item.title}`;
+        return prev.some((existing) => existing.key === key)
+          ? prev
+          : [...prev, { kind: 'inline', key, resource: item }];
+      });
     },
     onQuestionBatch: (item) => {
       setPracticeBatch(item);
+      setCompletedResources((prev) => {
+        const key = `question_batch:${item.title}:${item.topic}`;
+        return prev.some((existing) => existing.key === key)
+          ? prev
+          : [...prev, { kind: 'question_batch', key, batch: item }];
+      });
       setJudgeResult(null);
       setTaskSummary(item.title);
     },

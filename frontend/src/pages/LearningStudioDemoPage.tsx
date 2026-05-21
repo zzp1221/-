@@ -14,6 +14,7 @@ import {
   serviceTypeMap,
   type AssessmentForm,
   type ChatMessage,
+  type CompletedResourceView,
   type EngineService,
   type EngineState,
   type EngineTaskSnapshot,
@@ -361,6 +362,7 @@ function createEmptyEngineTaskSnapshot(baseState: EngineState = 'ENGINE_IDLE'): 
     inlineResource: null,
     inlineResources: [],
     practiceBatch: null,
+    completedResources: [],
     judgeResult: null,
     resultHistory: [],
     selectedResultTaskId: '',
@@ -406,6 +408,25 @@ function getInlineResourcesFromSnapshot(snapshot: Partial<EngineTaskSnapshot>): 
   return resources;
 }
 
+function createCompletedResourcesFromSnapshot(snapshot: Partial<EngineTaskSnapshot>): CompletedResourceView[] {
+  if (Array.isArray(snapshot.completedResources) && snapshot.completedResources.length) {
+    return snapshot.completedResources.filter(Boolean);
+  }
+  const completedResources: CompletedResourceView[] = getInlineResourcesFromSnapshot(snapshot).map((resource) => ({
+    kind: 'inline',
+    key: `inline:${resource.kind}:${resource.title}`,
+    resource,
+  }));
+  if (snapshot.practiceBatch) {
+    completedResources.push({
+      kind: 'question_batch',
+      key: `question_batch:${snapshot.practiceBatch.title}:${snapshot.practiceBatch.topic}`,
+      batch: snapshot.practiceBatch,
+    });
+  }
+  return completedResources;
+}
+
 function normalizeTaskResultRecord(record: Partial<EngineTaskResultRecord>): EngineTaskResultRecord | null {
   if (!record.taskId) {
     return null;
@@ -422,6 +443,7 @@ function normalizeTaskResultRecord(record: Partial<EngineTaskResultRecord>): Eng
     videoResult: record.videoResult ?? null,
     inlineResources: Array.isArray(record.inlineResources) ? record.inlineResources : [],
     practiceBatch: record.practiceBatch ?? null,
+    completedResources: createCompletedResourcesFromSnapshot(record),
     judgeResult: record.judgeResult ?? null,
     createdAt: typeof record.createdAt === 'number' ? record.createdAt : now,
     updatedAt: typeof record.updatedAt === 'number' ? record.updatedAt : now,
@@ -445,6 +467,7 @@ function createTaskResultRecord(
     videoResult: overrides.videoResult ?? snapshot.videoResult,
     inlineResources: overrides.inlineResources ?? getInlineResourcesFromSnapshot(snapshot),
     practiceBatch: overrides.practiceBatch ?? snapshot.practiceBatch,
+    completedResources: overrides.completedResources ?? createCompletedResourcesFromSnapshot(snapshot),
     judgeResult: overrides.judgeResult ?? snapshot.judgeResult,
     createdAt: overrides.createdAt ?? now,
     updatedAt: overrides.updatedAt ?? now,
@@ -478,6 +501,7 @@ function upsertTaskResultRecord(
     videoResult: overrides.videoResult ?? snapshot.videoResult,
     inlineResources: overrides.inlineResources ?? getInlineResourcesFromSnapshot(snapshot),
     practiceBatch: overrides.practiceBatch ?? snapshot.practiceBatch,
+    completedResources: overrides.completedResources ?? createCompletedResourcesFromSnapshot(snapshot),
     judgeResult: overrides.judgeResult ?? snapshot.judgeResult,
     createdAt: current.createdAt,
     updatedAt: Date.now(),
@@ -501,6 +525,7 @@ function sanitizeEngineSnapshot(snapshot: EngineTaskSnapshot): EngineTaskSnapsho
     ...snapshot,
     serviceResultLines: dedupeResultLines(snapshot.serviceResultLines),
     inlineResources: getInlineResourcesFromSnapshot(snapshot),
+    completedResources: createCompletedResourcesFromSnapshot(snapshot),
     resultHistory: Array.isArray(snapshot.resultHistory)
       ? snapshot.resultHistory.map(normalizeTaskResultRecord).filter((item): item is EngineTaskResultRecord => Boolean(item))
       : [],
@@ -642,6 +667,7 @@ export default function LearningStudioDemoPage({ mode }: { mode: 'qna' | 'engine
   const downloadLinks = activeEngineSnapshot.downloadLinks;
   const videoResult = activeEngineSnapshot.videoResult;
   const inlineResources = getInlineResourcesFromSnapshot(activeEngineSnapshot);
+  const completedResources = createCompletedResourcesFromSnapshot(activeEngineSnapshot);
   const selectedServiceButton = selectedService ? serviceButtons.find((item) => item.id === selectedService) ?? null : null;
   const selectedServiceDescription = selectedService ? serviceDescriptions[selectedService] : null;
 
@@ -1253,6 +1279,12 @@ export default function LearningStudioDemoPage({ mode }: { mode: 'qna' | 'engine
             inlineResources: typeof value === 'function' ? value(getInlineResourcesFromSnapshot(current)) : value,
           }));
         },
+        setCompletedResources: (value) => {
+          updateServiceSnapshot(service, (current) => ({
+            ...current,
+            completedResources: typeof value === 'function' ? value(createCompletedResourcesFromSnapshot(current)) : value,
+          }));
+        },
         setPracticeBatch: (value) => {
           updateServiceSnapshot(service, (current) => ({
             ...current,
@@ -1658,6 +1690,7 @@ export default function LearningStudioDemoPage({ mode }: { mode: 'qna' | 'engine
       inlineResource: null,
       inlineResources: [],
       practiceBatch: null,
+      completedResources: [],
       judgeResult: null,
       resultHistory: serviceSnapshots[selectedService].resultHistory,
       selectedResultTaskId: serviceSnapshots[selectedService].selectedResultTaskId,
@@ -1724,6 +1757,7 @@ export default function LearningStudioDemoPage({ mode }: { mode: 'qna' | 'engine
       videoResult: null,
       inlineResource: null,
       inlineResources: [],
+      completedResources: [],
       judgeResult: null,
       resultHistory: current.resultHistory,
       selectedResultTaskId: current.selectedResultTaskId,
@@ -2057,6 +2091,7 @@ export default function LearningStudioDemoPage({ mode }: { mode: 'qna' | 'engine
           videoResult={videoResult}
           inlineResource={activeEngineSnapshot.inlineResource}
           inlineResources={inlineResources}
+          completedResources={completedResources}
           resultHistory={activeEngineSnapshot.resultHistory}
           selectedResultTaskId={activeEngineSnapshot.selectedResultTaskId}
           practiceBatch={activeEngineSnapshot.practiceBatch}

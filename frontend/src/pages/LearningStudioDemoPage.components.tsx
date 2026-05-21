@@ -6,6 +6,7 @@ import {
   pushResourceTypeOptions,
   resourceTypeButtons,
   type AssessmentForm,
+  type CompletedResourceView,
   type EngineService,
   type EngineTaskResultRecord,
   type InlineResourceView,
@@ -392,6 +393,7 @@ export function TaskResultPanel(props: {
   videoResult: VideoResult | null;
   inlineResource: InlineResourceView | null;
   inlineResources: InlineResourceView[];
+  completedResources: CompletedResourceView[];
   resultHistory: EngineTaskResultRecord[];
   selectedResultTaskId: string;
   practiceBatch: PracticeQuestionBatch | null;
@@ -413,6 +415,24 @@ export function TaskResultPanel(props: {
         ? [props.inlineResource]
         : [];
   const visiblePracticeBatch = selectedRecord?.practiceBatch ?? props.practiceBatch;
+  const visibleCompletedResources = selectedRecord?.completedResources?.length
+    ? selectedRecord.completedResources
+    : props.completedResources.length
+      ? props.completedResources
+      : [
+          ...visibleInlineResources.map((resource) => ({
+            kind: 'inline' as const,
+            key: `inline:${resource.kind}:${resource.title}`,
+            resource,
+          })),
+          ...(visiblePracticeBatch
+            ? [{
+                kind: 'question_batch' as const,
+                key: `question_batch:${visiblePracticeBatch.title}:${visiblePracticeBatch.topic}`,
+                batch: visiblePracticeBatch,
+              }]
+            : []),
+        ];
   const visibleJudgeResult = selectedRecord?.judgeResult ?? props.judgeResult;
   const externalRecommendations = props.service === 'push'
     ? visibleDownloadLinks.filter(isExternalRecommendation)
@@ -465,7 +485,7 @@ export function TaskResultPanel(props: {
     || visibleResultLines.length > 0
     || visibleDownloadLinks.length > 0
     || Boolean(visibleVideoResult)
-    || visibleInlineResources.length > 0
+    || visibleCompletedResources.length > 0
     || Boolean(visiblePracticeBatch)
     || Boolean(visibleJudgeResult)
     || props.resultHistory.length > 0;
@@ -560,17 +580,19 @@ export function TaskResultPanel(props: {
               onSubmitAnswers={props.onSubmitPracticeAnswers}
             />
           ) : null}
-          {visibleInlineResources.map((resource, index) => (
-            <InlineResourcePanel key={`${resource.kind}-${resource.title}-${index}`} resource={resource} />
+          {visibleCompletedResources.map((item, index) => (
+            item.kind === 'inline' ? (
+              <InlineResourcePanel key={`${item.key}-${index}`} resource={item.resource} />
+            ) : props.service !== 'assessment' ? (
+              <PracticeQuestionPanel
+                key={`${item.key}-${index}`}
+                batch={item.batch}
+                judgeResult={visibleJudgeResult}
+                canSubmit={props.canSubmitPractice}
+                onSubmitAnswers={props.onSubmitPracticeAnswers}
+              />
+            ) : null
           ))}
-          {props.service !== 'assessment' && visiblePracticeBatch ? (
-            <PracticeQuestionPanel
-              batch={visiblePracticeBatch}
-              judgeResult={visibleJudgeResult}
-              canSubmit={props.canSubmitPractice}
-              onSubmitAnswers={props.onSubmitPracticeAnswers}
-            />
-          ) : null}
           {visibleTaskSummary ? (
             <div className="mb-4 rounded-xl border border-slate-100 bg-slate-50/50 p-4 text-sm leading-7 text-slate-700 dark:border-slate-800 dark:bg-slate-900/50 dark:text-slate-300">
               <DeferredMarkdownRenderer content={visibleTaskSummary} />

@@ -1,8 +1,10 @@
 # 智学引擎部署指南
 
-最后更新：2026-05-19
+最后更新：2026-05-20
 
 本文面向从代码仓库全新部署的同学。默认部署使用 Docker Compose，包含前端、Java 控制平面、Python Agent、PostgreSQL、MongoDB、Redis 六个服务。
+
+> 当前联调/演示环境是热更新环境：只允许 `docker cp` 同步文件，禁止 `docker compose build`、`docker compose up --build`、`--force-recreate` 和重建容器。本文中的 build/recreate 命令只适用于全新部署、空环境初始化或明确维护窗口。
 
 ## 1. 环境要求
 
@@ -70,6 +72,8 @@ PowerShell 可用：
 docker compose up -d --build
 ```
 
+该命令会构建镜像并创建容器；已有演示环境不要执行。
+
 查看状态：
 
 ```bash
@@ -122,16 +126,10 @@ mkdir -p models
 # 将 judge_model.gguf 放到 ./models/judge_model.gguf
 ```
 
-启动 overlay：
+全新部署时启动 overlay：
 
 ```bash
 docker compose -f docker-compose.yml -f docker-compose.local-judge.yml up -d --build
-```
-
-只重建 Python Agent 和 Java 控制平面：
-
-```bash
-docker compose -f docker-compose.yml -f docker-compose.local-judge.yml up -d --build python-agent app
 ```
 
 overlay 会强制：
@@ -151,16 +149,33 @@ docker compose logs -f
 docker compose logs -f app
 docker compose logs -f python-agent
 docker compose restart app python-agent
-docker compose down
 ```
 
-保留数据并重新应用端口绑定或环境变量：
+当前热更新环境不要执行 `docker compose down`、`docker compose up --build` 或 `docker compose up --force-recreate`。如需同步代码：
+
+```bash
+# 前端：本地构建后覆盖 nginx 静态目录
+cd frontend && npx tsc --noEmit && npx vite build
+docker cp dist/. zhixue-frontend:/usr/share/nginx/html/
+docker exec zhixue-frontend nginx -s reload
+
+# Python：只复制改动的 .py/skill 文件到 /app 对应路径
+docker cp python-agent/src/ai_modules/runtime/resource_bundle_workflow.py zhixue-python-agent:/app/src/ai_modules/runtime/resource_bundle_workflow.py
+docker restart zhixue-python-agent
+
+# Java：如确需更新后端，先本地打包，再覆盖 jar 并重启 app 容器
+cd project && mvn.cmd -q -DskipTests package
+docker cp target/zhixue-control-plane-0.0.1-SNAPSHOT.jar zhixue-app:/app/app.jar
+docker restart zhixue-app
+```
+
+全新部署或维护窗口中，保留数据并重新应用端口绑定/环境变量可使用：
 
 ```bash
 docker compose up -d --force-recreate
 ```
 
-清空全部容器和数据卷/目录前请先备份：
+清空全部容器和数据卷/目录前请先备份，仅全新初始化或明确维护窗口使用：
 
 ```bash
 docker compose down -v
@@ -241,7 +256,8 @@ Python Agent 调 LLM 失败：
 端口仍显示 `0.0.0.0:5432`：
 
 - 说明容器是旧端口配置创建的。
-- 执行 `docker compose up -d --force-recreate postgres mongo redis` 重新创建数据服务容器。
+- 当前热更新环境不要重建数据服务容器；记录风险并等待维护窗口。
+- 维护窗口中可执行 `docker compose up -d --force-recreate postgres mongo redis` 重新创建数据服务容器。
 
 ## 10. 安全检查清单
 

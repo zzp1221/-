@@ -315,9 +315,11 @@ docker-compose.override.yml
 # 10. Docs, Data & Uploads (runtime / agent-generated)
 # ============================================================
 docs/*
+!docs/architecture.md
 !docs/deployment.md
 !docs/experiment_log.md
 !docs/graph_multi_agent_architecture.md
+!docs/teacher_guide.md
 uploads/
 .agents/
 .tests/

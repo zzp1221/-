@@ -196,7 +196,9 @@
       "WebFetch(domain:deepwiki.com)",
       "WebFetch(domain:skywork.ai)",
       "WebFetch(domain:cloud.tencent.com)",
-      "WebFetch(domain:mp.weixin.qq.com)"
+      "WebFetch(domain:mp.weixin.qq.com)",
+      "Bash(git diff *)",
+      "Bash(cat python-agent/src/ai_modules/runtime/provenance.py)"
     ]
   }
 }
